@@ -18,6 +18,7 @@ import {
   RefreshCw,
   AlertCircle,
   Tag,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -274,6 +275,22 @@ export function ConversationsView({ user }: { user: UserProp }) {
     }
   }
 
+  // ── Download transcript ─────────────────────────────────────────────
+  function downloadTranscript() {
+    if (!detail) return;
+    toast.success("Downloading transcript…");
+    const url = `/api/conversations/${detail.id}/export`;
+    // Same-origin request → the danets_session cookie is sent automatically.
+    // Server returns Content-Disposition: attachment, so the browser will
+    // trigger a file download instead of navigating.
+    const a = document.createElement("a");
+    a.href = url;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
   // ─── Render ─────────────────────────────────────────────────────────
 
   const statusFilters: { key: StatusFilter; label: string }[] = [
@@ -470,6 +487,17 @@ export function ConversationsView({ user }: { user: UserProp }) {
                     )}
                   </div>
                 </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={downloadTranscript}
+                  disabled={!detail}
+                  className="gap-1.5 shrink-0"
+                  title="Download transcript (.txt)"
+                >
+                  <Download size={14} />
+                  <span className="hidden md:inline">Download transcript</span>
+                </Button>
               </header>
 
               {/* Messages */}

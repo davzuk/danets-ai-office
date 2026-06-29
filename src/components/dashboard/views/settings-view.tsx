@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Loader2, Save, Building2, ShieldCheck, KeyRound, Database } from "lucide-react";
 import { toast } from "sonner";
+import { TeamMembers } from "@/components/dashboard/views/team-members";
 
 interface BusinessInfo {
   business: {
@@ -151,6 +152,15 @@ export function SettingsView({ user }: { user: any }) {
               </div>
             </CardContent>
           </Card>
+
+          {/* Team members */}
+          {info?.business && (
+            <TeamMembers
+              businessId={info.business.id}
+              currentUserRole={user.role}
+              currentUserId={user.userId}
+            />
+          )}
         </div>
 
         {/* Right column: plan + usage + security */}

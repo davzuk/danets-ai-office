@@ -1,0 +1,936 @@
+     1→"use client";
+     2→
+     3→import { useCallback, useEffect, useRef, useState } from "react";
+     4→import {
+     5→  ArrowLeft,
+     6→  Sparkles,
+     7→  Copy,
+     8→  Check,
+     9→  Send,
+    10→  Bot,
+    11→  User as UserIcon,
+    12→  Loader2,
+    13→  MessageSquare,
+    14→  Search,
+    15→  Mail,
+    16→  Phone,
+    17→  Clock,
+    18→  RefreshCw,
+    19→  AlertCircle,
+    20→  Tag,
+    21→} from "lucide-react";
+    22→import { toast } from "sonner";
+    23→
+    24→import { cn } from "@/lib/utils";
+    25→import { Button } from "@/components/ui/button";
+    26→import { Input } from "@/components/ui/input";
+    27→import { Textarea } from "@/components/ui/textarea";
+    28→import { Badge } from "@/components/ui/badge";
+    29→import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+    30→import { Separator } from "@/components/ui/separator";
+    31→import { Skeleton } from "@/components/ui/skeleton";
+    32→import {
+    33→  Card,
+    34→  CardContent,
+    35→  CardDescription,
+    36→  CardHeader,
+    37→  CardTitle,
+    38→} from "@/components/ui/card";
+    39→
+    40→// ─── Types ────────────────────────────────────────────────────────────
+    41→
+    42→interface UserProp {
+    43→  userId: string;
+    44→  businessId: string;
+    45→  name: string;
+    46→  email: string;
+    47→  role: string;
+    48→  businessName: string;
+    49→}
+    50→
+    51→interface LatestMessage {
+    52→  id: string;
+    53→  role: string;
+    54→  content: string;
+    55→  createdAt: string;
+    56→}
+    57→
+    58→interface Lead {
+    59→  id: string;
+    60→  name: string;
+    61→  email: string | null;
+    62→  phone: string | null;
+    63→  service: string | null;
+    64→  quality: string | null;
+    65→  status: string;
+    66→}
+    67→
+    68→interface ChatSessionListItem {
+    69→  id: string;
+    70→  businessId: string;
+    71→  visitorName: string | null;
+    72→  visitorEmail: string | null;
+    73→  visitorPhone: string | null;
+    74→  visitorId: string | null;
+    75→  status: string;
+    76→  summary: string | null;
+    77→  leadQuality: string | null;
+    78→  nextAction: string | null;
+    79→  createdAt: string;
+    80→  updatedAt: string;
+    81→  lead: Lead | null;
+    82→  latestMessage: LatestMessage | null;
+    83→}
+    84→
+    85→interface ChatMessage {
+    86→  id: string;
+    87→  role: string;
+    88→  content: string;
+    89→  createdAt: string;
+    90→  tokensUsed?: number;
+    91→}
+    92→
+    93→interface ChatSessionDetail {
+    94→  id: string;
+    95→  businessId: string;
+    96→  visitorName: string | null;
+    97→  visitorEmail: string | null;
+    98→  visitorPhone: string | null;
+    99→  visitorId: string | null;
+   100→  status: string;
+   101→  summary: string | null;
+   102→  leadQuality: string | null;
+   103→  nextAction: string | null;
+   104→  createdAt: string;
+   105→  updatedAt: string;
+   106→  lead: Lead | null;
+   107→  messages: ChatMessage[];
+   108→}
+   109→
+   110→interface SuggestionsResult {
+   111→  summary?: string;
+   112→  follow_up_message?: string;
+   113→  lead_quality?: "low" | "medium" | "high";
+   114→  next_action?: string;
+   115→  parsed: boolean;
+   116→  raw?: boolean;
+   117→  text?: string;
+   118→}
+   119→
+   120→type StatusFilter = "all" | "active" | "ended" | "handover";
+   121→
+   122→// ─── Main component ───────────────────────────────────────────────────
+   123→
+   124→export function ConversationsView({ user }: { user: UserProp }) {
+   125→  const [sessions, setSessions] = useState<ChatSessionListItem[]>([]);
+   126→  const [loadingList, setLoadingList] = useState(true);
+   127→  const [search, setSearch] = useState("");
+   128→  const [searchInput, setSearchInput] = useState("");
+   129→  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+   130→
+   131→  const [selectedId, setSelectedId] = useState<string | null>(null);
+   132→  const [detail, setDetail] = useState<ChatSessionDetail | null>(null);
+   133→  const [loadingDetail, setLoadingDetail] = useState(false);
+   134→
+   135→  const [suggestions, setSuggestions] = useState<SuggestionsResult | null>(null);
+   136→  const [generating, setGenerating] = useState(false);
+   137→  const [copied, setCopied] = useState(false);
+   138→  const [followUpEdit, setFollowUpEdit] = useState<string>("");
+   139→
+   140→  const messagesEndRef = useRef<HTMLDivElement>(null);
+   141→  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+   142→
+   143→  // ── Fetch list ──────────────────────────────────────────────────────
+   144→  const fetchList = useCallback(async () => {
+   145→    setLoadingList(true);
+   146→    try {
+   147→      const params = new URLSearchParams();
+   148→      if (statusFilter !== "all") params.set("status", statusFilter);
+   149→      if (search.trim()) params.set("q", search.trim());
+   150→      const res = await fetch(`/api/conversations?${params.toString()}`, {
+   151→        cache: "no-store",
+   152→      });
+   153→      if (!res.ok) throw new Error("Request failed");
+   154→      const data = await res.json();
+   155→      setSessions(Array.isArray(data?.sessions) ? data.sessions : []);
+   156→    } catch {
+   157→      toast.error("Failed to load conversations");
+   158→      setSessions([]);
+   159→    } finally {
+   160→      setLoadingList(false);
+   161→    }
+   162→  }, [statusFilter, search]);
+   163→
+   164→  useEffect(() => {
+   165→    fetchList();
+   166→  }, [fetchList]);
+   167→
+   168→  // Debounce search input -> search term
+   169→  useEffect(() => {
+   170→    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+   171→    debounceTimer.current = setTimeout(() => {
+   172→      setSearch(searchInput);
+   173→    }, 300);
+   174→    return () => {
+   175→      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+   176→    };
+   177→  }, [searchInput]);
+   178→
+   179→  // ── Fetch detail when an item is selected ───────────────────────────
+   180→  useEffect(() => {
+   181→    if (!selectedId) {
+   182→      setDetail(null);
+   183→      setSuggestions(null);
+   184→      setFollowUpEdit("");
+   185→      return;
+   186→    }
+   187→    let cancelled = false;
+   188→    setLoadingDetail(true);
+   189→    setSuggestions(null);
+   190→    setFollowUpEdit("");
+   191→
+   192→    fetch(`/api/conversations/${selectedId}`, { cache: "no-store" })
+   193→      .then((r) => r.json())
+   194→      .then((data) => {
+   195→        if (cancelled) return;
+   196→        const s = data?.session;
+   197→        if (!s) {
+   198→          setDetail(null);
+   199→          toast.error("Conversation not found");
+   200→          setSelectedId(null);
+   201→          return;
+   202→        }
+   203→        setDetail(s);
+   204→        // Pre-populate suggestions display from previously-saved summary/nextAction
+   205→        if (s.summary || s.nextAction || s.leadQuality) {
+   206→          setSuggestions({
+   207→            summary: s.summary || undefined,
+   208→            next_action: s.nextAction || undefined,
+   209→            lead_quality: (s.leadQuality as "low" | "medium" | "high") || undefined,
+   210→            parsed: true,
+   211→          });
+   212→        }
+   213→      })
+   214→      .catch(() => {
+   215→        if (!cancelled) toast.error("Failed to load conversation");
+   216→      })
+   217→      .finally(() => {
+   218→        if (!cancelled) setLoadingDetail(false);
+   219→      });
+   220→
+   221→    return () => {
+   222→      cancelled = true;
+   223→    };
+   224→  }, [selectedId]);
+   225→
+   226→  // ── Auto-scroll messages to bottom ──────────────────────────────────
+   227→  useEffect(() => {
+   228→    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+   229→  }, [detail?.messages?.length, selectedId]);
+   230→
+   231→  // ── Generate AI suggestions ─────────────────────────────────────────
+   232→  async function generateSuggestions() {
+   233→    if (!selectedId) return;
+   234→    setGenerating(true);
+   235→    setSuggestions(null);
+   236→    try {
+   237→      const res = await fetch(`/api/conversations/${selectedId}/suggestions`, {
+   238→        method: "POST",
+   239→        headers: { "Content-Type": "application/json" },
+   240→      });
+   241→      const data = await res.json();
+   242→      if (!res.ok || data?.error) {
+   243→        toast.error(data?.error || "Failed to generate suggestions");
+   244→        setSuggestions(null);
+   245→        return;
+   246→      }
+   247→      const s: SuggestionsResult | null = data?.suggestions || null;
+   248→      setSuggestions(s);
+   249→      if (s?.parsed === false) {
+   250→        toast.info("AI returned raw text — could not parse JSON.");
+   251→      } else {
+   252→        toast.success("Suggestions generated");
+   253→      }
+   254→      if (s?.follow_up_message) setFollowUpEdit(s.follow_up_message);
+   255→      // refresh list to reflect updated summary/leadQuality
+   256→      fetchList();
+   257→    } catch {
+   258→      toast.error("Network error — try again");
+   259→    } finally {
+   260→      setGenerating(false);
+   261→    }
+   262→  }
+   263→
+   264→  // ── Copy helper ─────────────────────────────────────────────────────
+   265→  async function copyText(text: string, label = "Copied to clipboard") {
+   266→    if (!text) return;
+   267→    try {
+   268→      await navigator.clipboard.writeText(text);
+   269→      setCopied(true);
+   270→      toast.success(label);
+   271→      setTimeout(() => setCopied(false), 1500);
+   272→    } catch {
+   273→      toast.error("Copy failed — select text manually");
+   274→    }
+   275→  }
+   276→
+   277→  // ─── Render ─────────────────────────────────────────────────────────
+   278→
+   279→  const statusFilters: { key: StatusFilter; label: string }[] = [
+   280→    { key: "all", label: "All" },
+   281→    { key: "active", label: "Active" },
+   282→    { key: "ended", label: "Ended" },
+   283→    { key: "handover", label: "Handover" },
+   284→  ];
+   285→
+   286→  const showDetailOnMobile = !!selectedId;
+   287→
+   288→  return (
+   289→    <div className="flex flex-col gap-4 h-[calc(100vh-9rem)]">
+   290→      <div className="flex items-center justify-between gap-3">
+   291→        <div>
+   292→          <h1 className="text-xl font-semibold tracking-tight">Conversations</h1>
+   293→          <p className="text-sm text-muted-foreground">
+   294→            Review chat sessions, view transcripts, and generate AI suggested replies.
+   295→          </p>
+   296→        </div>
+   297→        <Button
+   298→          variant="outline"
+   299→          size="sm"
+   300→          onClick={fetchList}
+   301→          disabled={loadingList}
+   302→        >
+   303→          <RefreshCw size={14} className={loadingList ? "animate-spin" : ""} />
+   304→          Refresh
+   305→        </Button>
+   306→      </div>
+   307→
+   308→      <div className="flex flex-1 min-h-0 gap-4">
+   309→        {/* ── LEFT: list ─────────────────────────────────────────────── */}
+   310→        <aside
+   311→          className={cn(
+   312→            "w-full lg:w-80 xl:w-96 shrink-0 flex flex-col bg-card border rounded-xl overflow-hidden",
+   313→            showDetailOnMobile && "hidden lg:flex"
+   314→          )}
+   315→        >
+   316→          {/* Search */}
+   317→          <div className="p-3 border-b">
+   318→            <div className="relative">
+   319→              <Search
+   320→                size={14}
+   321→                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+   322→              />
+   323→              <Input
+   324→                value={searchInput}
+   325→                onChange={(e) => setSearchInput(e.target.value)}
+   326→                placeholder="Search name or email…"
+   327→                className="pl-8 h-9"
+   328→              />
+   329→            </div>
+   330→            <div className="flex items-center gap-1 mt-2 flex-wrap">
+   331→              {statusFilters.map((f) => (
+   332→                <button
+   333→                  key={f.key}
+   334→                  onClick={() => setStatusFilter(f.key)}
+   335→                  className={cn(
+   336→                    "px-2.5 py-1 rounded-full text-xs font-medium transition-colors",
+   337→                    statusFilter === f.key
+   338→                      ? "bg-primary text-primary-foreground"
+   339→                      : "bg-secondary text-secondary-foreground hover:bg-secondary/70"
+   340→                  )}
+   341→                >
+   342→                  {f.label}
+   343→                </button>
+   344→              ))}
+   345→            </div>
+   346→          </div>
+   347→
+   348→          {/* List */}
+   349→          <div className="flex-1 overflow-y-auto scroll-thin">
+   350→            {loadingList ? (
+   351→              <ListSkeleton />
+   352→            ) : sessions.length === 0 ? (
+   353→              <EmptyList />
+   354→            ) : (
+   355→              <ul className="divide-y">
+   356→                {sessions.map((s) => (
+   357→                  <li key={s.id}>
+   358→                    <button
+   359→                      onClick={() => setSelectedId(s.id)}
+   360→                      className={cn(
+   361→                        "w-full text-left p-3 hover:bg-accent/30 transition-colors flex gap-3 items-start",
+   362→                        selectedId === s.id && "bg-accent/40"
+   363→                      )}
+   364→                    >
+   365→                      <Avatar className="size-9 shrink-0">
+   366→                        <AvatarFallback className="brand-gradient text-white text-xs font-semibold">
+   367→                          {initials(visitorLabel(s))}
+   368→                        </AvatarFallback>
+   369→                      </Avatar>
+   370→                      <div className="flex-1 min-w-0">
+   371→                        <div className="flex items-center justify-between gap-2">
+   372→                          <span className="text-sm font-medium truncate">
+   373→                            {visitorLabel(s)}
+   374→                          </span>
+   375→                          <span className="text-[10px] text-muted-foreground shrink-0">
+   376→                            {timeAgo(s.updatedAt)}
+   377→                          </span>
+   378→                        </div>
+   379→                        {s.visitorEmail && (
+   380→                          <div className="text-xs text-muted-foreground truncate">
+   381→                            {s.visitorEmail}
+   382→                          </div>
+   383→                        )}
+   384→                        <div className="text-xs text-muted-foreground truncate mt-0.5">
+   385→                          {s.latestMessage?.content || (
+   386→                            <span className="italic">No messages yet</span>
+   387→                          )}
+   388→                        </div>
+   389→                        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+   390→                          <StatusBadge status={s.status} />
+   391→                          {s.leadQuality && (
+   392→                            <LeadQualityBadge quality={s.leadQuality} />
+   393→                          )}
+   394→                          {s.lead && (
+   395→                            <Badge
+   396→                              variant="outline"
+   397→                              className="text-[10px] h-4 px-1.5"
+   398→                            >
+   399→                              <Tag size={9} /> lead
+   400→                            </Badge>
+   401→                          )}
+   402→                        </div>
+   403→                      </div>
+   404→                    </button>
+   405→                  </li>
+   406→                ))}
+   407→              </ul>
+   408→            )}
+   409→          </div>
+   410→        </aside>
+   411→
+   412→        {/* ── RIGHT: detail ─────────────────────────────────────────── */}
+   413→        <section
+   414→          className={cn(
+   415→            "flex-1 min-w-0 flex flex-col bg-card border rounded-xl overflow-hidden",
+   416→            !showDetailOnMobile && "hidden lg:flex"
+   417→          )}
+   418→        >
+   419→          {!selectedId ? (
+   420→            <EmptyDetail />
+   421→          ) : loadingDetail ? (
+   422→            <DetailSkeleton />
+   423→          ) : !detail ? (
+   424→            <EmptyDetail />
+   425→          ) : (
+   426→            <>
+   427→              {/* Header */}
+   428→              <header className="px-4 py-3 border-b flex items-center gap-3 shrink-0">
+   429→                <Button
+   430→                  size="icon"
+   431→                  variant="ghost"
+   432→                  className="lg:hidden -ml-2"
+   433→                  onClick={() => setSelectedId(null)}
+   434→                >
+   435→                  <ArrowLeft size={18} />
+   436→                </Button>
+   437→                <Avatar className="size-10 shrink-0">
+   438→                  <AvatarFallback className="brand-gradient text-white text-sm font-semibold">
+   439→                    {initials(visitorLabel(detail))}
+   440→                  </AvatarFallback>
+   441→                </Avatar>
+   442→                <div className="flex-1 min-w-0">
+   443→                  <div className="flex items-center gap-2 flex-wrap">
+   444→                    <span className="font-medium truncate">
+   445→                      {visitorLabel(detail)}
+   446→                    </span>
+   447→                    <StatusBadge status={detail.status} />
+   448→                    {detail.leadQuality && (
+   449→                      <LeadQualityBadge quality={detail.leadQuality} />
+   450→                    )}
+   451→                  </div>
+   452→                  <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap mt-0.5">
+   453→                    {detail.visitorEmail && (
+   454→                      <span className="inline-flex items-center gap-1">
+   455→                        <Mail size={11} /> {detail.visitorEmail}
+   456→                      </span>
+   457→                    )}
+   458→                    {detail.visitorPhone && (
+   459→                      <span className="inline-flex items-center gap-1">
+   460→                        <Phone size={11} /> {detail.visitorPhone}
+   461→                      </span>
+   462→                    )}
+   463→                    <span className="inline-flex items-center gap-1">
+   464→                      <Clock size={11} /> {timeAgo(detail.updatedAt)}
+   465→                    </span>
+   466→                    {detail.lead && (
+   467→                      <span className="inline-flex items-center gap-1">
+   468→                        <Tag size={11} /> {detail.lead.service || "lead captured"}
+   469→                      </span>
+   470→                    )}
+   471→                  </div>
+   472→                </div>
+   473→              </header>
+   474→
+   475→              {/* Messages */}
+   476→              <div className="flex-1 overflow-y-auto scroll-thin p-4 bg-muted/30">
+   477→                <div className="flex flex-col gap-3 max-w-3xl mx-auto">
+   478→                  {detail.messages.length === 0 ? (
+   479→                    <div className="text-center text-sm text-muted-foreground py-12">
+   480→                      <MessageSquare size={32} className="mx-auto mb-2 opacity-40" />
+   481→                      No messages in this conversation.
+   482→                    </div>
+   483→                  ) : (
+   484→                    detail.messages.map((m) => (
+   485→                      <MessageBubble key={m.id} message={m} />
+   486→                    ))
+   487→                  )}
+   488→                  <div ref={messagesEndRef} />
+   489→                </div>
+   490→              </div>
+   491→
+   492→              {/* AI Suggested Replies panel */}
+   493→              <div className="shrink-0 border-t bg-background p-3 lg:p-4">
+   494→                <Card className="border-primary/20">
+   495→                  <CardHeader className="pb-3">
+   496→                    <div className="flex items-center justify-between gap-2">
+   497→                      <div className="flex items-center gap-2">
+   498→                        <div className="size-7 rounded-md brand-gradient flex items-center justify-center text-white">
+   499→                          <Sparkles size={14} />
+   500→                        </div>
+   501→                        <div>
+   502→                          <CardTitle className="text-sm">
+   503→                            AI Suggested Replies
+   504→                          </CardTitle>
+   505→                          <CardDescription className="text-xs">
+   506→                            Review and copy/send manually — auto-send is disabled.
+   507→                          </CardDescription>
+   508→                        </div>
+   509→                      </div>
+   510→                      <Button
+   511→                        size="sm"
+   512→                        onClick={generateSuggestions}
+   513→                        disabled={generating}
+   514→                      >
+   515→                        {generating ? (
+   516→                          <>
+   517→                            <Loader2 size={14} className="animate-spin" />
+   518→                            Generating…
+   519→                          </>
+   520→                        ) : suggestions ? (
+   521→                          <>
+   522→                            <RefreshCw size={14} />
+   523→                            Regenerate
+   524→                          </>
+   525→                        ) : (
+   526→                          <>
+   527→                            <Sparkles size={14} />
+   528→                            Generate suggestions
+   529→                          </>
+   530→                        )}
+   531→                      </Button>
+   532→                    </div>
+   533→                  </CardHeader>
+   534→                  <CardContent className="pt-0">
+   535→                    {generating ? (
+   536→                      <SuggestionsSkeleton />
+   537→                    ) : !suggestions ? (
+   538→                      <div className="text-sm text-muted-foreground py-3 px-1">
+   539→                        Click <span className="font-medium">Generate suggestions</span> to
+   540→                        analyze this conversation with AI. You&apos;ll get a summary,
+   541→                        a suggested follow-up message, lead quality, and a recommended
+   542→                        next action.
+   543→                      </div>
+   544→                    ) : suggestions.parsed === false ? (
+   545→                      <div className="space-y-3">
+   546→                        <div className="flex items-start gap-2 p-3 rounded-md bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+   547→                          <AlertCircle size={14} className="mt-0.5 shrink-0" />
+   548→                          <span>
+   549→                            The AI did not return valid JSON. Showing the raw response
+   550→                            below. You can still copy it manually.
+   551→                          </span>
+   552→                        </div>
+   553→                        <Textarea
+   554→                          readOnly
+   555→                          value={suggestions.text || ""}
+   556→                          className="h-48 text-xs font-mono"
+   557→                        />
+   558→                        <Button
+   559→                          size="sm"
+   560→                          variant="outline"
+   561→                          onClick={() =>
+   562→                            copyText(suggestions.text || "", "Raw text copied")
+   563→                          }
+   564→                        >
+   565→                          <Copy size={14} /> Copy raw text
+   566→                        </Button>
+   567→                      </div>
+   568→                    ) : (
+   569→                      <div className="space-y-3">
+   570→                        {/* Summary */}
+   571→                        {suggestions.summary && (
+   572→                          <SuggestionField
+   573→                            label="Summary"
+   574→                            icon={<MessageSquare size={12} />}
+   575→                          >
+   576→                            <p className="text-sm leading-relaxed">
+   577→                              {suggestions.summary}
+   578→                            </p>
+   579→                          </SuggestionField>
+   580→                        )}
+   581→
+   582→                        {/* Follow-up message */}
+   583→                        {suggestions.follow_up_message && (
+   584→                          <SuggestionField
+   585→                            label="Suggested follow-up message"
+   586→                            icon={<Send size={12} />}
+   587→                            action={
+   588→                              <Button
+   589→                                size="sm"
+   590→                                variant="outline"
+   591→                                className="h-7"
+   592→                                onClick={() =>
+   593→                                  copyText(
+   594→                                    followUpEdit || suggestions.follow_up_message!,
+   595→                                    "Follow-up message copied"
+   596→                                  )
+   597→                                }
+   598→                              >
+   599→                                {copied ? (
+   600→                                  <Check size={12} />
+   601→                                ) : (
+   602→                                  <Copy size={12} />
+   603→                                )}
+   604→                                Copy
+   605→                              </Button>
+   606→                            }
+   607→                          >
+   608→                            <Textarea
+   609→                              value={followUpEdit}
+   610→                              onChange={(e) => setFollowUpEdit(e.target.value)}
+   611→                              className="min-h-[80px] text-sm"
+   612→                            />
+   613→                          </SuggestionField>
+   614→                        )}
+   615→
+   616→                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+   617→                          {/* Lead quality */}
+   618→                          <SuggestionField
+   619→                            label="Lead quality"
+   620→                            icon={<Tag size={12} />}
+   621→                          >
+   622→                            {suggestions.lead_quality ? (
+   623→                              <LeadQualityBadge
+   624→                                quality={suggestions.lead_quality}
+   625→                                size="md"
+   626→                              />
+   627→                            ) : (
+   628→                              <span className="text-xs text-muted-foreground">
+   629→                                Not assessed
+   630→                              </span>
+   631→                            )}
+   632→                          </SuggestionField>
+   633→
+   634→                          {/* Next action */}
+   635→                          <SuggestionField
+   636→                            label="Recommended next action"
+   637→                            icon={<Sparkles size={12} />}
+   638→                          >
+   639→                            <p className="text-sm leading-relaxed">
+   640→                              {suggestions.next_action || (
+   641→                                <span className="text-muted-foreground">—</span>
+   642→                              )}
+   643→                            </p>
+   644→                          </SuggestionField>
+   645→                        </div>
+   646→
+   647→                        <Separator />
+   648→
+   649→                        <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+   650→                          <AlertCircle size={11} />
+   651→                          Auto-send is disabled. Copy the follow-up message and send it
+   652→                          manually via email, WhatsApp, or your CRM.
+   653→                        </p>
+   654→                      </div>
+   655→                    )}
+   656→                  </CardContent>
+   657→                </Card>
+   658→              </div>
+   659→            </>
+   660→          )}
+   661→        </section>
+   662→      </div>
+   663→    </div>
+   664→  );
+   665→}
+   666→
+   667→// ─── Sub-components ───────────────────────────────────────────────────
+   668→
+   669→function MessageBubble({ message }: { message: ChatMessage }) {
+   670→  const isUser = message.role === "user";
+   671→  const isSystem = message.role === "system";
+   672→  const time = new Date(message.createdAt).toLocaleTimeString([], {
+   673→    hour: "2-digit",
+   674→    minute: "2-digit",
+   675→  });
+   676→
+   677→  if (isSystem) {
+   678→    return (
+   679→      <div className="flex justify-center my-2">
+   680→        <span className="text-[11px] text-muted-foreground bg-muted px-2.5 py-1 rounded-full">
+   681→          {message.content} · {time}
+   682→        </span>
+   683→      </div>
+   684→    );
+   685→  }
+   686→
+   687→  return (
+   688→    <div
+   689→      className={cn(
+   690→        "flex items-end gap-2",
+   691→        isUser ? "justify-end" : "justify-start"
+   692→      )}
+   693→    >
+   694→      {!isUser && (
+   695→        <div className="size-7 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+   696→          <Bot size={14} />
+   697→        </div>
+   698→      )}
+   699→      <div
+   700→        className={cn(
+   701→          "max-w-[78%] rounded-2xl px-3.5 py-2 text-sm shadow-sm break-words",
+   702→          isUser
+   703→            ? "bg-primary text-primary-foreground rounded-br-sm"
+   704→            : "bg-background border rounded-bl-sm"
+   705→        )}
+   706→      >
+   707→        <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
+   708→        <div
+   709→          className={cn(
+   710→            "text-[10px] mt-1",
+   711→            isUser ? "text-primary-foreground/70" : "text-muted-foreground"
+   712→          )}
+   713→        >
+   714→          {time}
+   715→        </div>
+   716→      </div>
+   717→      {isUser && (
+   718→        <div className="size-7 rounded-full bg-accent text-accent-foreground flex items-center justify-center shrink-0">
+   719→          <UserIcon size={14} />
+   720→        </div>
+   721→      )}
+   722→    </div>
+   723→  );
+   724→}
+   725→
+   726→function StatusBadge({ status }: { status: string }) {
+   727→  const map: Record<string, { label: string; className: string }> = {
+   728→    active: {
+   729→      label: "Active",
+   730→      className: "bg-accent text-accent-foreground border-transparent",
+   731→    },
+   732→    ended: {
+   733→      label: "Ended",
+   734→      className:
+   735→        "bg-secondary text-secondary-foreground border-transparent",
+   736→    },
+   737→    handover: {
+   738→      label: "Handover",
+   739→      className: "bg-amber-500 text-white border-transparent",
+   740→    },
+   741→  };
+   742→  const cfg = map[status] || {
+   743→    label: status,
+   744→    className: "bg-secondary text-secondary-foreground border-transparent",
+   745→  };
+   746→  return (
+   747→    <Badge className={cn("text-[10px] h-4 px-1.5", cfg.className)}>
+   748→      {cfg.label}
+   749→    </Badge>
+   750→  );
+   751→}
+   752→
+   753→function LeadQualityBadge({
+   754→  quality,
+   755→  size = "sm",
+   756→}: {
+   757→  quality: string;
+   758→  size?: "sm" | "md";
+   759→}) {
+   760→  const map: Record<string, { label: string; className: string }> = {
+   761→    low: {
+   762→      label: "Low",
+   763→      className:
+   764→        "bg-secondary text-secondary-foreground border-transparent",
+   765→    },
+   766→    medium: {
+   767→      label: "Medium",
+   768→      className: "bg-primary/15 text-primary border-transparent",
+   769→    },
+   770→    high: {
+   771→      label: "High",
+   772→      className: "bg-accent text-accent-foreground border-transparent",
+   773→    },
+   774→  };
+   775→  const cfg = map[quality] || {
+   776→    label: quality,
+   777→    className: "bg-secondary text-secondary-foreground border-transparent",
+   778→  };
+   779→  return (
+   780→    <Badge
+   781→      className={cn(
+   782→        size === "md" ? "text-xs h-5 px-2" : "text-[10px] h-4 px-1.5",
+   783→        cfg.className
+   784→      )}
+   785→    >
+   786→      <Tag size={size === "md" ? 11 : 9} /> {cfg.label} quality
+   787→    </Badge>
+   788→  );
+   789→}
+   790→
+   791→function SuggestionField({
+   792→  label,
+   793→  icon,
+   794→  children,
+   795→  action,
+   796→}: {
+   797→  label: string;
+   798→  icon?: React.ReactNode;
+   799→  children: React.ReactNode;
+   800→  action?: React.ReactNode;
+   801→}) {
+   802→  return (
+   803→    <div className="rounded-lg border bg-muted/30 p-3">
+   804→      <div className="flex items-center justify-between mb-1.5">
+   805→        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground inline-flex items-center gap-1">
+   806→          {icon}
+   807→          {label}
+   808→        </span>
+   809→        {action}
+   810→      </div>
+   811→      {children}
+   812→    </div>
+   813→  );
+   814→}
+   815→
+   816→function ListSkeleton() {
+   817→  return (
+   818→    <div className="p-3 space-y-3">
+   819→      {Array.from({ length: 6 }).map((_, i) => (
+   820→        <div key={i} className="flex gap-3">
+   821→          <Skeleton className="size-9 rounded-full" />
+   822→          <div className="flex-1 space-y-1.5">
+   823→            <Skeleton className="h-3 w-2/3" />
+   824→            <Skeleton className="h-2.5 w-1/2" />
+   825→            <Skeleton className="h-2.5 w-4/5" />
+   826→          </div>
+   827→        </div>
+   828→      ))}
+   829→    </div>
+   830→  );
+   831→}
+   832→
+   833→function DetailSkeleton() {
+   834→  return (
+   835→    <div className="flex-1 flex flex-col">
+   836→      <div className="p-4 border-b flex gap-3 items-center">
+   837→        <Skeleton className="size-10 rounded-full" />
+   838→        <div className="flex-1 space-y-2">
+   839→          <Skeleton className="h-4 w-1/3" />
+   840→          <Skeleton className="h-3 w-1/2" />
+   841→        </div>
+   842→      </div>
+   843→      <div className="flex-1 p-4 space-y-4">
+   844→        {Array.from({ length: 5 }).map((_, i) => (
+   845→          <div
+   846→            key={i}
+   847→            className={cn(
+   848→              "flex",
+   849→              i % 2 === 0 ? "justify-end" : "justify-start"
+   850→            )}
+   851→          >
+   852→            <Skeleton className="h-14 w-3/5 rounded-2xl" />
+   853→          </div>
+   854→        ))}
+   855→      </div>
+   856→    </div>
+   857→  );
+   858→}
+   859→
+   860→function SuggestionsSkeleton() {
+   861→  return (
+   862→    <div className="space-y-3">
+   863→      <Skeleton className="h-16 w-full rounded-lg" />
+   864→      <Skeleton className="h-24 w-full rounded-lg" />
+   865→      <div className="grid grid-cols-2 gap-3">
+   866→        <Skeleton className="h-12 rounded-lg" />
+   867→        <Skeleton className="h-12 rounded-lg" />
+   868→      </div>
+   869→    </div>
+   870→  );
+   871→}
+   872→
+   873→function EmptyList() {
+   874→  return (
+   875→    <div className="p-6 text-center text-sm text-muted-foreground">
+   876→      <MessageSquare size={28} className="mx-auto mb-2 opacity-40" />
+   877→      No conversations found.
+   878→      <div className="text-xs mt-1">
+   879→        Try changing the filter or search term.
+   880→      </div>
+   881→    </div>
+   882→  );
+   883→}
+   884→
+   885→function EmptyDetail() {
+   886→  return (
+   887→    <div className="flex-1 flex items-center justify-center p-8 text-center">
+   888→      <div>
+   889→        <div className="size-14 rounded-2xl brand-gradient flex items-center justify-center text-white mx-auto mb-3">
+   890→          <MessageSquare size={24} />
+   891→        </div>
+   892→        <h3 className="font-medium">Select a conversation</h3>
+   893→        <p className="text-sm text-muted-foreground mt-1 max-w-xs mx-auto">
+   894→          Choose a chat from the list to view its transcript, then generate AI
+   895→          suggested replies for your team.
+   896→        </p>
+   897→      </div>
+   898→    </div>
+   899→  );
+   900→}
+   901→
+   902→// ─── Helpers ──────────────────────────────────────────────────────────
+   903→
+   904→function visitorLabel(s: {
+   905→  visitorName: string | null;
+   906→  visitorEmail: string | null;
+   907→  visitorId: string | null;
+   908→}): string {
+   909→  if (s.visitorName && s.visitorName.trim()) return s.visitorName.trim();
+   910→  if (s.visitorEmail && s.visitorEmail.trim()) return s.visitorEmail.trim();
+   911→  if (s.visitorId) return `Visitor ${s.visitorId.slice(-4)}`;
+   912→  return "Anonymous visitor";
+   913→}
+   914→
+   915→function initials(name: string): string {
+   916→  const parts = name.trim().split(/\s+/).filter(Boolean);
+   917→  if (parts.length === 0) return "?";
+   918→  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+   919→  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+   920→}
+   921→
+   922→function timeAgo(iso: string): string {
+   923→  const d = new Date(iso);
+   924→  if (isNaN(d.getTime())) return "";
+   925→  const now = Date.now();
+   926→  const diff = now - d.getTime();
+   927→  const min = 60 * 1000;
+   928→  const hour = 60 * min;
+   929→  const day = 24 * hour;
+   930→  if (diff < min) return "just now";
+   931→  if (diff < hour) return `${Math.floor(diff / min)}m`;
+   932→  if (diff < day) return `${Math.floor(diff / hour)}h`;
+   933→  if (diff < 7 * day) return `${Math.floor(diff / day)}d`;
+   934→  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+   935→}
+   936→

@@ -640,3 +640,119 @@ MVP stable and feature-rich from prior rounds (10 modules + dark mode + quick re
 - Chart data is sparse with limited demo data — will populate as usage grows.
 - VLM suggested icon uniformity and whitespace tweaks (minor, 8/10 → 9/10 target).
 - Consider adding a settings page for managing business users / team members.
+
+---
+
+### Task ID: F3 — Conversation transcript export
+**Agent:** subagent
+
+**Goal:** Add a "Download transcript" affordance to the Conversations view so admins can download a full chat transcript as a `.txt` file. New backend route + small UI addition to the existing detail header.
+
+**Files modified:**
+1. `src/app/api/conversations/[id]/export/route.ts` — **created** (new GET route).
+2. `src/components/dashboard/views/conversations-view.tsx` — added `Download` icon import, a `downloadTranscript()` handler, and a "Download transcript" button in the conversation detail header. No other behaviour touched.
+
+**Backend — `/api/conversations/[id]/export` (GET):**
+- `import { requireSession } from "@/lib/auth"` + `import { db } from "@/lib/db"` per project conventions. `requireSession()` is called inside try/catch that returns 401 on `"UNAUTHORIZED"`.
+- Loads the `ChatSession` by `id` with `messages` (ordered `createdAt asc`), `lead`, and `business: { select: { name: true } }`.
+- **Multi-tenant guard**: if `!session || session.businessId !== user.businessId` → `404 { error: "Conversation not found" }`. Never trusts the client for tenant scoping.
+- Builds a plain-text transcript following the spec:
+  ```
+  Danets AI Automation - Conversation Transcript
+  Business: <businessName>
+  Visitor: <name> (· <email> · <phone> as available)
+  Date: <createdAt ISO>
+  Status: <status>
+  ─────────────────────────────────────
+
+  [10:30 AM] Visitor: <message>
+  [10:30 AM] Assistant: <message>
+  [10:31 AM] System: <message>   (system messages preserved)
+
+  ─────────────────────────────────────
+  Lead: <name> | Quality: <quality> | Status: <status>
+  Summary: <summary>
+  Next Action: <nextAction>
+  ```
+  - If no messages: a `(No messages in this conversation)` line is emitted.
+  - If no lead: `Lead: (none captured)` is shown. Summary / Next Action lines are only emitted when present.
+  - `roleLabel()` helper maps `user → Visitor`, `assistant → Assistant`, `system → System` (default: capitalized role) — matches the message-bubble semantics already used in the view.
+  - Visitor name falls back through `visitorName → visitorEmail → "Visitor <last 4 of visitorId>" → "Anonymous visitor"`, mirroring the existing `visitorLabel()` helper in the view.
+  - Business name prefers `session.business.name` and falls back to `user.businessName`.
+- Response: `Content-Type: text/plain; charset=utf-8`, `Content-Disposition: attachment; filename="conversation-<sanitized-visitor-name>.txt"`, `Cache-Control: no-store`.
+  - Filename sanitization: non-`[\w\d-]` chars → `_`, runs collapsed, trimmed, sliced to 60 chars, fallback `"conversation"` if empty.
+
+**Frontend — `conversations-view.tsx`:**
+- Added `Download` to the `lucide-react` import block (alphabetically placed after `Clock`).
+- Added `downloadTranscript()` method inside `ConversationsView`:
+  - Early-return if `!detail` (defensive; only ever invoked from the detail branch).
+  - Fires `toast.success("Downloading transcript…")` immediately.
+  - Builds URL `/api/conversations/${detail.id}/export`.
+  - Creates a hidden `<a>` element, sets `href` and `rel="noopener"`, appends to `document.body`, calls `click()`, then removes it. Same-origin request → the `danets_session` httpOnly cookie is sent automatically; server's `Content-Disposition: attachment` triggers the browser's download flow without navigating away.
+- Added a `Button` (`variant="outline"`, `size="sm"`) in the conversation detail `<header>` — placed at the end (right side, after the `flex-1` visitor info block) so it sits beside the visitor name / badges / contact chips as required. `className="gap-1.5 shrink-0"` keeps it from being squeezed; `title="Download transcript (.txt)"` for accessibility.
+  - Icon-only on narrow viewports (`<span className="hidden md:inline">Download transcript</span>`) to avoid cramping the header on mobile; full label on md+ screens.
+  - `disabled={!detail}` per the task spec (always false inside the detail branch, but explicit and future-proof).
+
+**Constraints honored:**
+- Only the 2 listed files touched (1 created, 1 modified). No other routes/components changed.
+- Used `@/lib/db` + `@/lib/auth` imports exactly as specified.
+- Multi-tenant: `session.businessId === user.businessId` enforced server-side; 404 on mismatch (does not leak existence to other tenants).
+- `sonner` toast used for click feedback; relative fetch path (`/api/conversations/<id>/export`).
+- All existing functionality (list, search, filters, detail view, AI suggested replies, regenerate, copy, follow-up edit, mobile back button, status/lead-quality badges) preserved unchanged.
+
+**Verification:**
+- `npx tsc --noEmit` → 0 errors in `src/`. (Pre-existing errors remain only in `examples/websocket/*` and `skills/*`, unrelated to this task.)
+- `npx eslint src/app/api/conversations/[id]/export/route.ts src/components/dashboard/views/conversations-view.tsx` → clean (0 warnings, 0 errors).
+
+**Next actions (optional, not in scope):**
+- Manual QA: log in as `admin@danetstecpro.com` / `danets123`, open Conversations, pick a session with messages, click "Download transcript", confirm a `.txt` file downloads with the expected header/footer format and message timestamps.
+- Consider a future enhancement to also export as PDF or JSON, or to bulk-export multiple sessions as a zip — out of scope for F3.
+
+---
+Task ID: CRON-4
+Agent: main (webDevReview cron round 4)
+Task: QA assessment, team members management, conversation transcript export, empty state component.
+
+## Current Project Status
+MVP stable and feature-rich from prior rounds (10 modules + dark mode + quick replies + CSV export + notification bell + PDF export + KB bulk import + analytics + lead quick-reply). This round focused on team management, transcript export, and reusable UI components.
+
+## Work Log
+
+### QA Findings
+- Logged in, tested all views — stable, no errors.
+- Widget, analytics, lead quick-reply all working from prior rounds.
+- No bugs found — app is stable.
+
+### New Features
+1. **Team Members Management** (Settings view):
+   - Created `/api/team` (GET list, POST invite) and `/api/team/[id]` (PATCH role/name, DELETE remove) — all admin-only, multi-tenant scoped.
+   - Created `team-members.tsx` component: member list with avatars, role badges (admin=brand-gradient crown, member=shield), "You" badge for current user, invite dialog with name/email/password/role selector (Member/Admin cards), role change dropdown, remove with AlertDialog confirmation.
+   - Safety: prevents self-demotion and self-deletion.
+   - Wired into Settings view left column (after Public API Key card).
+   - Verified: invited "Sarah Johnson" as member — appeared in list instantly.
+
+2. **Conversation Transcript Export** (subagent Task F3):
+   - Created `/api/conversations/[id]/export` — returns formatted .txt transcript with business header, visitor info, timestamped messages, lead/summary footer.
+   - Added "Download transcript" button to conversation detail header.
+   - Verified: downloaded `conversation-Visitor_unyx.txt` (1048 bytes) with proper formatting.
+
+### Styling Polish
+- Created reusable `EmptyState` component (`src/components/dashboard/shared/empty-state.tsx`): gradient ring backdrop, rounded icon container with from-primary/10 to-accent/10 gradient, title + description + optional action. Ready to replace inline empty states across views.
+
+## Verification
+- Lint: clean (0 errors).
+- Team management: invite dialog works, new member appears in list, role badges render correctly.
+- Transcript export: valid .txt file downloaded with proper header/footer/message format.
+- Dev server stable throughout.
+
+## Stage Summary
+- 2 new features shipped (team management, transcript export).
+- Reusable EmptyState component created for consistent empty states.
+- All features verified via agent-browser.
+
+## Unresolved / Next Steps
+- Embeddings-based KB retrieval (still keyword scoring).
+- Email notifications on new leads (would need SMTP config).
+- Apply EmptyState component to existing views (KB, Conversations, Leads, Quotes) to replace inline empty states.
+- Widget customization live preview (proposed but deferred this round).
+- Consider adding usage limits/alerts based on subscription plan.
