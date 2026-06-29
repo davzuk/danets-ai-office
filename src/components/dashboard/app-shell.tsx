@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   LayoutDashboard,
   Bot,
@@ -15,11 +15,13 @@ import {
   Code2,
   Settings,
   ChevronRight,
+  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DanetsLogo } from "@/components/dashboard/shared/danets-logo";
 import { ThemeToggle } from "@/components/dashboard/shared/theme-toggle";
 import { NotificationBell } from "@/components/dashboard/shared/notification-bell";
+import { CommandPalette } from "@/components/dashboard/shared/command-palette";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -73,6 +75,19 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [cmdOpen, setCmdOpen] = useState(false);
+
+  // Cmd+K / Ctrl+K to open command palette
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setCmdOpen((o) => !o);
+      }
+    }
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   const groups: { key: NavItem["group"]; label: string }[] = [
     { key: "main", label: "Workspace" },
@@ -158,6 +173,26 @@ export function AppShell({
             </span>
           </div>
           <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => setCmdOpen(true)}
+              className="hidden md:flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted transition-colors w-48"
+              aria-label="Open command palette"
+            >
+              <Search size={14} />
+              <span className="flex-1 text-left">Search…</span>
+              <kbd className="text-[10px] font-medium bg-background border rounded px-1.5 py-0.5">
+                ⌘K
+              </kbd>
+            </button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 md:hidden"
+              onClick={() => setCmdOpen(true)}
+              aria-label="Search"
+            >
+              <Search size={18} />
+            </Button>
             <div className="hidden md:flex items-center gap-2 rounded-full bg-accent/20 px-3 py-1 text-xs font-medium text-accent-foreground">
               <span className="h-2 w-2 rounded-full bg-accent animate-pulse" />
               Agent online
@@ -189,6 +224,12 @@ export function AppShell({
           </div>
         </footer>
       </div>
+
+      <CommandPalette
+        open={cmdOpen}
+        onOpenChange={setCmdOpen}
+        onNavigate={onNavigate}
+      />
     </div>
   );
 }

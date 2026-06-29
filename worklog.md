@@ -756,3 +756,101 @@ MVP stable and feature-rich from prior rounds (10 modules + dark mode + quick re
 - Apply EmptyState component to existing views (KB, Conversations, Leads, Quotes) to replace inline empty states.
 - Widget customization live preview (proposed but deferred this round).
 - Consider adding usage limits/alerts based on subscription plan.
+
+---
+Task ID: F1
+Agent: subagent
+Task: Add colored category tags to the Knowledge Base view (consistent color map + clickable filter chips + colored card badges).
+
+File modified:
+- `src/components/dashboard/views/knowledge-view.tsx` (only file touched).
+
+What was added:
+
+1. **Category color system** (module-level, above `KnowledgeView`):
+   - `CATEGORY_PALETTE` — 8 keys (`emerald`, `primary`, `accent`, `amber`, `violet`, `rose`, `cyan`, `orange`), each providing 4 class strings: `dot`, `filled`, `soft`, `outline`. No raw indigo/blue — uses project brand tokens (`bg-primary` / `bg-accent`) + Tailwind palette colors for variety.
+   - `CATEGORY_NAME_MAP` — explicit lowercased name → palette key mapping: `about→emerald`, `services`/`service→primary`, `support→accent`, `pricing→amber`, `faq`/`faqs→violet`, `imported→rose`.
+   - `hashCategoryToKey()` — 32-bit DJB-style hash on lowercased category name, modulo palette length. Guarantees every unknown category gets a deterministic, stable color across renders.
+   - `getCategoryColorKey()` + `getCategoryColor()` — public helpers used by both the chips and the badges so colors stay consistent.
+   - All class strings are literal substrings in source so Tailwind v4's scanner picks them up.
+
+2. **Filter chips row** (replaces the old category `Select` dropdown in the toolbar):
+   - Horizontal scrollable (`overflow-x-auto scroll-thin`) row of `CategoryChip` buttons, placed directly below the search input and above the status `Tabs`.
+   - First chip is always **"All"** (no dot, primary filled style when active) — active by default, clearing the category filter.
+   - Each category chip shows a colored dot (matching the category color), the category name, and a count pill.
+   - Active chip = filled background (category color, white text); inactive chip = outline (colored text + border + tinted hover bg). Counts come from a new `categoryCounts` memo (derived from `stats.byCategory`, falls back to the current `items` array before stats load) so counts stay stable even when other filters narrow the visible list.
+   - Chips are keyboard-accessible (`aria-pressed`, `title`, `role="group"` on the container).
+
+3. **Card badges updated** (`CategoryBadge` rewritten):
+   - Now reads from `getCategoryColor()` and renders a colored dot + soft-tinted background + matching text color + subtle border. Active state uses the `filled` style (e.g. when the badge's category matches the current filter).
+   - Made clickable via shadcn `Badge`'s `asChild` prop → renders a real `<button>` with `aria-label` / `aria-pressed` when an `onClick` is passed.
+   - `KbCard` now accepts `onFilterCategory` + `activeCategory` props; clicking any card's category badge sets the toolbar filter to that category (and the matching badge lights up as the active style). The preview dialog still uses `<CategoryBadge>` without `onClick`, so it renders as a non-interactive colored badge — same consistent styling.
+
+4. **Consistency**: chips and badges both call `getCategoryColor(category)` → identical palette, identical dot color, identical active/inactive styling.
+
+Constraints honored:
+- Only `src/components/dashboard/views/knowledge-view.tsx` modified. No backend, schema, or other view changes.
+- No raw indigo / blue Tailwind classes — brand tokens `primary` (blue) and `accent` (lemon green) used for those palette slots; emerald / amber / violet / rose / cyan / orange for variety.
+- All existing functionality preserved: debounced search, status Tabs filter, CRUD (create/edit/delete/toggle), bulk import dialog, stats row, preview dialog, reset-filters button, empty states, sonner toasts, multi-tenant fetches.
+- Existing shadcn/ui components reused (`Badge` with `asChild`, `Button`, `Card`, `Input`, `Tabs`, etc.). No new deps.
+- `Select` import retained — still used by the source-type and status fields in the create/edit dialog.
+
+Verification:
+- `bunx tsc --noEmit` — no errors in `src/components/dashboard/views/knowledge-view.tsx` (pre-existing unrelated errors elsewhere untouched).
+- `bunx eslint src/components/dashboard/views/knowledge-view.tsx` — clean (0 warnings, 0 errors).
+- Manual review confirmed: category `Select` dropdown removed from toolbar; chips row + `categoryCounts` memo added; `KbCard` props + `CategoryBadge` signature updated consistently at the call site; preview dialog badge still renders (no `onClick`).
+
+Stage Summary:
+- KB categories now have stable, deterministic colors across the entire view. Admins can visually scan the list, click any chip in the toolbar to filter, or click any card's colored category badge to filter by that category. The "All" chip restores the full list. Colors are consistent between chips and card badges because both read from the single `CATEGORY_PALETTE` map.
+
+---
+Task ID: CRON-5
+Agent: main (webDevReview cron round 5)
+Task: QA assessment, command palette (Cmd+K), KB category color tags, styling polish.
+
+## Current Project Status
+MVP stable and feature-rich from prior rounds. All modules + dark mode + quick replies + CSV export + notification bell + PDF export + KB bulk import + analytics + lead quick-reply + team management + transcript export working. This round focused on power-user UX (command palette) and visual organization (category colors).
+
+## Work Log
+
+### QA Findings
+- Logged in, tested all views — stable, no errors.
+- No bugs found — app is stable.
+
+### New Features
+1. **Command Palette (Cmd+K)**:
+   - Created `command-palette.tsx` using shadcn `cmdk`-based CommandDialog.
+   - Opens with Cmd+K / Ctrl+K keyboard shortcut (global listener in app-shell).
+   - Search button in topbar ("Search… ⌘K") opens palette; mobile gets an icon button.
+   - Sections: Navigation (all 9 views with hints), Quick Actions (New Proposal, New KB Article, Export Leads CSV, Test Widget), Theme toggle (search "theme" → Toggle Dark/Light Mode), Help.
+   - Fuzzy search across all items. Selecting an item navigates + closes palette.
+   - Verified: Cmd+K opens palette, typing "theme" shows toggle, Enter switches to dark mode.
+
+2. **KB Category Color Tags** (subagent Task F1):
+   - Created `CATEGORY_PALETTE` (8 colors: emerald, primary, accent, amber, violet, rose, cyan, orange) + `CATEGORY_NAME_MAP` (About→emerald, Services→primary, Support→accent, Pricing→amber, FAQ→violet, Imported→rose) + `hashCategoryToKey()` for unknown categories.
+   - Replaced category Select dropdown with horizontal scrollable filter chips: "All" + per-category chips with colored dots + count badges. Active chip = filled, inactive = outline.
+   - Updated KB card category badges to use the same color system (colored dot + soft tinted bg + matching text).
+   - Card badges are clickable to filter by that category.
+   - Verified: chips render with colored dots + counts, card badges match chip colors (VLM confirmed).
+
+### Styling Polish
+- Reusable EmptyState component available (created prior round) — leads view already has a custom empty state; KB and other views have inline states that could be unified later.
+- Command palette adds premium power-user feel with keyboard shortcut hint (⌘K) in topbar.
+
+## Verification
+- Lint: clean (0 errors).
+- Command palette: Cmd+K opens, fuzzy search works, navigation + theme toggle verified.
+- KB categories: colored chips with dots + counts, card badges with matching colors (VLM confirmed).
+- Dev server stable throughout.
+
+## Stage Summary
+- 2 new features shipped (command palette, KB category colors).
+- All features verified via agent-browser + VLM.
+
+## Unresolved / Next Steps
+- Embeddings-based KB retrieval (still keyword scoring).
+- Email notifications on new leads (would need SMTP config).
+- Apply EmptyState component uniformly across all views.
+- Widget customization live preview (deferred).
+- Usage limits/alerts based on subscription plan.
+- Consider exporting category color system for reuse in analytics.

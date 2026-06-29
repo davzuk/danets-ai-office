@@ -173,14 +173,102 @@ function SourceBadge({ sourceType }: { sourceType: KbItem["sourceType"] }) {
   );
 }
 
-function CategoryBadge({ category }: { category: string }) {
-  return (
-    <Badge
-      variant="outline"
-      className="border-primary/20 bg-primary/5 text-primary font-medium"
-    >
+function CategoryBadge({
+  category,
+  onClick,
+  active,
+}: {
+  category: string;
+  onClick?: () => void;
+  active?: boolean;
+}) {
+  const color = getCategoryColor(category);
+  const classes = cn(
+    "gap-1 font-medium border transition-opacity",
+    active ? color.filled : color.soft,
+    onClick && "cursor-pointer hover:opacity-80"
+  );
+  const inner = (
+    <>
+      <span
+        className={cn(
+          "h-1.5 w-1.5 rounded-full",
+          active ? "bg-white/80" : color.dot
+        )}
+      />
       {category}
+    </>
+  );
+  if (onClick) {
+    return (
+      <Badge asChild variant="outline" className={classes}>
+        <button
+          type="button"
+          onClick={onClick}
+          aria-label={`Filter by ${category}`}
+          aria-pressed={active}
+        >
+          {inner}
+        </button>
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className={classes}>
+      {inner}
     </Badge>
+  );
+}
+
+function CategoryChip({
+  label,
+  count,
+  active,
+  onClick,
+  category,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+  category?: string;
+}) {
+  const color = category ? getCategoryColor(category) : null;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      title={`Filter by ${label}`}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium whitespace-nowrap transition-colors shrink-0",
+        active
+          ? color
+            ? color.filled
+            : "bg-primary text-primary-foreground border-primary"
+          : color
+          ? cn("bg-background", color.outline)
+          : "bg-background border-border text-foreground hover:bg-muted/50"
+      )}
+    >
+      {color && (
+        <span
+          className={cn(
+            "h-1.5 w-1.5 rounded-full",
+            active ? "bg-white/80" : color.dot
+          )}
+        />
+      )}
+      <span>{label}</span>
+      <span
+        className={cn(
+          "ml-0.5 inline-flex items-center justify-center rounded-full px-1.5 text-[10px] font-semibold tabular-nums leading-4 min-w-[1.25rem]",
+          active ? "bg-white/25 text-current" : "bg-muted text-muted-foreground"
+        )}
+      >
+        {count}
+      </span>
+    </button>
   );
 }
 
@@ -263,6 +351,120 @@ const IMPORT_EXAMPLES: Record<ImportFormat, string> = {
     "Refund Policy\nWe offer 30-day refunds on all plans.\n\nSupport Hours\nMon–Fri, 9am–6pm.",
   json: '[{"title":"...","content":"...","category":"..."}]',
 };
+
+/**
+ * Category color system.
+ *
+ * Common categories are mapped explicitly. Unknown categories are hashed to
+ * one of the palette keys for deterministic per-category coloring. Both the
+ * filter chips and the card badges read from this map so colors stay
+ * consistent across the UI. No raw indigo/blue — uses project brand tokens
+ * (`primary` / `accent`) plus Tailwind emerald/amber/violet/rose/cyan/orange.
+ */
+interface CategoryColorClasses {
+  /** Small solid dot shown inside chips/badges. */
+  dot: string;
+  /** Filled background — active chips + active card badges. */
+  filled: string;
+  /** Soft tinted background — default card badges. */
+  soft: string;
+  /** Outline style — inactive chips. */
+  outline: string;
+}
+
+const CATEGORY_PALETTE: Record<string, CategoryColorClasses> = {
+  emerald: {
+    dot: "bg-emerald-500",
+    filled: "bg-emerald-500 text-white border-emerald-600",
+    soft: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    outline: "border-emerald-300 text-emerald-700 hover:bg-emerald-50",
+  },
+  primary: {
+    dot: "bg-primary",
+    filled: "bg-primary text-primary-foreground border-primary",
+    soft: "bg-primary/10 text-primary border-primary/25",
+    outline: "border-primary/30 text-primary hover:bg-primary/10",
+  },
+  accent: {
+    dot: "bg-accent",
+    filled: "bg-accent text-accent-foreground border-accent",
+    soft: "bg-accent/25 text-accent-foreground border-accent/40",
+    outline: "border-accent/50 text-accent-foreground hover:bg-accent/20",
+  },
+  amber: {
+    dot: "bg-amber-500",
+    filled: "bg-amber-500 text-white border-amber-600",
+    soft: "bg-amber-50 text-amber-700 border-amber-200",
+    outline: "border-amber-300 text-amber-700 hover:bg-amber-50",
+  },
+  violet: {
+    dot: "bg-violet-500",
+    filled: "bg-violet-500 text-white border-violet-600",
+    soft: "bg-violet-50 text-violet-700 border-violet-200",
+    outline: "border-violet-300 text-violet-700 hover:bg-violet-50",
+  },
+  rose: {
+    dot: "bg-rose-500",
+    filled: "bg-rose-500 text-white border-rose-600",
+    soft: "bg-rose-50 text-rose-700 border-rose-200",
+    outline: "border-rose-300 text-rose-700 hover:bg-rose-50",
+  },
+  cyan: {
+    dot: "bg-cyan-500",
+    filled: "bg-cyan-500 text-white border-cyan-600",
+    soft: "bg-cyan-50 text-cyan-700 border-cyan-200",
+    outline: "border-cyan-300 text-cyan-700 hover:bg-cyan-50",
+  },
+  orange: {
+    dot: "bg-orange-500",
+    filled: "bg-orange-500 text-white border-orange-600",
+    soft: "bg-orange-50 text-orange-700 border-orange-200",
+    outline: "border-orange-300 text-orange-700 hover:bg-orange-50",
+  },
+};
+
+const CATEGORY_HASH_KEYS = [
+  "emerald",
+  "primary",
+  "accent",
+  "amber",
+  "violet",
+  "rose",
+  "cyan",
+  "orange",
+] as const;
+
+const CATEGORY_NAME_MAP: Record<string, keyof typeof CATEGORY_PALETTE> = {
+  about: "emerald",
+  services: "primary",
+  service: "primary",
+  support: "accent",
+  pricing: "amber",
+  faq: "violet",
+  faqs: "violet",
+  imported: "rose",
+};
+
+function hashCategoryToKey(category: string): keyof typeof CATEGORY_PALETTE {
+  let hash = 0;
+  const str = category.toLowerCase();
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return CATEGORY_HASH_KEYS[Math.abs(hash) % CATEGORY_HASH_KEYS.length];
+}
+
+function getCategoryColorKey(
+  category: string
+): keyof typeof CATEGORY_PALETTE {
+  const key = category.trim().toLowerCase();
+  return CATEGORY_NAME_MAP[key] ?? hashCategoryToKey(category);
+}
+
+function getCategoryColor(category: string): CategoryColorClasses {
+  return CATEGORY_PALETTE[getCategoryColorKey(category)];
+}
 
 export function KnowledgeView({ user: _user }: { user: KbUser }) {
   const [items, setItems] = useState<KbItem[]>([]);
@@ -366,6 +568,23 @@ export function KnowledgeView({ user: _user }: { user: KbUser }) {
     categoryOptions.forEach((c) => set.add(c));
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [categoryOptions]);
+
+  // Per-category total counts (from stats; falls back to current items list
+  // before stats load). Used by the filter chips so counts stay stable even
+  // while other filters (search / status) narrow the visible list.
+  const categoryCounts = useMemo(() => {
+    const map: Record<string, number> = {};
+    if (stats?.byCategory && stats.byCategory.length > 0) {
+      stats.byCategory.forEach((c) => {
+        map[c.category] = c.count;
+      });
+    } else {
+      items.forEach((i) => {
+        map[i.category] = (map[i.category] ?? 0) + 1;
+      });
+    }
+    return map;
+  }, [stats, items]);
 
   function openCreate() {
     setEditingId(null);
@@ -624,24 +843,29 @@ export function KnowledgeView({ user: _user }: { user: KbUser }) {
                 </button>
               )}
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Select
-                value={categoryFilter}
-                onValueChange={setCategoryFilter}
-              >
-                <SelectTrigger className="w-[170px]">
-                  <SelectValue placeholder="Category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All categories</SelectItem>
-                  {categoryOptions.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          </div>
+          {/* Category filter chips — horizontal scroll on overflow */}
+          <div
+            className="flex items-center gap-2 overflow-x-auto pb-1 -mb-1 scroll-thin -mx-1 px-1"
+            role="group"
+            aria-label="Filter by category"
+          >
+            <CategoryChip
+              label="All"
+              count={stats?.total ?? items.length}
+              active={categoryFilter === "all"}
+              onClick={() => setCategoryFilter("all")}
+            />
+            {categoryOptions.map((cat) => (
+              <CategoryChip
+                key={cat}
+                label={cat}
+                category={cat}
+                count={categoryCounts[cat] ?? 0}
+                active={categoryFilter === cat}
+                onClick={() => setCategoryFilter(cat)}
+              />
+            ))}
           </div>
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <Tabs
@@ -699,6 +923,8 @@ export function KnowledgeView({ user: _user }: { user: KbUser }) {
               onToggle={() => handleToggleStatus(item)}
               onDelete={() => setDeleteTarget(item)}
               onPreview={() => setPreviewItem(item)}
+              onFilterCategory={setCategoryFilter}
+              activeCategory={categoryFilter !== "all" ? categoryFilter : undefined}
             />
           ))}
         </div>
@@ -1067,12 +1293,16 @@ function KbCard({
   onToggle,
   onDelete,
   onPreview,
+  onFilterCategory,
+  activeCategory,
 }: {
   item: KbItem;
   onEdit: () => void;
   onToggle: () => void;
   onDelete: () => void;
   onPreview: () => void;
+  onFilterCategory: (category: string) => void;
+  activeCategory?: string;
 }) {
   const nextStatusLabel =
     item.status === "active" ? "Mark as draft" : "Set active";
@@ -1091,7 +1321,11 @@ function KbCard({
               </h3>
             </button>
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <CategoryBadge category={item.category} />
+              <CategoryBadge
+                category={item.category}
+                onClick={() => onFilterCategory(item.category)}
+                active={activeCategory === item.category}
+              />
               <SourceBadge sourceType={item.sourceType} />
               <StatusBadge status={item.status} />
             </div>
