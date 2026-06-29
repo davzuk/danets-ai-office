@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { AuthScreen } from "@/components/auth/auth-screen";
 import { AppShell, type ViewId } from "@/components/dashboard/app-shell";
 import { OverviewView } from "@/components/dashboard/views/overview-view";
@@ -38,14 +39,43 @@ export default function Home() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3 }}
+        >
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </motion.div>
       </div>
     );
   }
 
   if (!user) {
-    return <AuthScreen onAuthed={(u) => setUser(u)} />;
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.4 }}
+      >
+        <AuthScreen onAuthed={(u) => setUser(u)} />
+      </motion.div>
+    );
   }
+
+  const renderView = () => {
+    switch (view) {
+      case "overview": return <OverviewView user={user} onNavigate={setView} />;
+      case "agent": return <AgentView user={user} />;
+      case "knowledge": return <KnowledgeView user={user} />;
+      case "conversations": return <ConversationsView user={user} />;
+      case "leads": return <LeadsView user={user} />;
+      case "quotes": return <QuotesView user={user} />;
+      case "usage": return <UsageView user={user} />;
+      case "embed": return <EmbedView user={user} />;
+      case "settings": return <SettingsView user={user} />;
+      default: return null;
+    }
+  };
 
   return (
     <AppShell
@@ -57,15 +87,17 @@ export default function Home() {
         setView("overview");
       }}
     >
-      {view === "overview" && <OverviewView user={user} onNavigate={setView} />}
-      {view === "agent" && <AgentView user={user} />}
-      {view === "knowledge" && <KnowledgeView user={user} />}
-      {view === "conversations" && <ConversationsView user={user} />}
-      {view === "leads" && <LeadsView user={user} />}
-      {view === "quotes" && <QuotesView user={user} />}
-      {view === "usage" && <UsageView user={user} />}
-      {view === "embed" && <EmbedView user={user} />}
-      {view === "settings" && <SettingsView user={user} />}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={view}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.2, ease: "easeOut" }}
+        >
+          {renderView()}
+        </motion.div>
+      </AnimatePresence>
     </AppShell>
   );
 }

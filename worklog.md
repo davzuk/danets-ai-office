@@ -854,3 +854,51 @@ MVP stable and feature-rich from prior rounds. All modules + dark mode + quick r
 - Widget customization live preview (deferred).
 - Usage limits/alerts based on subscription plan.
 - Consider exporting category color system for reuse in analytics.
+
+---
+Task ID: CRON-6
+Agent: main (webDevReview cron round 6)
+Task: QA assessment, lead pipeline board (Kanban), animated page transitions.
+
+## Current Project Status
+MVP stable and feature-rich from prior rounds (10 modules + dark mode + quick replies + CSV export + notification bell + PDF export + KB bulk import + analytics + lead quick-reply + team management + transcript export + command palette + KB category colors). This round focused on CRM workflow (pipeline board) and motion design (page transitions).
+
+## Work Log
+
+### QA Findings
+- Logged in, tested all views — stable, no errors.
+- No bugs found — app is stable.
+
+### New Features
+1. **Lead Pipeline Board (Kanban)**:
+   - Created `lead-pipeline-board.tsx` — drag-and-drop Kanban board with 5 columns: New (primary blue), Contacted (amber), Qualified (accent green), Won (emerald), Lost (destructive).
+   - Each column shows count + colored dot. Lead cards show name, service, quality badge, contact icons (email/phone), time-ago.
+   - **Drag-and-drop**: HTML5 drag events — drag a card to a different column to update its status via PATCH `/api/leads/[id]`. Optimistic update with revert on error. Toast confirmation on drop.
+   - Visual feedback: dragged card becomes semi-transparent, target column gets primary ring highlight.
+   - Added List/Pipeline toggle (segmented control with LayoutGrid/List icons) in the Leads toolbar.
+   - Pipeline view replaces the table when selected; filters/stats remain above.
+   - Verified: pipeline renders with colored columns + lead cards (VLM confirmed clean).
+
+2. **Animated Page Transitions** (Framer Motion):
+   - Updated `page.tsx` to wrap view content in `<AnimatePresence mode="wait">` + `<motion.div>` with fade + slide-up entrance (opacity 0→1, y 8→0) and fade + slide-up exit (opacity 1→0, y 0→-4), 200ms ease-out.
+   - Auth screen fades in on load. Loading spinner scales in.
+   - Each view change triggers a smooth transition (keyed by view id).
+   - Verified: navigating between views produces smooth fade/slide transitions.
+
+## Verification
+- Lint: clean (0 errors).
+- Pipeline board: renders with 5 colored columns, lead cards with quality badges + contact icons, drag-and-drop API works (VLM confirmed).
+- Page transitions: smooth fade + slide between all 9 views.
+- Dev server stable throughout, no errors in dev log.
+
+## Stage Summary
+- 2 new features shipped (lead pipeline board, animated transitions).
+- All features verified via agent-browser + VLM.
+
+## Unresolved / Next Steps
+- Embeddings-based KB retrieval (still keyword scoring).
+- Email notifications on new leads (would need SMTP config).
+- Widget customization live preview (deferred).
+- Usage limits/alerts based on subscription plan.
+- Consider adding drag-and-drop on touch devices (current HTML5 DnD is desktop-only).
+- Could add lead card click to open detail dialog from pipeline view.

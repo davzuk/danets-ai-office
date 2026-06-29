@@ -87,6 +87,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { PipelineBoard } from "@/components/dashboard/views/lead-pipeline-board";
+import { LayoutGrid, List } from "lucide-react";
 
 interface UserProp {
   userId: string;
@@ -932,6 +934,7 @@ export function LeadsView({ user }: { user: UserProp }) {
   const [saving, setSaving] = React.useState(false);
 
   const [deleteTarget, setDeleteTarget] = React.useState<Lead | null>(null);
+  const [viewMode, setViewMode] = React.useState<"list" | "pipeline">("list");
 
   // ─── Debounce search input ─────────────────────────────────────
   React.useEffect(() => {
@@ -1219,6 +1222,30 @@ export function LeadsView({ user }: { user: UserProp }) {
               </Button>
             )}
 
+            {/* View toggle: List / Pipeline */}
+            <div className="flex items-center rounded-lg border overflow-hidden">
+              <Button
+                variant={viewMode === "list" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setViewMode("list")}
+                className="rounded-none gap-1.5 h-8"
+                title="List view"
+              >
+                <List size={14} />
+                <span className="hidden sm:inline">List</span>
+              </Button>
+              <Button
+                variant={viewMode === "pipeline" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setViewMode("pipeline")}
+                className="rounded-none gap-1.5 h-8"
+                title="Pipeline board"
+              >
+                <LayoutGrid size={14} />
+                <span className="hidden sm:inline">Pipeline</span>
+              </Button>
+            </div>
+
             <Button
               variant="outline"
               size="sm"
@@ -1259,7 +1286,23 @@ export function LeadsView({ user }: { user: UserProp }) {
         </CardContent>
       </Card>
 
-      {/* List / table */}
+      {/* Pipeline board */}
+      {viewMode === "pipeline" ? (
+        <Card className="p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                <LayoutGrid size={15} /> Lead Pipeline
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Drag leads between columns to update their status
+              </p>
+            </div>
+          </div>
+          <PipelineBoard businessId={user.businessId} />
+        </Card>
+      ) : (
+      /* List / table */
       <Card className="py-0 overflow-hidden">
         {loading && leads.length === 0 ? (
           <div className="py-20 flex flex-col items-center justify-center gap-3">
@@ -1468,6 +1511,7 @@ export function LeadsView({ user }: { user: UserProp }) {
           </>
         )}
       </Card>
+      )}
 
       {/* Detail dialog */}
       <LeadDetailDialog
