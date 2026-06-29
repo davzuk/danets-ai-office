@@ -22,6 +22,7 @@ import {
   Bell,
   Moon,
   Ticket,
+  History,
   Sun,
   Plus,
   Download,
@@ -52,6 +53,7 @@ const NAV_ITEMS: {
   { id: "agent", label: "AI Agent", icon: Bot, hint: "Bot configuration" },
   { id: "knowledge", label: "Knowledge Base", icon: BookOpen, hint: "KB articles" },
   { id: "embed", label: "Widget Embed", icon: Code2, hint: "Install instructions" },
+  { id: "audit", label: "Audit Logs", icon: History, hint: "Activity tracking" },
   { id: "settings", label: "Settings", icon: Settings, hint: "Business settings" },
 ];
 

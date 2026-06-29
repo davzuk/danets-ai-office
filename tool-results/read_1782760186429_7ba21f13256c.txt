@@ -1,0 +1,302 @@
+   200→  - `DELETE` — permanently removes the lead (ownership verified).
+   201→  - Uses async `params: Promise<{ id: string }>` per Next 15+/16 convention. Uses `withSession`.
+   202→- Created `src/app/api/leads/stats/route.ts` — `GET` returning `{ total, new, high, won, conversionRate, byQuality[], byStatus[], thisWeek }`. Parallel `Promise.all` of count + groupBy calls. Defensively appends any unexpected enum values. Conversion rate computed `won/total` (rounded %). Wrapped in `export function GET() { return withSession(...) }` form to satisfy Next 16 route-handler type validator (the direct `export const GET = withSession(...)` pattern causes a TS2344 against `RouteHandlerConfig`).
+   203→- Rewrote `src/components/dashboard/views/leads-view.tsx` as a full "use client" dashboard view. Export signature `LeadsView({ user }: { user: { userId, businessId, name, email, role, businessName } })`. UI includes:
+   204→  - Header: title "Leads" + business-scoped subtitle + 3 stat chips (Total / New this week / High quality).
+   205→  - 4 stat cards from `/api/leads/stats` (Total leads, New + this-week hint, High quality, Conversion % with won hint).
+   206→  - Toolbar: debounced search input (350ms) with clear button, status Select (All/New/Contacted/Qualified/Won/Lost), quality Select (All/Low/Medium/High), Clear-filters button, Refresh icon.
+   207→  - Responsive lead list: sticky-header `Table` on `lg+` (Name+avatar / Contact / Service / Quality / Status / Source / Date / Actions); card list on mobile (`lg:hidden`). Both wrapped in `max-h-[65vh] overflow-auto scroll-thin`.
+   208→  - Quality badges color-coded (high=destructive/10, medium=accent/30, low=muted). Status badges color-coded (new=primary, contacted=muted, qualified=accent, won=emerald, lost=destructive).
+   209→  - "New" leads: subtle `bg-primary/[0.035]` row tint + animated pinging dot on name + status badge.
+   210→  - Row click → detail Dialog with `Tabs` ("Details" + "Conversation"). Details tab shows email/phone/service/source info rows (email & phone are clickable mailto:/tel: links), full message, status & quality Select dropdowns (auto-save via PATCH on change), and created/updated timestamps. Conversation tab shows linked session info (visitor, status, AI quality, summary, next action) or an empty-state when no session.
+   211→  - Per-row DropdownMenu with Mark contacted/qualified/won/lost (each disabled if already that status) and Delete (AlertDialog confirm, destructive). Detail Dialog also has a Delete button with AlertDialog confirm.
+   212→  - Empty state with conditional CTA: "Clear filters" when filters are active, otherwise "Refresh" with hint to embed the widget.
+   213→  - All fetches relative (`/api/leads`, `/api/leads/<id>`, `/api/leads/stats`), `cache: "no-store"` to keep fresh. `sonner` toast feedback on every action (success/error). Loading skeletons via `Loader2` spinners and stat-card pulse placeholders.
+   214→  - Footer count row shows visible lead count and a 200-row limit warning.
+   215→- Type-checks clean (`bunx tsc --noEmit` — no errors in src/). ESLint clean on all new files. No modifications to `page.tsx`, `app-shell.tsx`, `lib/*`, or any files outside the assigned paths.
+   216→
+   217→Stage Summary:
+   218→- Leads module ready end-to-end: list/filter/search, detail view with linked conversation, inline status/quality updates, delete, stats dashboard. Other agents building views (Conversations, Quotes, Overview) can rely on `/api/leads` + `/api/leads/stats` and the `LeadsView` component being live. Next: wire the chatbot widget to auto-create Lead rows on lead-capture moments (delegated to whichever agent owns the public widget + chat endpoints).
+   219→
+   220→---
+   221→Task ID: 9
+   222→Agent: quotes-module
+   223→Task: Quote / Proposal Generator module (API + AI generation + dashboard view).
+   224→
+   225→Files created:
+   226→- `src/app/api/quotes/route.ts` — `GET` lists `QuoteRequest` rows for `user.businessId` (ordered `createdAt desc`) with the latest `proposal`-type `GeneratedDocument` included via `documents: { where: { type: "proposal" }, orderBy: { createdAt: "desc" }, take: 1 }`. `POST` zod-validates the brief (`clientName`/`service`/`requirements` required; `companyName`/`budgetRange`/`timeline`/`notes` optional) and creates a `QuoteRequest` with `status:"draft"`, then immediately calls `generateProposalForQuote()` (inline helper) which builds the brief, fetches the active `quote` `AiPromptTemplate` (or a built-in default), calls `aiChat`, persists a `GeneratedDocument` (`type:"proposal"`, `title:"Proposal - <clientName>"`), logs usage via `logUsage(businessId, "quote", tokens)` and flips `quoteRequest.status` to `"generated"`. Returns `{ quote, document, tokens }` so the UI can open the result immediately. If AI generation fails the quote is still saved as `draft` and the API throws a clear message — the user can retry via `/api/quotes/generate`.
+   227→- `src/app/api/quotes/[id]/route.ts` — `GET` returns the single quote + all its `GeneratedDocument`s (ordered `createdAt desc`); `DELETE` removes the quote (and its `GeneratedDocument`s first, since the schema uses `onDelete: SetNull` which would otherwise orphan them). Both handlers verify ownership with `findFirst({ where: { id, businessId: user.businessId } })` and throw `"FORBIDDEN"` if the quote is missing or belongs to another business (no existence leak). Uses async `params: Promise<{ id: string }>` per Next.js 16 convention. Both wrapped in `withSession`.
+   228→- `src/app/api/quotes/generate/route.ts` — `POST` body `{ quoteRequestId }` (zod-validated). Loads the `QuoteRequest` (verifies `businessId` ownership → throws `"FORBIDDEN"` otherwise). Fetches the active `quote` `AiPromptTemplate` for the business (`where: { businessId, type: "quote", isActive: true }`) or falls back to a built-in default prompt. Builds a brief string from all stored fields (clientName, companyName, service, requirements, budgetRange, timeline, notes). Calls `aiChat([{role:"system",...},{role:"user",...}])` instructing the model to output exactly 7 sections (`## Project Summary`, `## Scope of Work`, `## Deliverables`, `## Timeline`, `## Pricing Guidance`, `## Terms and Conditions`, `## Next Steps`) with placeholder price ranges and placeholder terms. Saves a new `GeneratedDocument` (`type:"proposal"`, `title:"Proposal - <clientName>"`), calls `logUsage(user.businessId, "quote", tokens)`, updates `quoteRequest.status = "generated"`. Returns `{ document, tokens }`. Wrapped in `withSession`.
+   229→- `src/components/dashboard/views/quotes-view.tsx` — full `"use client"` view. Export `QuotesView({ user }: { user: { userId, businessId, name, email, role, businessName } })`. Two-pane responsive layout: LEFT = sticky "New Proposal" form Card (`lg:w-[420px]`, `lg:sticky lg:top-[4.5rem]`); RIGHT = scrollable history list (`max-h-[75vh] overflow-y-auto scroll-thin`). On mobile the panes stack (form first). Form fields: Client name* (Input w/ User icon), Company name (Input w/ Building2 icon), Service needed* (Select with 10 common services + "Other" — selecting "Other" reveals a free-text Input), Requirements* (Textarea, 4 rows, 4000 char counter), Budget range (Select: < $1k / $1k–$5k / $5k–$25k / $25k–$100k / $100k+ / Not sure), Timeline (Select: < 2 weeks / 2–4 weeks / 1–3 months / 3–6 months / 6+ months), Notes (Textarea, 3 rows). Submit Button shows `Loader2` spinner + "AI is drafting your proposal…" while submitting, calls `POST /api/quotes`, on success opens the result in a Dialog (and resets the form). Result Dialog (`sm:max-w-3xl`, `max-h-[90vh]`, flex-col with scrollable body) renders the markdown via `react-markdown` with custom element overrides (h1/h2/h3 styled with primary/border-b, lists, code/pre, blockquote with primary border-l, links open in new tab). Footer has a prominent "Copy proposal text" Button (`brand-gradient`, `navigator.clipboard.writeText` + sonner toast), a "Download .md" Button (Blob + temporary anchor), and a small note row: "PDF export coming soon." plus the token cost (`<total> tokens · $<est.> est.` computed at $0.002/1K). History list cards show clientName, companyName (or "No company"), service, status Badge (Draft=outline / Generated=primary-tinted / Sent=accent-tinted), date (`dd MMM yyyy`), timeline, budget, and a 2-line `line-clamp-2` preview of requirements. Each card has "Regenerate" (calls `/api/quotes/generate`, shows spinner, opens the new version in the Dialog) and "Delete" (opens an `AlertDialog` confirm — destructive red button, async deleting state, removes from list on success). Clicking a card calls `GET /api/quotes/[id]` and opens the latest proposal in the Dialog (with `Skeleton` placeholders while loading). Empty history state is a dashed-border Card with a CTA. Loading state for the list shows 3 `Skeleton` cards. `sonner` toasts on every action. Brand colors only (`bg-primary`, `bg-accent`, `brand-gradient`); lucide-react icons (FileText, Wand2, Sparkles, User, Building2, Tag, Calendar, Clock, Copy, Download, FileDown, RefreshCw, Trash2, AlertCircle, Plus, Loader2). All fetches relative.
+   230→
+   231→Conventions / decisions:
+   232→- Used `withSession((user) => ...)` on every route per spec. Validation errors are thrown (caught by `apiHandler` → 500 with `{ error: message }`); cross-tenant access throws `"FORBIDDEN"` → 403 (matches Task IDs 5/6/8 pattern). `params` typed as `Promise<{ id: string }>` and awaited before `withSession` so the id is in scope inside the closure.
+   233→- Every query filters by `user.businessId`. Client never sends `businessId`.
+   234→- The AI prompt explicitly requests plain markdown (headings, lists, bold) and forbids tables — `react-markdown` v10 supports CommonMark out of the box but `remark-gfm` is not installed, so tables would render as plain text. The seeded "Quote Proposal Generator" template (Task 1) is also a valid plain-markdown instruction so the fetched-template path is safe too.
+   235→- The "Copy proposal text" button is the prominent primary CTA in the result Dialog; "Download .md" is secondary (downloads the raw markdown as a Blob); the "PDF export coming soon." note is shown alongside the token cost estimate so users know what's available now vs. coming.
+   236→- Token cost is shown both at the top of the Dialog (small inline badge) and in the footer (with $ estimate) whenever a fresh generation/regeneration response includes `tokens`. Loading an existing quote from history does not show token cost (the tokens were logged at generation time but not stored on the document) — only fresh generations display it.
+   237→- `prose-danets` is a marker class on the markdown wrapper for future styling hooks (no-op without the typography plugin; styles are applied via react-markdown `components` overrides instead).
+   238→
+   239→Verification:
+   240→- `bunx tsc --noEmit` — zero errors in `src/app/api/quotes/**` and `src/components/dashboard/views/quotes-view.tsx`. (Pre-existing unrelated errors in `examples/`, `skills/`, and other agents' routes remain.)
+   241→- `bunx eslint` on the 4 files — clean (0 warnings / 0 errors).
+   242→- End-to-end browser test was not run because `/api/auth/login/route.ts` is missing from the workspace (noted by Task ID 5 as well). The routes compile, follow the same `withSession` + `db` + `aiChat` patterns verified working by other agents, and the seeded `quote` prompt template + `QuoteRequest`/`GeneratedDocument`/`AiUsageLog` tables already exist from Task 1's seed.
+   243→
+   244→Stage Summary:
+   245→- Quote/Proposal Generator module complete: create-and-generate flow, regenerate, view, delete, all multi-tenant scoped, with AI usage logged to `AiUsageLog` (feature=`"quote"`) so the Usage dashboard picks it up automatically. The existing `page.tsx` already wires `<QuotesView user={user} />` so the view is live as soon as the user signs in.
+   246→
+   247→---
+   248→Task ID: 7
+   249→Agent: conversations-module
+   250→Task: Chat Sessions & Messages + AI Suggested Replies module (API + view).
+   251→
+   252→Files created:
+   253→- `src/app/api/conversations/route.ts` — `GET` lists `ChatSession`s for `user.businessId`. Supports `?status=active|ended|handover` and `?q=<search>` (matches `visitorName` / `visitorEmail` via Prisma `contains`). Ordered by `updatedAt desc`, capped at 100 rows. Each row includes the related `Lead` and the latest `ChatMessage` (via `messages: { orderBy: { createdAt: "desc" }, take: 1 }`). Response shape: `{ sessions: [...] }` where each session has `latestMessage: { id, role, content, createdAt } | null`. Uses `withSession`.
+   254→- `src/app/api/conversations/[id]/route.ts` — `GET` returns `{ session }` (or `{ session: null }` if not found / cross-tenant). Loads the `ChatSession` with all `messages` ordered `createdAt asc` + `lead` + `agent.botName`. Strict ownership: `session.businessId === user.businessId`. Uses async `params: Promise<{ id: string }>` per Next.js 16 convention. Uses `withSession`.
+   255→- `src/app/api/conversations/[id]/suggestions/route.ts` — `POST` generates AI suggested replies. Loads session + messages (verifies `businessId` ownership). Builds a transcript (`Visitor:` / `Assistant:` / `System:` lines). Fetches the business's active `suggested_reply` `AiPromptTemplate` (or uses a built-in default that instructs strict-JSON output). Calls `aiChat(messages, { temperature: 0.4 })`. Parses the response defensively via `parseSuggestionsJson()` — strips markdown code fences (```` ```json ... ``` ````) and extracts the outermost `{ ... }` block before `JSON.parse`. On success: normalises `lead_quality` to `low|medium|high` (defaults to `medium` on invalid), clamps string lengths (summary ≤ 1000, follow-up ≤ 2000, next_action ≤ 1000), persists `summary`/`leadQuality`/`nextAction` on the `ChatSession`, logs usage via `logUsage(businessId, "suggested_reply", tokens)`, and returns `{ suggestions: { summary, follow_up_message, lead_quality, next_action, parsed: true } }`. On parse failure: logs usage with `status:"error"` and returns `{ suggestions: { parsed: false, raw: true, text: <raw AI output> } }` so the UI can show it. AI-call errors are also caught, logged, and surfaced as `{ error, suggestions: null }`. Uses `withSession`.
+   256→- `src/components/dashboard/views/conversations-view.tsx` — full `"use client"` WhatsApp/Intercom-style two-pane view. Export `ConversationsView({ user }: { user: { userId, businessId, name, email, role, businessName } })`.
+   257→
+   258→UI decisions:
+   259→- shadcn/ui components used: Card, Button, Badge, Avatar (+ AvatarFallback), Textarea, Input, Separator, Skeleton.
+   260→- Layout: full-height (`h-[calc(100vh-9rem)]`) flex container with a header row (title + Refresh button) and a `flex-1 min-h-0` body.
+   261→  - LEFT pane (~320–384px, `lg:w-80 xl:w-96`): Card-style panel with search input (icon-prefixed, debounced 300ms) + status filter pills (All / Active / Ended / Handover) + scrollable list (`flex-1 overflow-y-auto scroll-thin`) of session rows. Each row: visitor avatar (brand-gradient initials), name/email, latest message preview (1-line truncated), `timeAgo(updatedAt)`, StatusBadge, LeadQualityBadge (if set), and a small `lead` tag if a Lead row is attached.
+   262→  - RIGHT pane (`flex-1`): when nothing is selected → branded empty state ("Select a conversation"). When a session is selected → header (back button on mobile, avatar, visitor name + badges, email/phone/lead chips), messages scroll area (`flex-1 overflow-y-auto scroll-thin p-4 bg-muted/30`) with chat bubbles (user → right-aligned `bg-primary text-primary-foreground rounded-br-sm`, assistant → left-aligned `bg-background border rounded-bl-sm`, system → centered pill), then a fixed AI Suggested Replies Card at the bottom.
+   263→- Mobile: when a conversation is selected, only the detail pane is shown (`hidden lg:flex` on the list pane); the header has a back arrow (`lg:hidden`) that clears `selectedId`.
+   264→- AI Suggested Replies panel: Card with a `Generate suggestions` / `Regenerate` button (calls `POST .../suggestions`). Shows a skeleton placeholder while generating. On success displays four fields: Summary (paragraph), Suggested follow-up message (editable Textarea with a Copy button using `navigator.clipboard.writeText` + sonner toast), Lead quality (colored badge — low=secondary, medium=primary/15, high=accent lemon green), Recommended next action (paragraph). A separator + small `AlertCircle` note: "Auto-send is disabled. Copy the follow-up message and send it manually via email, WhatsApp, or your CRM." On parse failure: amber info banner + read-only Textarea with the raw AI text + a Copy-raw-text button. Pre-populates the panel with previously-saved summary/leadQuality/nextAction when opening an existing session (so the user sees cached AI insights without re-generating).
+   265→- Status badge color-coding: `active` → lemon-green accent, `ended` → secondary muted, `handover` → amber-500.
+   266→- Lead quality badge color-coding: `low` → secondary muted, `medium` → primary tinted, `high` → lemon-green accent.
+   267→- Auto-scroll to the latest message on conversation open / new messages (`useRef` + `scrollIntoView({ behavior: "smooth" })`).
+   268→- All fetches are relative (`/api/conversations`, `/api/conversations/<id>`, `/api/conversations/<id>/suggestions`) with `cache: "no-store"`. `sonner` toast feedback on every action. `lucide-react` icons (ArrowLeft, Sparkles, Copy, Check, Send, Bot, User, Loader2, MessageSquare, Search, Mail, Phone, Clock, RefreshCw, AlertCircle, Tag). Brand colors only (`bg-primary`, `bg-accent`, `brand-gradient`); no raw indigo/blue.
+   269→- Skeleton loaders for the list (6 placeholder rows), detail header + message bubbles, and the suggestions panel.
+   270→- Empty states: list ("No conversations found"), detail ("Select a conversation" branded panel), messages ("No messages in this conversation").
+   271→
+   272→Conventions / decisions:
+   273→- Used `withSession((user) => ...)` on every route per spec. For routes that need `req` or `params`, the handler is declared as `export async function GET(req) { return withSession(async (user) => ...) }` (or with the Next.js 16 `params: Promise<{ id: string }>` signature for dynamic routes) so it satisfies Next 16's `RouteHandlerConfig` typed-handler validator. This matches the pattern noted by Task IDs 5/8/9/10 — the direct `export const GET = withSession(...)` form triggers TS2344 against `RouteHandlerConfig`.
+   274→- Every query filters by `user.businessId`. Client never sends `businessId`. Cross-tenant access returns `{ session: null }` (detail) or `{ error: "Conversation not found", suggestions: null }` (suggestions) — no existence leak.
+   275→- The suggested-reply default prompt explicitly forbids markdown fences and preamble, and the parser additionally strips them defensively. JSON is extracted by finding the outermost `{` ... `}` substring before `JSON.parse`, so even slightly chatty AI responses still parse.
+   276→- Token usage is logged for both success and parse-failure paths (parse failure → `status:"error"` with `error:"Suggested-reply JSON parsing failed"`), so the Usage dashboard picks up the cost either way.
+   277→- The follow-up message returned by the AI is rendered in an editable `Textarea` (not a static block) so the operator can tweak wording before copying — auto-send is intentionally disabled per the spec.
+   278→
+   279→Verification (end-to-end on the running dev server, port 3000):
+   280→- Because `/api/auth/login/route.ts` is missing from the workspace (flagged by Task IDs 5 and 9), I minted a session token directly via a one-off script against the `Session` table (then deleted the script) and used it as the `danets_session` cookie.
+   281→- Seeded a sample `ChatSession` + 6 `ChatMessage`s + a `Lead` for the demo business via `scripts/seed-chat.ts` (kept — useful for demoing the Conversations view; can be re-run safely as it always creates fresh rows).
+   282→- `GET /api/conversations` → 200 `{ sessions: [<the seeded session with lead + latestMessage>] }`. `?status=active` / `?q=ada` both filter correctly. Unauthenticated → 401 `{error:"Unauthorized"}`.
+   283→- `GET /api/conversations/<id>` → 200 `{ session: { ..., messages: [6 in asc order], lead, agent } }`. Cross-tenant id → 200 `{ session: null }` (no leak). Non-existent id → same.
+   284→- `POST /api/conversations/<id>/suggestions` → 200 in ~3.5s with `{ suggestions: { summary: "A logistics company in Lagos is interested in custom AI chatbots…", follow_up_message: "...", lead_quality: "high", next_action: "...", parsed: true } }`. Verified the `ChatSession` row was updated (`summary` + `leadQuality:"high"` persisted) and an `AiUsageLog` row was created (`feature:"suggested_reply"`, `promptTokens:301`, `completionTokens:213`, `totalTokens:514`, `costUsd:0.001028`, `status:"success"`).
+   285→- `POST /api/conversations/<bad-id>/suggestions` → 200 `{ error:"Conversation not found", suggestions: null }`.
+   286→- `bunx tsc --noEmit` — zero errors in `src/app/api/conversations/**` and `src/components/dashboard/views/conversations-view.tsx`. (Pre-existing unrelated errors in `examples/`, `skills/`, and the `/api/leads/stats` route from Task 8's `export function GET() { return withSession(...) }` form remain — see Task 8 note.)
+   287→- `bunx eslint` on the 4 new files — clean (0 warnings / 0 errors).
+   288→
+   289→Stage Summary:
+   290→- Conversations module complete and verified end-to-end: list with filters/search, two-pane WhatsApp-style UI, message bubbles with timestamps, AI suggested replies (summary + follow-up + lead quality + next action) generated from the `suggested_reply` prompt template, persisted on the `ChatSession`, and token usage logged to `AiUsageLog` so the Usage dashboard picks it up automatically. Auto-send is intentionally disabled — operators copy the suggested follow-up manually. The existing `page.tsx` already wires `<ConversationsView user={user} />` so the view is live as soon as the user signs in. Once the public chat widget (still to be built) creates `ChatSession` + `ChatMessage` rows, this module will display them with zero changes.
+   291→- Side note for the team: `/api/auth/login/route.ts` is still missing — the directory exists but is empty. Every agent since Task 5 has had to mint session tokens directly via the DB to do end-to-end testing. Restoring that route would unblock browser-based testing for everyone.
+   292→
+   293→---
+   294→Task ID: 11-15
+   295→Agent: main
+   296→Task: Public chatbot widget, public AI API, lead capture, embed/settings views, overview, QA, cron.
+   297→
+   298→Work Log:
+   299→- Built `/api/dashboard/stats` (totals, 7-day series, recent conversations/quotes, top KB, usage by feature).
+   300→- Built `/api/business` (GET profile+plan+counts, PUT update profile).
+   301→- Built `/api/public/chat` (rate-limited, identifies business by publicKey, loads agent, retrieves KB, builds SAFE grounded prompt, saves messages, logs usage, lead-intent detection, handover contacts).
+   302→- Built `/api/public/lead` (rate-limited lead capture, quality scoring, dedup per session, links to chat session).
+   303→- Built `/api/public/widget` (public agent config for widget: bot name, welcome, brand color, contacts).
+   304→- Built `/widget.js` route — self-contained embeddable JS widget (floating button, chat window, typing indicator, lead form, WhatsApp/phone/email handover, brand-color theming, mobile responsive).
+   305→- Built `/widget-demo` route — full HTML test page.
+   306→- Built Overview view (hero, stat cards, 7-day area chart, usage-by-feature bars, recent conversations/quotes/KB lists).
+   307→- Built Embed view (install instructions, copy buttons, live preview via script injection, test page link, setup checklist).
+   308→- Built Settings view (business profile form, public key, plan/limits, account data, security notes).
+   309→- Restored missing `/api/auth/login/route.ts`.
+   310→- Fixed zod schema bug: `sessionId: null` from widget failed `z.string().optional()` → changed to `z.string().nullable().optional()` in both public/chat and public/lead.
+   311→- Updated layout metadata to "Danets AI Automation — Danets TecPro Limited".
+   312→- Ran lint (clean, 0 errors). Ran agent-browser QA:
+   313→  - Login works (admin@danetstecpro.com / danets123).
+   314→  - Dashboard overview renders with live stats + chart.
+   315→  - All 9 views render: overview, conversations, leads, quotes, usage, agent, knowledge, embed, settings.
+   316→  - Widget demo page loads, chat button opens window, AI responds grounded in KB (mentions $29 Starter plan).
+   317→  - Lead capture flow works: intent detected → form appears → submit → lead saved → shows in dashboard Leads view (John Test, high quality).
+   318→  - Conversations view shows transcripts + AI suggested replies (lead quality, next action, regenerate).
+   319→  - Footer is sticky on short pages, pushed down on long pages.
+   320→
+   321→Stage Summary:
+   322→- MVP COMPLETE. All 10 modules functional. Public widget works end-to-end with AI grounding, lead capture, handover. Multi-tenant security enforced. Rate limiting on public endpoints. AI keys server-side only. Usage logging with token/cost tracking.
+   323→- Deliverables: see user-facing summary.
+   324→
+   325→---
+   326→
+   327→### Task ID: F1 — Quick Replies editor in Agent view
+   328→**Agent:** subagent
+   329→**File modified:** `src/components/dashboard/views/agent-view.tsx` (only).
+   330→
+   331→**Goal:** Add a Quick Replies editor to the AI Agent configuration view. Quick replies are suggested question chips shown to website visitors in the chat widget right after the welcome message. Backend (`AiAgent.quickReplies` JSON column, `/api/agent` PUT accepts `quickReplies: string[]` max 8, `/api/public/widget` exposes it, `/widget.js` renders up to 6 clickable chips) was already in place — this task is frontend-only.
+   332→
+   333→**Changes made:**
+   334→1. **Imports** — added `Plus`, `X`, `MessageCircle` from `lucide-react`.
+   335→2. **Type updates**
+   336→   - `AiAgent.quickReplies: string` (JSON-encoded string from DB).
+   337→   - `AgentForm.quickReplies: string[]`.
+   338→   - `DEFAULT_AGENT.quickReplies = []`.
+   339→3. **Parser helper** — added `parseQuickReplies(raw): string[]` (try/catch JSON.parse, filters to strings, returns `[]` on any failure). Used in both `loadAgent` and the save response handler to normalize the DB JSON string into a clean array.
+   340→4. **Load (GET)** — `normalized.quickReplies = parseQuickReplies(a.quickReplies)` added to the mapping in `loadAgent`.
+   341→5. **Submit (PUT)** — payload now includes `quickReplies: form.quickReplies.map(q => q.trim()).filter(Boolean)` (drops empty strings before sending).
+   342→6. **Dirty check** — added `"quickReplies"` to the `keys` array in the `isDirty` useMemo. Also upgraded the comparator to do element-wise array comparison (length + index equality) so editing an item marks the form dirty and reverting it exactly clears the dirty state.
+   343→7. **Validation** — `validate()` now flags `quickReplies` if length > 8 or any item exceeds 120 chars (defensive; UI also enforces via `maxLength={120}` and disabled Add button at 8).
+   344→8. **Helper functions** inside the component: `addQuickReply`, `removeQuickReply(idx)`, `updateQuickReply(idx, value)`.
+   345→9. **UI — Quick Replies card** (new, placed in the Identity tab right after the existing "Bot identity" card):
+   346→   - Title `MessageCircle` + "Quick Replies", description: "Suggested questions shown to visitors as clickable chips after the welcome message. Max 8."
+   347→   - Empty-state copy.
+   348→   - Per-row: editable `Input` (maxLength 120), live `q.length/120` counter (turns destructive over 120), outline icon `Button` with `X` to remove.
+   349→   - "Add question" `Button` (outline, `Plus` icon), disabled at 8 items, with an `{n}/8 used` indicator on the right.
+   350→   - Inline error banner when `errors.quickReplies` is set.
+   351→   - Live "Preview" panel below the editor: pill-shaped chips (`rounded-full border`, brand-color border + text, transparent background) for each non-empty reply.
+   352→10. **Bot identity preview card** (top of page) — when `previewReplies.length > 0`, chips (sliced to 6 to match `/widget.js` behavior) are rendered below the welcome message bubble so admins see the real visitor-facing layout.
+   353→11. **Identity tab "Live chat bubble preview"** — also enhanced to show chips below the bubble when configured (same 6-chip slice), keeping the two previews in sync.
+   354→12. **`previewReplies` useMemo** — added at component level: `form.quickReplies.map(q => q.trim()).filter(Boolean)`, memoized on `form.quickReplies`.
+   355→
+   356→**Styling notes:** Brand-color pill chips use `border-color` + `color` inline style (matches widget) with `bg-background` for crisp contrast on any brand color. Add/Remove buttons use shadcn outline variant; counter text uses `tabular-nums` and `text-[10px]` to match the existing microcopy density. Lemon-green accent (`text-accent-foreground`) used on the card title icon, consistent with the rest of the view.
+   357→
+   358→**Constraints honored:**
+   359→- Only `src/components/dashboard/views/agent-view.tsx` modified.
+   360→- No API/backend changes (already ready per task brief).
+   361→- Relative fetch paths preserved (`/api/agent`).
+   362→- `sonner` toasts preserved for all status messages.
+   363→- Brand color classes (`bg-primary`, `text-accent-foreground`, `bg-accent`) reused.
+   364→- All existing functionality preserved — no fields/flows removed.
+   365→
+   366→**Verification:**
+   367→- `npx tsc --noEmit` → 0 errors in `src/` (remaining pre-existing errors are in `examples/` and `skills/` only).
+   368→- `npx eslint src/components/dashboard/views/agent-view.tsx` → clean, 0 errors.
+   369→
+   370→**Next actions (optional, not in scope):**
+   371→- Manual QA: log in as `admin@danetstecpro.com` / `danets123`, open Agent view → Identity tab, add 2–3 quick replies, save, then load `/widget-demo` for a business publicKey and confirm chips render after the welcome bubble (widget slices to 6).
+   372→- Consider surfacing a small hint in the editor that the widget currently displays the first 6 of up to 8 configured replies.
+   373→
+   374→---
+   375→Task ID: CRON-1
+   376→Agent: main (webDevReview cron round 1)
+   377→Task: QA assessment, bug fixes, new features (dark mode, quick replies, CSV export), styling polish.
+   378→
+   379→## Current Project Status
+   380→MVP was complete and stable from prior rounds. All 10 modules functional. This round focused on QA verification, closing the dark-mode gap, and adding high-value features.
+   381→
+   382→## Work Log
+   383→
+   384→### QA Findings (agent-browser + VLM)
+   385→- Logged in as admin@danetstecpro.com — all 9 dashboard views render correctly.
+   386→- Widget demo page: chat works, AI grounded in KB, lead capture + handover work.
+   387→- VLM analysis of all 9 view screenshots: no visual bugs, alignment/spacing/contrast all good.
+   388→- Found gap: dark mode CSS existed but NO ThemeProvider was wired in layout → users couldn't access dark mode. `sonner.tsx` imports `next-themes` but provider was missing.
+   389→- Found bug: `/api/public/widget` crashed dev server (Turbopack) due to `s-maxage` edge-cache header in dev — replaced with `max-age` only.
+   390→
+   391→### Fixes
+   392→1. **Dark mode wired up**: Created `src/components/theme-provider.tsx` (next-themes), wrapped app in layout.tsx with `<ThemeProvider attribute="class" defaultTheme="light" enableSystem>`. Created `src/components/dashboard/shared/theme-toggle.tsx` (animated sun/moon icon button). Added toggle to app-shell topbar next to "Agent online" badge.
+   393→2. **Dark mode contrast**: bumped `--muted-foreground` in dark theme from `oklch(0.7 ...)` to `oklch(0.78 ...)` for better secondary-text readability (VLM suggestion).
+   394→3. **Widget endpoint crash**: removed `s-maxage=300, stale-while-revalidate=600` (caused Turbopack dev crash) → `max-age=300` only.
+   395→
+   396→### New Features
+   397→1. **Quick Replies** (suggested question chips in widget):
+   398→   - Added `quickReplies` field (JSON string array) to `AiAgent` model in Prisma schema. Ran `db:push`.
+   399→   - Updated `/api/agent` PUT to accept `quickReplies: string[]` (max 8, zod-validated).
+   400→   - Updated `/api/public/widget` to expose `quickReplies`.
+   401→   - Updated `/widget.js`: added `showQuickReplies()` function rendering pill-shaped chips after welcome message; clicking a chip sends that question. Added `.dn-quick` CSS (blue pills with hover transform).
+   402→   - Updated `scripts/seed.ts` with 4 default quick replies; ran migration to backfill existing agents.
+   403→   - **Subagent (Task F1)** added full Quick Replies editor to `agent-view.tsx`: editable inputs with remove buttons, "Add question" button (disabled at 8), live chip preview, char counter, dirty-state tracking, validation. Also renders chips in bot-identity preview card.
+   404→2. **Lead CSV Export**:
+   405→   - Created `/api/leads/export` GET route (auth-required, multi-tenant, supports status/quality filters, returns CSV with BOM for Excel UTF-8 detection).
+   406→   - Added "Export CSV" button (Download icon) to Leads view toolbar, opens filtered export in new tab with toast.
+   407→3. **Widget branding**: Added "Powered by Danets AI" footer link in widget input area.
+   408→
+   409→### Verification
+   410→- Dark mode: toggled in browser → `html.dark` class applied, VLM confirms good contrast, sidebar/cards/charts all render correctly in dark.
+   411→- Quick replies: widget demo shows 4 chips after welcome message; clicking a chip sends the question and gets AI response. Agent view editor shows inputs + preview + 4/8 counter.
+   412→- CSV export: endpoint returns valid CSV with headers + all leads; button triggers download + toast.
+   413→- Lint: clean (0 errors). Dev server stable.
+   414→
+   415→## Stage Summary
+   416→- 3 new features shipped (dark mode, quick replies, CSV export), 2 bugs fixed (ThemeProvider missing, widget endpoint crash).
+   417→- All features browser-verified via agent-browser + VLM.
+   418→- Dev server required restart to pick up Prisma schema change (stale globalThis singleton). Created `start-dev.sh` persistent launcher.
+   419→
+   420→## Unresolved / Next Steps
+   421→- **PDF export** for proposals (still "coming soon" placeholder).
+   422→- **Embeddings-based KB retrieval** (currently keyword scoring).
+   423→- **Conversation analytics** on overview (top questions, deflection rate) — proposed but not yet built.
+   424→- **Webhook/email notifications** on new leads.
+   425→- Dev server persistence across cron rounds: the `start-dev.sh` launcher works but if the process dies, the next cron round should check and restart it.
+   426→
+   427→---
+   428→Task ID: F2
+   429→Agent: subagent
+   430→Task: Add Bulk Import feature to existing Knowledge Base view (UI only — backend `POST /api/knowledge-base/import` already existed).
+   431→
+   432→Files modified:
+   433→- `src/components/dashboard/views/knowledge-view.tsx` — added Import button + Import dialog. No other files touched.
+   434→
+   435→Work Log:
+   436→- Added `Upload` icon to the existing `lucide-react` import block.
+   437→- Added module-level constants near `EMPTY_FORM`:
+   438→  - `type ImportFormat = "auto" | "colon" | "blocks" | "json"`.
+   439→  - `IMPORT_HELP` — per-format description text shown under the textarea.
+   440→  - `IMPORT_PLACEHOLDERS` — per-format placeholder shown inside the textarea.
+   441→  - `IMPORT_EXAMPLES` — per-format example shown in a bordered "Example:" callout.
+   442→- Added new component state (alongside existing dialog state):
+   443→  - `importDialogOpen`, `importFormat` (default `"auto"`), `importCategory` (default `"Imported"`), `importText`, `importing`.
+   444→- Added `openImport()` — resets all import state to defaults and opens the dialog.
+   445→- Added `handleImport()`:
+   446→  - Guards against empty text with a sonner error toast.
+   447→  - POSTs `{ format, category, text }` to relative path `/api/knowledge-base/import` (category falls back to `"Imported"` if blank).
+   448→  - Parses `{ imported, skipped }` from the response (defensive `Number(... ?? 0)`).
+   449→  - On success: sonner success toast `Imported N item[s]` with skipped-count description, closes the dialog, and refreshes KB list + stats in parallel via `Promise.all([loadItems({ silent: true }), loadStats()])`.
+   450→  - On error: sonner error toast with the API error message (or generic fallback).
+   451→  - `importing` flag toggled in `finally` for the button's `Loader2` spinner.
+   452→- Added an "Import" button (`variant="outline"`, Upload icon) between the existing Refresh icon-button and the "New item" button in the KB view header.
+   453→- Added the Import Dialog (`sm:max-w-2xl`, matching the existing edit dialog):
+   454→  - Format selector: shadcn `Tabs` with 4 triggers — Auto-detect / Title: content / Blocks / JSON array. TabsList uses `flex-wrap h-auto` so it degrades gracefully on narrow viewports.
+   455→  - Category Input (optional) with `list="kb-category-options"` — reuses the existing `<datalist>` of known categories so the user can pick from existing ones. Defaults to "Imported".
+   456→  - Large Textarea: `rows={10}`, `min-h-[220px]`, monospace, per-format placeholder.
+   457→  - Live char counter + per-format help text below the textarea.
+   458→  - Bordered "Example:" callout with `whitespace-pre-wrap break-words` to handle multi-line JSON/blocks examples.
+   459→  - DialogFooter with Cancel (outline) + Import items (primary, with `Loader2` spinner while `importing`, disabled when text is empty or importing).
+   460→- On dialog close (X / Cancel / Esc / backdrop), `importText` is cleared so reopening shows a fresh state.
+   461→- Help text / examples follow the spec exactly:
+   462→  - Colon: `Refund Policy: We offer 30-day refunds on all plans.`
+   463→  - Blocks: "First line is the title, following lines are content, separated by blank lines." (with a real 2-block example in the callout).
+   464→  - JSON: `[{"title":"...","content":"...","category":"..."}]`.
+   465→
+   466→Conventions honoured:
+   467→- Only `src/components/dashboard/views/knowledge-view.tsx` was modified. No API or other component files touched.
+   468→- Used existing shadcn/ui components already imported in the file: `Dialog`, `Tabs`/`TabsList`/`TabsTrigger`, `Textarea`, `Input`, `Button`, `Label`.
+   469→- `sonner` for all toasts. Relative fetch path (`/api/knowledge-base/import`).
+   470→- Brand color classes only (`bg-primary`, `bg-accent`, `bg-muted`, etc.) — no raw indigo/blue.
+   471→- All existing functionality (list, search, filters, create/edit, delete, preview, stats, refresh) preserved unchanged.
+   472→
+   473→Verification:
+   474→- `bunx tsc --noEmit` — zero errors in `src/components/dashboard/views/knowledge-view.tsx` (the only TS errors reported are pre-existing in `examples/` and `skills/` and unrelated to this task).
+   475→- `bunx eslint src/components/dashboard/views/knowledge-view.tsx` — clean (0 warnings, 0 errors).
+   476→
+   477→Stage Summary:
+   478→- Bulk Import UI is complete and type-safe. Admins can now paste content in 3 formats (or auto-detect) and create up to 50 KB items in one action via the existing `/api/knowledge-base/import` endpoint. List and stats refresh automatically after a successful import.
+   479→
+   480→---
+   481→Task ID: CRON-2
+   482→Agent: main (webDevReview cron round 2)
+   483→Task: QA assessment, notification bell, PDF export, KB bulk import, styling polish.
+   484→
+   485→## Current Project Status
+   486→MVP stable from prior rounds. All 10 modules + dark mode + quick replies + CSV export working. This round focused on high-value new features and styling polish.
+   487→
+   488→## Work Log
+   489→
+   490→### QA Findings
+   491→- Logged in, tested all views — stable, no errors.
+   492→- Tested quote generation flow end-to-end: AI generates full proposal (778 tokens) with all 7 sections.
+   493→- VLM assessment of overview: 7/10 polish, suggested hover states, depth, spacing improvements.
+   494→- No bugs found — app is stable.
+   495→
+   496→### New Features
+   497→1. **Notification Bell** (topbar):
+   498→   - Created `/api/notifications` endpoint (unread counts: new leads, active sessions, draft quotes + recent leads list).
+   499→   - Created `notification-bell.tsx` component: bell icon with unread badge (destructive pill), dropdown panel with summary chips (leads/sessions/quotes), recent leads list with quality badges + time-ago, "View all" footer. Polls every 30s. Click-outside-to-close. Wiggle animation when unread.
+
+[showing lines 200-499 of 1272; use offset=500 with limit to continue reading]

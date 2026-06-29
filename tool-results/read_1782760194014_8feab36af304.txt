@@ -1,0 +1,2002 @@
+     1→"use client";
+     2→
+     3→import * as React from "react";
+     4→import { toast } from "sonner";
+     5→import {
+     6→  Loader2,
+     7→  Search,
+     8→  Ticket as TicketIcon,
+     9→  Plus,
+    10→  Send,
+    11→  Copy,
+    12→  Sparkles,
+    13→  AlertCircle,
+    14→  CheckCircle2,
+    15→  MoreHorizontal,
+    16→  Trash2,
+    17→  Phone,
+    18→  Mail,
+    19→  MessageSquare,
+    20→  Inbox,
+    21→  Filter,
+    22→  X,
+    23→  RefreshCw,
+    24→  CircleDot,
+    25→  Tag,
+    26→  ExternalLink,
+    27→  UserCircle2,
+    28→  StickyNote,
+    29→  PenSquare,
+    30→  Clock,
+    31→  Flame,
+    32→  Hourglass,
+    33→  CheckCheck,
+    34→  Gauge,
+    35→  Wand2,
+    36→  CornerUpLeft,
+    37→  MessageCircle,
+    38→  Building2,
+    39→} from "lucide-react";
+    40→
+    41→import {
+    42→  Card,
+    43→  CardContent,
+    44→} from "@/components/ui/card";
+    45→import { Button } from "@/components/ui/button";
+    46→import { Badge } from "@/components/ui/badge";
+    47→import { Input } from "@/components/ui/input";
+    48→import {
+    49→  Select,
+    50→  SelectContent,
+    51→  SelectItem,
+    52→  SelectTrigger,
+    53→  SelectValue,
+    54→} from "@/components/ui/select";
+    55→import {
+    56→  Dialog,
+    57→  DialogContent,
+    58→  DialogDescription,
+    59→  DialogFooter,
+    60→  DialogHeader,
+    61→  DialogTitle,
+    62→} from "@/components/ui/dialog";
+    63→import {
+    64→  DropdownMenu,
+    65→  DropdownMenuContent,
+    66→  DropdownMenuItem,
+    67→  DropdownMenuLabel,
+    68→  DropdownMenuSeparator,
+    69→  DropdownMenuTrigger,
+    70→} from "@/components/ui/dropdown-menu";
+    71→import {
+    72→  AlertDialog,
+    73→  AlertDialogAction,
+    74→  AlertDialogCancel,
+    75→  AlertDialogContent,
+    76→  AlertDialogDescription,
+    77→  AlertDialogFooter,
+    78→  AlertDialogHeader,
+    79→  AlertDialogTitle,
+    80→} from "@/components/ui/alert-dialog";
+    81→import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+    82→import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+    83→import { Textarea } from "@/components/ui/textarea";
+    84→import { Separator } from "@/components/ui/separator";
+    85→import { Label } from "@/components/ui/label";
+    86→import { Skeleton } from "@/components/ui/skeleton";
+    87→import { cn } from "@/lib/utils";
+    88→
+    89→interface UserProp {
+    90→  userId: string;
+    91→  businessId: string;
+    92→  name: string;
+    93→  email: string;
+    94→  role: string;
+    95→  businessName: string;
+    96→}
+    97→
+    98→type TicketStatus = "open" | "pending" | "in_progress" | "resolved" | "closed";
+    99→type TicketPriority = "low" | "medium" | "high" | "urgent";
+   100→type TicketSentiment = "positive" | "neutral" | "negative" | "frustrated";
+   101→type MessageRole = "customer" | "agent";
+   102→
+   103→interface TicketCategory {
+   104→  id: string;
+   105→  name: string;
+   106→  color: string;
+   107→}
+   108→
+   109→interface TicketMessage {
+   110→  id: string;
+   111→  role: MessageRole;
+   112→  content: string;
+   113→  authorName: string | null;
+   114→  createdAt: string;
+   115→}
+   116→
+   117→interface TicketNote {
+   118→  id: string;
+   119→  authorName: string | null;
+   120→  content: string;
+   121→  createdAt: string;
+   122→}
+   123→
+   124→// Lightweight row shape returned by GET /api/tickets
+   125→interface Ticket {
+   126→  id: string;
+   127→  subject: string;
+   128→  description: string;
+   129→  status: TicketStatus;
+   130→  priority: TicketPriority;
+   131→  customerName: string | null;
+   132→  customerEmail: string | null;
+   133→  customerPhone: string | null;
+   134→  assignedName: string | null;
+   135→  category: TicketCategory | null;
+   136→  aiPriority: TicketPriority | null;
+   137→  aiSentiment: TicketSentiment | null;
+   138→  lastMessage: string;
+   139→  lastMessageAt: string | null;
+   140→  createdAt: string;
+   141→  updatedAt: string;
+   142→  resolvedAt: string | null;
+   143→}
+   144→
+   145→// Full ticket detail returned by GET /api/tickets/[id]
+   146→interface TicketDetail extends Ticket {
+   147→  assignedTo: string | null;
+   148→  categoryId: string | null;
+   149→  aiSummary: string | null;
+   150→  aiSuggestedReply: string | null;
+   151→  aiNextAction: string | null;
+   152→  chatSessionId: string | null;
+   153→  messages: TicketMessage[];
+   154→  notes: TicketNote[];
+   155→}
+   156→
+   157→interface TicketStats {
+   158→  open: number;
+   159→  urgent: number;
+   160→  awaitingReply: number;
+   161→  recentlyResolved: number;
+   162→  byStatus: { status: string; count: number }[];
+   163→  byPriority: { priority: string; count: number }[];
+   164→}
+   165→
+   166→interface Category extends TicketCategory {
+   167→  description?: string | null;
+   168→  ticketCount: number;
+   169→}
+   170→
+   171→const STATUSES: TicketStatus[] = [
+   172→  "open",
+   173→  "pending",
+   174→  "in_progress",
+   175→  "resolved",
+   176→  "closed",
+   177→];
+   178→const PRIORITIES: TicketPriority[] = ["low", "medium", "high", "urgent"];
+   179→
+   180→/** Title-case a snake_case string, e.g. "in_progress" → "In Progress". */
+   181→function formatStatus(s: string): string {
+   182→  return s
+   183→    .split("_")
+   184→    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+   185→    .join(" ");
+   186→}
+   187→
+   188→// ─── badge styling ───────────────────────────────────────────────
+   189→function statusBadgeClass(s: TicketStatus) {
+   190→  switch (s) {
+   191→    case "open":
+   192→      return "bg-primary/10 text-primary border-primary/20";
+   193→    case "pending":
+   194→      return "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30";
+   195→    case "in_progress":
+   196→      return "bg-violet-500/15 text-violet-700 dark:text-violet-400 border-violet-500/30";
+   197→    case "resolved":
+   198→      return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20";
+   199→    case "closed":
+   200→    default:
+   201→      return "bg-muted text-muted-foreground border-border";
+   202→  }
+   203→}
+   204→
+   205→function priorityBadgeClass(p: TicketPriority) {
+   206→  switch (p) {
+   207→    case "urgent":
+   208→      return "bg-destructive/10 text-destructive border-destructive/20";
+   209→    case "high":
+   210→      return "bg-orange-500/15 text-orange-700 dark:text-orange-400 border-orange-500/30";
+   211→    case "medium":
+   212→      return "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30";
+   213→    case "low":
+   214→    default:
+   215→      return "bg-muted text-muted-foreground border-border";
+   216→  }
+   217→}
+   218→
+   219→function sentimentBadgeClass(s: TicketSentiment) {
+   220→  switch (s) {
+   221→    case "frustrated":
+   222→      return "bg-destructive/10 text-destructive border-destructive/20";
+   223→    case "negative":
+   224→      return "bg-orange-500/15 text-orange-700 dark:text-orange-400 border-orange-500/30";
+   225→    case "positive":
+   226→      return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20";
+   227→    case "neutral":
+   228→    default:
+   229→      return "bg-muted text-muted-foreground border-border";
+   230→  }
+   231→}
+   232→
+   233→function StatusBadge({ status }: { status: TicketStatus }) {
+   234→  return (
+   235→    <Badge variant="outline" className={cn("gap-1", statusBadgeClass(status))}>
+   236→      {status === "open" && (
+   237→        <span className="relative flex size-1.5">
+   238→          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+   239→          <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
+   240→        </span>
+   241→      )}
+   242→      {formatStatus(status)}
+   243→    </Badge>
+   244→  );
+   245→}
+   246→
+   247→function PriorityBadge({ priority }: { priority: TicketPriority }) {
+   248→  return (
+   249→    <Badge
+   250→      variant="outline"
+   251→      className={cn("capitalize gap-1", priorityBadgeClass(priority))}
+   252→    >
+   253→      {priority === "urgent" && <Flame size={11} />}
+   254→      {priority === "high" && <AlertCircle size={11} />}
+   255→      {priority}
+   256→    </Badge>
+   257→  );
+   258→}
+   259→
+   260→function SentimentBadge({ sentiment }: { sentiment: TicketSentiment }) {
+   261→  return (
+   262→    <Badge
+   263→      variant="outline"
+   264→      className={cn("capitalize gap-1", sentimentBadgeClass(sentiment))}
+   265→    >
+   266→      {sentiment === "frustrated" && <AlertCircle size={11} />}
+   267→      {sentiment === "positive" && <CheckCircle2 size={11} />}
+   268→      {sentiment}
+   269→    </Badge>
+   270→  );
+   271→}
+   272→
+   273→function CategoryBadge({ category }: { category: TicketCategory | null }) {
+   274→  if (!category) return null;
+   275→  return (
+   276→    <Badge variant="outline" className="gap-1.5 bg-card">
+   277→      <span
+   278→        className="size-2 rounded-full"
+   279→        style={{ backgroundColor: category.color || "#64748b" }}
+   280→      />
+   281→      {category.name}
+   282→    </Badge>
+   283→  );
+   284→}
+   285→
+   286→// ─── date helpers ────────────────────────────────────────────────
+   287→function relativeTime(iso: string | null): string {
+   288→  if (!iso) return "—";
+   289→  const d = new Date(iso);
+   290→  const diff = Date.now() - d.getTime();
+   291→  const sec = Math.floor(diff / 1000);
+   292→  if (sec < 60) return "just now";
+   293→  const min = Math.floor(sec / 60);
+   294→  if (min < 60) return `${min}m ago`;
+   295→  const hr = Math.floor(min / 60);
+   296→  if (hr < 24) return `${hr}h ago`;
+   297→  const day = Math.floor(hr / 24);
+   298→  if (day < 7) return `${day}d ago`;
+   299→  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+   300→}
+   301→
+   302→function fullDate(iso: string | null): string {
+   303→  if (!iso) return "—";
+   304→  return new Date(iso).toLocaleString(undefined, {
+   305→    month: "short",
+   306→    day: "numeric",
+   307→    year: "numeric",
+   308→    hour: "2-digit",
+   309→    minute: "2-digit",
+   310→  });
+   311→}
+   312→
+   313→function initials(name: string | null): string {
+   314→  return (name || "")
+   315→    .split(/\s+/)
+   316→    .filter(Boolean)
+   317→    .slice(0, 2)
+   318→    .map((s) => s[0]?.toUpperCase())
+   319→    .join("");
+   320→}
+   321→
+   322→// ─── Stat card ───────────────────────────────────────────────────
+   323→function StatCard({
+   324→  label,
+   325→  value,
+   326→  hint,
+   327→  icon: Icon,
+   328→  accent,
+   329→  loading,
+   330→}: {
+   331→  label: string;
+   332→  value: React.ReactNode;
+   333→  hint?: React.ReactNode;
+   334→  icon: React.ComponentType<{ size?: number; className?: string }>;
+   335→  accent?: "blue" | "green" | "amber" | "rose";
+   336→  loading?: boolean;
+   337→}) {
+   338→  const accentCls =
+   339→    accent === "green"
+   340→      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+   341→      : accent === "amber"
+   342→      ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+   343→      : accent === "rose"
+   344→      ? "bg-destructive/10 text-destructive"
+   345→      : "bg-primary/10 text-primary";
+   346→
+   347→  return (
+   348→    <Card className="overflow-hidden py-0">
+   349→      <CardContent className="p-4 flex items-center gap-4">
+   350→        <div
+   351→          className={cn(
+   352→            "size-10 rounded-lg flex items-center justify-center shrink-0",
+   353→            accentCls
+   354→          )}
+   355→        >
+   356→          <Icon size={18} />
+   357→        </div>
+   358→        <div className="min-w-0 flex-1">
+   359→          <div className="text-xs text-muted-foreground truncate">{label}</div>
+   360→          {loading ? (
+   361→            <Skeleton className="h-6 w-12 mt-0.5" />
+   362→          ) : (
+   363→            <div className="text-xl font-bold leading-tight truncate">
+   364→              {value}
+   365→            </div>
+   366→          )}
+   367→          {hint && (
+   368→            <div className="text-[11px] text-muted-foreground truncate mt-0.5">
+   369→              {hint}
+   370→            </div>
+   371→          )}
+   372→        </div>
+   373→      </CardContent>
+   374→    </Card>
+   375→  );
+   376→}
+   377→
+   378→// ─── Ticket patch payload ────────────────────────────────────────
+   379→type TicketPatch = {
+   380→  status?: TicketStatus;
+   381→  priority?: TicketPriority;
+   382→  categoryId?: string | null;
+   383→  assignedTo?: string | null;
+   384→  assignedName?: string | null;
+   385→  subject?: string;
+   386→};
+   387→
+   388→// ─── AI result payload (returned by /api/tickets/[id]/ai) ────────
+   389→interface AiResult {
+   390→  aiSummary?: string | null;
+   391→  aiSuggestedReply?: string | null;
+   392→  aiPriority?: TicketPriority | null;
+   393→  aiSentiment?: TicketSentiment | null;
+   394→  aiPriorityReason?: string | null;
+   395→  aiNextAction?: string | null;
+   396→  error?: string;
+   397→}
+   398→
+   399→// ─── Detail Dialog ───────────────────────────────────────────────
+   400→function TicketDetailDialog({
+   401→  ticket,
+   402→  open,
+   403→  onOpenChange,
+   404→  onSave,
+   405→  onAddMessage,
+   406→  onAddNote,
+   407→  onRunAi,
+   408→  onDeleted,
+   409→  saving,
+   410→  categories,
+   411→}: {
+   412→  ticket: TicketDetail | null;
+   413→  open: boolean;
+   414→  onOpenChange: (v: boolean) => void;
+   415→  onSave: (id: string, patch: TicketPatch) => Promise<boolean>;
+   416→  onAddMessage: (id: string, content: string) => Promise<boolean>;
+   417→  onAddNote: (id: string, content: string) => Promise<boolean>;
+   418→  onRunAi: (id: string, action: "summary" | "suggest_reply" | "detect_priority" | "full_analysis") => Promise<AiResult | null>;
+   419→  onDeleted: (id: string) => void;
+   420→  saving: boolean;
+   421→  categories: Category[];
+   422→}) {
+   423→  const [confirmDelete, setConfirmDelete] = React.useState(false);
+   424→  const [activeTab, setActiveTab] = React.useState("messages");
+   425→
+   426→  // Subject editor (editable in header)
+   427→  const [subjectDraft, setSubjectDraft] = React.useState("");
+   428→  const [subjectDirty, setSubjectDirty] = React.useState(false);
+   429→
+   430→  // Sync subject draft when ticket changes
+   431→  React.useEffect(() => {
+   432→    if (ticket) {
+   433→      setSubjectDraft(ticket.subject);
+   434→      setSubjectDirty(false);
+   435→    }
+   436→  }, [ticket?.id, ticket?.subject]);
+   437→
+   438→  // Reset transient state when dialog closes
+   439→  React.useEffect(() => {
+   440→    if (!open) {
+   441→      setConfirmDelete(false);
+   442→      setActiveTab("messages");
+   443→    }
+   444→  }, [open]);
+   445→
+   446→  if (!ticket) return null;
+   447→
+   448→  const isOpen = ticket.status === "open";
+   449→
+   450→  async function commitSubject() {
+   451→    if (!subjectDirty) return;
+   452→    const trimmed = subjectDraft.trim();
+   453→    if (!trimmed || trimmed === ticket!.subject) {
+   454→      setSubjectDirty(false);
+   455→      return;
+   456→    }
+   457→    const ok = await onSave(ticket!.id, { subject: trimmed });
+   458→    if (!ok) {
+   459→      setSubjectDraft(ticket!.subject);
+   460→    }
+   461→    setSubjectDirty(false);
+   462→  }
+   463→
+   464→  return (
+   465→    <Dialog open={open} onOpenChange={onOpenChange}>
+   466→      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto scroll-thin">
+   467→        <DialogHeader>
+   468→          <div className="flex items-start gap-3 pr-6">
+   469→            <Avatar className="size-11 shrink-0">
+   470→              <AvatarFallback className="brand-gradient text-white font-semibold">
+   471→                {initials(ticket.customerName) || <TicketIcon size={18} />}
+   472→              </AvatarFallback>
+   473→            </Avatar>
+   474→            <div className="min-w-0 flex-1">
+   475→              <DialogTitle className="flex items-center gap-2 flex-wrap">
+   476→                <Input
+   477→                  value={subjectDraft}
+   478→                  onChange={(e) => {
+   479→                    setSubjectDraft(e.target.value);
+   480→                    setSubjectDirty(true);
+   481→                  }}
+   482→                  onBlur={commitSubject}
+   483→                  onKeyDown={(e) => {
+   484→                    if (e.key === "Enter") {
+   485→                      e.preventDefault();
+   486→                      e.currentTarget.blur();
+   487→                    }
+   488→                    if (e.key === "Escape") {
+   489→                      setSubjectDraft(ticket.subject);
+   490→                      setSubjectDirty(false);
+   491→                      (e.currentTarget as HTMLInputElement).blur();
+   492→                    }
+   493→                  }}
+   494→                  className={cn(
+   495→                    "h-7 px-1.5 text-base font-semibold border-transparent hover:border-border focus-visible:border-primary bg-transparent",
+   496→                    !subjectDirty && "border-transparent"
+   497→                  )}
+   498→                />
+   499→                {isOpen && (
+   500→                  <span className="relative flex size-2 shrink-0">
+   501→                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+   502→                    <span className="relative inline-flex size-2 rounded-full bg-primary" />
+   503→                  </span>
+   504→                )}
+   505→              </DialogTitle>
+   506→              <DialogDescription className="flex items-center gap-2 flex-wrap mt-1">
+   507→                <PriorityBadge priority={ticket.priority} />
+   508→                <StatusBadge status={ticket.status} />
+   509→                <CategoryBadge category={ticket.category} />
+   510→                {ticket.aiSentiment && (
+   511→                  <SentimentBadge sentiment={ticket.aiSentiment} />
+   512→                )}
+   513→              </DialogDescription>
+   514→              <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
+   515→                <UserCircle2 size={12} />
+   516→                <span className="truncate">
+   517→                  {ticket.customerName || "Anonymous"}
+   518→                </span>
+   519→                <span className="text-muted-foreground/50">·</span>
+   520→                <Clock size={11} />
+   521→                {relativeTime(ticket.createdAt)}
+   522→              </div>
+   523→            </div>
+   524→          </div>
+   525→        </DialogHeader>
+   526→
+   527→        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+   528→          <TabsList className="w-full">
+   529→            <TabsTrigger value="messages" className="flex-1 gap-1.5">
+   530→              <MessageCircle size={13} />
+   531→              <span className="hidden sm:inline">Messages</span>
+   532→              {ticket.messages.length > 0 && (
+   533→                <Badge variant="secondary" className="ml-0.5 px-1.5 py-0 text-[10px] h-4 min-w-4 justify-center">
+   534→                  {ticket.messages.length}
+   535→                </Badge>
+   536→              )}
+   537→            </TabsTrigger>
+   538→            <TabsTrigger value="notes" className="flex-1 gap-1.5">
+   539→              <StickyNote size={13} />
+   540→              <span className="hidden sm:inline">Notes</span>
+   541→              {ticket.notes.length > 0 && (
+   542→                <Badge variant="secondary" className="ml-0.5 px-1.5 py-0 text-[10px] h-4 min-w-4 justify-center">
+   543→                  {ticket.notes.length}
+   544→                </Badge>
+   545→              )}
+   546→            </TabsTrigger>
+   547→            <TabsTrigger value="ai" className="flex-1 gap-1.5">
+   548→              <Sparkles size={13} />
+   549→              <span className="hidden sm:inline">AI Assistant</span>
+   550→            </TabsTrigger>
+   551→            <TabsTrigger value="details" className="flex-1 gap-1.5">
+   552→              <CircleDot size={13} />
+   553→              <span className="hidden sm:inline">Details</span>
+   554→            </TabsTrigger>
+   555→          </TabsList>
+   556→
+   557→          {/* ─── Messages tab ─── */}
+   558→          <TabsContent value="messages" className="mt-4">
+   559→            <MessagesTab
+   560→              ticket={ticket}
+   561→              onAddMessage={onAddMessage}
+   562→              saving={saving}
+   563→            />
+   564→          </TabsContent>
+   565→
+   566→          {/* ─── Notes tab ─── */}
+   567→          <TabsContent value="notes" className="mt-4">
+   568→            <NotesTab
+   569→              ticket={ticket}
+   570→              onAddNote={onAddNote}
+   571→              saving={saving}
+   572→            />
+   573→          </TabsContent>
+   574→
+   575→          {/* ─── AI Assistant tab ─── */}
+   576→          <TabsContent value="ai" className="mt-4">
+   577→            <AiAssistantTab
+   578→              ticket={ticket}
+   579→              onRunAi={onRunAi}
+   580→              onAddMessage={onAddMessage}
+   581→            />
+   582→          </TabsContent>
+   583→
+   584→          {/* ─── Details tab ─── */}
+   585→          <TabsContent value="details" className="mt-4 space-y-4">
+   586→            <DetailsTab
+   587→              ticket={ticket}
+   588→              onSave={onSave}
+   589→              saving={saving}
+   590→              categories={categories}
+   591→              onMarkResolved={() =>
+   592→                onSave(ticket.id, { status: "resolved" })
+   593→              }
+   594→              onDelete={() => setConfirmDelete(true)}
+   595→            />
+   596→          </TabsContent>
+   597→        </Tabs>
+   598→
+   599→        <DialogFooter className="gap-2 sm:gap-2">
+   600→          <Button
+   601→            variant="destructive"
+   602→            size="sm"
+   603→            onClick={() => setConfirmDelete(true)}
+   604→            disabled={saving}
+   605→            className="mr-auto"
+   606→          >
+   607→            <Trash2 size={14} />
+   608→            Delete
+   609→          </Button>
+   610→          <Button
+   611→            variant="outline"
+   612→            size="sm"
+   613→            onClick={() => onOpenChange(false)}
+   614→            disabled={saving}
+   615→          >
+   616→            Close
+   617→          </Button>
+   618→        </DialogFooter>
+   619→      </DialogContent>
+   620→
+   621→      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+   622→        <AlertDialogContent>
+   623→          <AlertDialogHeader>
+   624→            <AlertDialogTitle>Delete this ticket?</AlertDialogTitle>
+   625→            <AlertDialogDescription>
+   626→              This will permanently remove{" "}
+   627→              <strong>{ticket.subject}</strong> and all its messages, notes, and
+   628→              AI data. This action cannot be undone.
+   629→            </AlertDialogDescription>
+   630→          </AlertDialogHeader>
+   631→          <AlertDialogFooter>
+   632→            <AlertDialogCancel>Cancel</AlertDialogCancel>
+   633→            <AlertDialogAction
+   634→              className="bg-destructive text-white hover:bg-destructive/90"
+   635→              onClick={() => {
+   636→                onDeleted(ticket.id);
+   637→                setConfirmDelete(false);
+   638→              }}
+   639→            >
+   640→              Delete ticket
+   641→            </AlertDialogAction>
+   642→          </AlertDialogFooter>
+   643→        </AlertDialogContent>
+   644→      </AlertDialog>
+   645→    </Dialog>
+   646→  );
+   647→}
+   648→
+   649→// ─── Messages tab (chat bubbles) ─────────────────────────────────
+   650→function MessagesTab({
+   651→  ticket,
+   652→  onAddMessage,
+   653→  saving,
+   654→}: {
+   655→  ticket: TicketDetail;
+   656→  onAddMessage: (id: string, content: string) => Promise<boolean>;
+   657→  saving: boolean;
+   658→}) {
+   659→  const [content, setContent] = React.useState("");
+   660→  const [submitting, setSubmitting] = React.useState(false);
+   661→  const scrollRef = React.useRef<HTMLDivElement>(null);
+   662→
+   663→  // Auto-scroll to bottom when messages change
+   664→  React.useEffect(() => {
+   665→    if (scrollRef.current) {
+   666→      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+   667→    }
+   668→  }, [ticket.messages.length, ticket.id]);
+   669→
+   670→  async function submit() {
+   671→    const trimmed = content.trim();
+   672→    if (!trimmed) return;
+   673→    setSubmitting(true);
+   674→    const ok = await onAddMessage(ticket.id, trimmed);
+   675→    setSubmitting(false);
+   676→    if (ok) setContent("");
+   677→  }
+   678→
+   679→  if (ticket.messages.length === 0 && !ticket.description) {
+   680→    return (
+   681→      <div className="rounded-lg border border-dashed py-10 text-center">
+   682→        <MessageSquare className="mx-auto text-muted-foreground/60" size={22} />
+   683→        <p className="text-sm text-muted-foreground mt-2">No messages yet</p>
+   684→        <p className="text-xs text-muted-foreground/70 mt-1">
+   685→          Send the first reply below to start the conversation.
+   686→        </p>
+   687→      </div>
+   688→    );
+   689→  }
+   690→
+   691→  return (
+   692→    <div className="space-y-3">
+   693→      <div
+   694→        ref={scrollRef}
+   695→        className="max-h-[45vh] overflow-y-auto scroll-thin space-y-3 pr-1"
+   696→      >
+   697→        {ticket.messages.map((m) => {
+   698→          const isAgent = m.role === "agent";
+   699→          return (
+   700→            <div
+   701→              key={m.id}
+   702→              className={cn(
+   703→                "flex items-end gap-2.5",
+   704→                isAgent && "flex-row-reverse"
+   705→              )}
+   706→            >
+   707→              <Avatar className="size-7 shrink-0">
+   708→                <AvatarFallback
+   709→                  className={cn(
+   710→                    "text-[10px] font-semibold",
+   711→                    isAgent
+   712→                      ? "brand-gradient text-white"
+   713→                      : "bg-muted text-muted-foreground"
+   714→                  )}
+   715→                >
+   716→                  {isAgent ? (
+   717→                    <Building2 size={13} />
+   718→                  ) : (
+   719→                    initials(m.authorName) || <UserCircle2 size={13} />
+   720→                  )}
+   721→                </AvatarFallback>
+   722→              </Avatar>
+   723→              <div
+   724→                className={cn(
+   725→                  "max-w-[80%] rounded-2xl px-3.5 py-2",
+   726→                  isAgent
+   727→                    ? "bg-primary text-primary-foreground rounded-br-sm"
+   728→                    : "bg-muted text-foreground rounded-bl-sm"
+   729→                )}
+   730→              >
+   731→                <div
+   732→                  className={cn(
+   733→                    "text-[11px] mb-0.5 flex items-center gap-1.5",
+   734→                    isAgent
+   735→                      ? "text-primary-foreground/80"
+   736→                      : "text-muted-foreground"
+   737→                  )}
+   738→                >
+   739→                  <span className="font-medium truncate">
+   740→                    {m.authorName || (isAgent ? "Agent" : "Customer")}
+   741→                  </span>
+   742→                  <span>·</span>
+   743→                  <span>{relativeTime(m.createdAt)}</span>
+   744→                </div>
+   745→                <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+   746→                  {m.content}
+   747→                </p>
+   748→              </div>
+   749→            </div>
+   750→          );
+   751→        })}
+   752→      </div>
+   753→
+   754→      <Separator />
+   755→
+   756→      <div className="rounded-lg border bg-muted/20 p-2.5 space-y-2">
+   757→        <Label className="text-xs gap-1.5 text-foreground font-medium sr-only">
+   758→          <Send size={12} />
+   759→          Reply as agent
+   760→        </Label>
+   761→        <Textarea
+   762→          value={content}
+   763→          onChange={(e) => setContent(e.target.value)}
+   764→          placeholder="Type your reply to the customer…"
+   765→          rows={3}
+   766→          maxLength={10000}
+   767→          disabled={submitting || saving}
+   768→          onKeyDown={(e) => {
+   769→            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+   770→              e.preventDefault();
+   771→              submit();
+   772→            }
+   773→          }}
+   774→        />
+   775→        <div className="flex items-center justify-between gap-2">
+   776→          <span className="text-[11px] text-muted-foreground">
+   777→            ⌘/Ctrl+Enter to send · Posted as{" "}
+   778→            <span className="font-medium text-foreground">Agent</span>
+   779→          </span>
+   780→          <Button
+   781→            size="sm"
+   782→            onClick={submit}
+   783→            disabled={!content.trim() || submitting || saving}
+   784→            className="gap-1.5"
+   785→          >
+   786→            {submitting ? (
+   787→              <Loader2 size={13} className="animate-spin" />
+   788→            ) : (
+   789→              <Send size={13} />
+   790→            )}
+   791→            Send reply
+   792→          </Button>
+   793→        </div>
+   794→      </div>
+   795→    </div>
+   796→  );
+   797→}
+   798→
+   799→// ─── Notes tab ───────────────────────────────────────────────────
+   800→function NotesTab({
+   801→  ticket,
+   802→  onAddNote,
+   803→  saving,
+   804→}: {
+   805→  ticket: TicketDetail;
+   806→  onAddNote: (id: string, content: string) => Promise<boolean>;
+   807→  saving: boolean;
+   808→}) {
+   809→  const [content, setContent] = React.useState("");
+   810→  const [submitting, setSubmitting] = React.useState(false);
+   811→
+   812→  async function submit() {
+   813→    const trimmed = content.trim();
+   814→    if (!trimmed) return;
+   815→    setSubmitting(true);
+   816→    const ok = await onAddNote(ticket.id, trimmed);
+   817→    setSubmitting(false);
+   818→    if (ok) setContent("");
+   819→  }
+   820→
+   821→  return (
+   822→    <div className="space-y-3">
+   823→      <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+   824→        <Label className="text-xs gap-1.5 text-foreground font-medium">
+   825→          <PenSquare size={12} className="text-primary" />
+   826→          Add an internal note
+   827→        </Label>
+   828→        <Textarea
+   829→          value={content}
+   830→          onChange={(e) => setContent(e.target.value)}
+   831→          placeholder="Internal note — visible only to your team, not the customer…"
+   832→          rows={3}
+   833→          maxLength={5000}
+   834→          disabled={submitting || saving}
+   835→          onKeyDown={(e) => {
+   836→            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+   837→              e.preventDefault();
+   838→              submit();
+   839→            }
+   840→          }}
+   841→        />
+   842→        <div className="flex items-center justify-between gap-2">
+   843→          <span className="text-[11px] text-muted-foreground">
+   844→            {content.length}/5000 · ⌘/Ctrl+Enter to save
+   845→          </span>
+   846→          <Button
+   847→            size="sm"
+   848→            onClick={submit}
+   849→            disabled={!content.trim() || submitting || saving}
+   850→            className="gap-1.5"
+   851→          >
+   852→            {submitting ? (
+   853→              <Loader2 size={13} className="animate-spin" />
+   854→            ) : (
+   855→              <Plus size={13} />
+   856→            )}
+   857→            Add note
+   858→          </Button>
+   859→        </div>
+   860→      </div>
+   861→
+   862→      <Separator />
+   863→
+   864→      <div className="space-y-2">
+   865→        {ticket.notes.length === 0 ? (
+   866→          <div className="rounded-lg border border-dashed py-8 text-center">
+   867→            <StickyNote className="mx-auto text-muted-foreground/60" size={20} />
+   868→            <p className="text-sm text-muted-foreground mt-2">No notes yet</p>
+   869→            <p className="text-xs text-muted-foreground/70 mt-1">
+   870→              Capture internal context, troubleshooting steps, or handoff notes.
+   871→            </p>
+   872→          </div>
+   873→        ) : (
+   874→          ticket.notes.map((note) => (
+   875→            <div key={note.id} className="rounded-lg border bg-card p-3">
+   876→              <div className="flex items-start gap-2.5">
+   877→                <Avatar className="size-7 shrink-0">
+   878→                  <AvatarFallback className="text-[10px] font-semibold bg-accent/40 text-accent-foreground">
+   879→                    {initials(note.authorName) || "?"}
+   880→                  </AvatarFallback>
+   881→                </Avatar>
+   882→                <div className="min-w-0 flex-1">
+   883→                  <div className="flex items-center justify-between gap-2">
+   884→                    <span className="text-xs font-medium truncate">
+   885→                      {note.authorName || "Unknown"}
+   886→                    </span>
+   887→                    <span className="text-[11px] text-muted-foreground shrink-0">
+   888→                      {relativeTime(note.createdAt)}
+   889→                    </span>
+   890→                  </div>
+   891→                  <p className="text-sm whitespace-pre-wrap break-words mt-1 text-foreground/90">
+   892→                    {note.content}
+   893→                  </p>
+   894→                </div>
+   895→              </div>
+   896→            </div>
+   897→          ))
+   898→        )}
+   899→      </div>
+   900→    </div>
+   901→  );
+   902→}
+   903→
+   904→// ─── AI Assistant tab ────────────────────────────────────────────
+   905→function AiAssistantTab({
+   906→  ticket,
+   907→  onRunAi,
+   908→  onAddMessage,
+   909→}: {
+   910→  ticket: TicketDetail;
+   911→  onRunAi: (id: string, action: "summary" | "suggest_reply" | "detect_priority" | "full_analysis") => Promise<AiResult | null>;
+   912→  onAddMessage: (id: string, content: string) => Promise<boolean>;
+   913→}) {
+   914→  // Local copies of stored AI values (updated when AI runs succeed)
+   915→  const [summary, setSummary] = React.useState<string | null>(ticket.aiSummary);
+   916→  const [suggestedReply, setSuggestedReply] = React.useState<string | null>(
+   917→    ticket.aiSuggestedReply
+   918→  );
+   919→  const [priority, setPriority] = React.useState<TicketPriority | null>(
+   920→    ticket.aiPriority
+   921→  );
+   922→  const [sentiment, setSentiment] = React.useState<TicketSentiment | null>(
+   923→    ticket.aiSentiment
+   924→  );
+   925→  const [priorityReason, setPriorityReason] = React.useState<string | null>(
+   926→    null
+   927→  );
+   928→  const [nextAction, setNextAction] = React.useState<string | null>(
+   929→    ticket.aiNextAction
+   930→  );
+   931→
+   932→  // Sync local state when ticket changes (e.g. opening a different ticket)
+   933→  React.useEffect(() => {
+   934→    setSummary(ticket.aiSummary);
+   935→    setSuggestedReply(ticket.aiSuggestedReply);
+   936→    setPriority(ticket.aiPriority);
+   937→    setSentiment(ticket.aiSentiment);
+   938→    setPriorityReason(null);
+   939→    setNextAction(ticket.aiNextAction);
+   940→  }, [
+   941→    ticket.id,
+   942→    ticket.aiSummary,
+   943→    ticket.aiSuggestedReply,
+   944→    ticket.aiPriority,
+   945→    ticket.aiSentiment,
+   946→    ticket.aiNextAction,
+   947→  ]);
+   948→
+   949→  // Track which action is loading
+   950→  const [loadingAction, setLoadingAction] = React.useState<string | null>(null);
+   951→  const [sendingReply, setSendingReply] = React.useState(false);
+   952→
+   953→  async function run(
+   954→    action: "summary" | "suggest_reply" | "detect_priority" | "full_analysis"
+   955→  ) {
+   956→    setLoadingAction(action);
+   957→    try {
+   958→      const result = await onRunAi(ticket.id, action);
+   959→      if (!result) return;
+   960→      if (result.error) {
+   961→        toast.error(result.error);
+   962→        return;
+   963→      }
+   964→      // Merge returned fields into local state
+   965→      if (result.aiSummary !== undefined) setSummary(result.aiSummary ?? null);
+   966→      if (result.aiSuggestedReply !== undefined)
+   967→        setSuggestedReply(result.aiSuggestedReply ?? null);
+   968→      if (result.aiPriority !== undefined)
+   969→        setPriority(result.aiPriority ?? null);
+   970→      if (result.aiSentiment !== undefined)
+   971→        setSentiment(result.aiSentiment ?? null);
+   972→      if (result.aiPriorityReason !== undefined)
+   973→        setPriorityReason(result.aiPriorityReason ?? null);
+   974→      if (result.aiNextAction !== undefined)
+   975→        setNextAction(result.aiNextAction ?? null);
+   976→      toast.success("AI analysis complete");
+   977→    } finally {
+   978→      setLoadingAction(null);
+   979→    }
+   980→  }
+   981→
+   982→  async function copyReply() {
+   983→    if (!suggestedReply) return;
+   984→    try {
+   985→      await navigator.clipboard.writeText(suggestedReply);
+   986→      toast.success("Copied reply to clipboard");
+   987→    } catch {
+   988→      toast.error("Couldn't access clipboard");
+   989→    }
+   990→  }
+   991→
+   992→  async function sendAsReply() {
+   993→    if (!suggestedReply?.trim()) return;
+   994→    setSendingReply(true);
+   995→    try {
+   996→      const ok = await onAddMessage(ticket.id, suggestedReply.trim());
+   997→      if (ok) toast.success("Reply sent to customer");
+   998→    } finally {
+   999→      setSendingReply(false);
+  1000→    }
+  1001→  }
+  1002→
+  1003→  const actionBtns: {
+  1004→    action: "summary" | "suggest_reply" | "detect_priority" | "full_analysis";
+  1005→    label: string;
+  1006→    icon: React.ComponentType<{ size?: number; className?: string }>;
+  1007→    hint: string;
+  1008→  }[] = [
+  1009→    {
+  1010→      action: "summary",
+  1011→      label: "Generate Summary",
+  1012→      icon: Sparkles,
+  1013→      hint: "2-3 sentence overview of the issue",
+  1014→    },
+  1015→    {
+  1016→      action: "suggest_reply",
+  1017→      label: "Suggest Reply",
+  1018→      icon: CornerUpLeft,
+  1019→      hint: "Draft a professional reply",
+  1020→    },
+  1021→    {
+  1022→      action: "detect_priority",
+  1023→      label: "Detect Priority",
+  1024→      icon: Gauge,
+  1025→      hint: "Assess priority + sentiment",
+  1026→    },
+  1027→    {
+  1028→      action: "full_analysis",
+  1029→      label: "Full Analysis",
+  1030→      icon: Wand2,
+  1031→      hint: "Summary + reply + priority + next step",
+  1032→    },
+  1033→  ];
+  1034→
+  1035→  return (
+  1036→    <div className="space-y-4">
+  1037→      {/* Action buttons */}
+  1038→      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+  1039→        {actionBtns.map((b) => {
+  1040→          const isLoading = loadingAction === b.action;
+  1041→          return (
+  1042→            <Button
+  1043→              key={b.action}
+  1044→              variant="outline"
+  1045→              className="h-auto justify-start gap-3 py-3 px-3.5"
+  1046→              onClick={() => run(b.action)}
+  1047→              disabled={!!loadingAction}
+  1048→            >
+  1049→              <div className="size-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+  1050→                {isLoading ? (
+  1051→                  <Loader2 size={16} className="animate-spin" />
+  1052→                ) : (
+  1053→                  <b.icon size={16} />
+  1054→                )}
+  1055→              </div>
+  1056→              <div className="text-left min-w-0">
+  1057→                <div className="text-sm font-medium flex items-center gap-1.5">
+  1058→                  {b.label}
+  1059→                  {b.action === "full_analysis" && (
+  1060→                    <Sparkles size={11} className="text-primary" />
+  1061→                  )}
+  1062→                </div>
+  1063→                <div className="text-[11px] text-muted-foreground truncate">
+  1064→                  {b.hint}
+  1065→                </div>
+  1066→              </div>
+  1067→            </Button>
+  1068→          );
+  1069→        })}
+  1070→      </div>
+  1071→
+  1072→      {/* Results */}
+  1073→      <div className="space-y-3">
+  1074→        {/* AI Summary */}
+  1075→        <AiResultCard
+  1076→          title="AI Summary"
+  1077→          icon={Sparkles}
+  1078→          empty="No summary yet — click “Generate Summary” above."
+  1079→          loading={loadingAction === "summary" || loadingAction === "full_analysis"}
+  1080→          value={summary}
+  1081→        />
+  1082→
+  1083→        {/* Suggested Reply */}
+  1084→        <div className="rounded-lg border border-primary/15 bg-primary/[0.03] p-3.5 space-y-2.5">
+  1085→          <div className="flex items-center justify-between gap-2">
+  1086→            <Label className="text-xs gap-1.5 text-foreground font-semibold">
+  1087→              <CornerUpLeft size={12} className="text-primary" />
+  1088→              Suggested Reply
+  1089→            </Label>
+  1090→            {suggestedReply && (
+  1091→              <Button
+  1092→                size="sm"
+  1093→                variant="ghost"
+  1094→                className="h-7 gap-1.5 text-xs"
+  1095→                onClick={copyReply}
+  1096→              >
+  1097→                <Copy size={12} />
+  1098→                Copy
+  1099→              </Button>
+  1100→            )}
+  1101→          </div>
+  1102→          {(loadingAction === "suggest_reply" ||
+  1103→            loadingAction === "full_analysis") &&
+  1104→          !suggestedReply ? (
+  1105→            <Skeleton className="h-20 w-full" />
+  1106→          ) : suggestedReply ? (
+  1107→            <>
+  1108→              <Textarea
+  1109→                value={suggestedReply}
+  1110→                onChange={(e) => setSuggestedReply(e.target.value)}
+  1111→                rows={5}
+  1112→                className="resize-y bg-card"
+  1113→              />
+  1114→              <div className="flex items-center justify-between gap-2 flex-wrap">
+  1115→                <p className="text-[11px] text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+  1116→                  <AlertCircle size={11} />
+  1117→                  Review and edit before sending — AI replies are not auto-sent.
+  1118→                </p>
+  1119→                <Button
+  1120→                  size="sm"
+  1121→                  variant="default"
+  1122→                  className="gap-1.5"
+  1123→                  onClick={sendAsReply}
+  1124→                  disabled={sendingReply || !suggestedReply.trim()}
+  1125→                >
+  1126→                  {sendingReply ? (
+  1127→                    <Loader2 size={12} className="animate-spin" />
+  1128→                  ) : (
+  1129→                    <Send size={12} />
+  1130→                  )}
+  1131→                  Send as reply
+  1132→                </Button>
+  1133→              </div>
+  1134→            </>
+  1135→          ) : (
+  1136→            <p className="text-sm text-muted-foreground">
+  1137→              No suggested reply yet — click “Suggest Reply” above.
+  1138→            </p>
+  1139→          )}
+  1140→        </div>
+  1141→
+  1142→        {/* Detected Priority */}
+  1143→        <div className="rounded-lg border bg-card p-3.5 space-y-2">
+  1144→          <Label className="text-xs gap-1.5 text-foreground font-semibold">
+  1145→            <Gauge size={12} className="text-primary" />
+  1146→            Detected Priority & Sentiment
+  1147→          </Label>
+  1148→          {loadingAction === "detect_priority" ||
+  1149→          loadingAction === "full_analysis" ? (
+  1150→            <div className="flex items-center gap-2">
+  1151→              <Skeleton className="h-5 w-20" />
+  1152→              <Skeleton className="h-5 w-24" />
+  1153→            </div>
+  1154→          ) : priority || sentiment ? (
+  1155→            <div className="space-y-2">
+  1156→              <div className="flex items-center gap-2 flex-wrap">
+  1157→                {priority && <PriorityBadge priority={priority} />}
+  1158→                {sentiment && <SentimentBadge sentiment={sentiment} />}
+  1159→                {ticket.priority !== priority && priority && (
+  1160→                  <Badge
+  1161→                    variant="outline"
+  1162→                    className="bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30 gap-1"
+  1163→                  >
+  1164→                    <AlertCircle size={11} />
+  1165→                    Differs from current ({ticket.priority})
+  1166→                  </Badge>
+  1167→                )}
+  1168→              </div>
+  1169→              {priorityReason && (
+  1170→                <p className="text-sm text-muted-foreground italic">
+  1171→                  “{priorityReason}”
+  1172→                </p>
+  1173→              )}
+  1174→            </div>
+  1175→          ) : (
+  1176→            <p className="text-sm text-muted-foreground">
+  1177→              No analysis yet — click “Detect Priority” above.
+  1178→            </p>
+  1179→          )}
+  1180→        </div>
+  1181→
+  1182→        {/* Next Action */}
+  1183→        <AiResultCard
+  1184→          title="Recommended Next Action"
+  1185→          icon={CheckCircle2}
+  1186→          empty="No recommendation yet — run “Full Analysis” to generate."
+  1187→          loading={loadingAction === "full_analysis"}
+  1188→          value={nextAction}
+  1189→        />
+  1190→      </div>
+  1191→    </div>
+  1192→  );
+  1193→}
+  1194→
+  1195→function AiResultCard({
+  1196→  title,
+  1197→  icon: Icon,
+  1198→  value,
+  1199→  empty,
+  1200→  loading,
+  1201→}: {
+  1202→  title: string;
+  1203→  icon: React.ComponentType<{ size?: number; className?: string }>;
+  1204→  value: string | null;
+  1205→  empty: string;
+  1206→  loading: boolean;
+  1207→}) {
+  1208→  return (
+  1209→    <div className="rounded-lg border bg-card p-3.5 space-y-2">
+  1210→      <Label className="text-xs gap-1.5 text-foreground font-semibold">
+  1211→        <Icon size={12} className="text-primary" />
+  1212→        {title}
+  1213→      </Label>
+  1214→      {loading && !value ? (
+  1215→        <Skeleton className="h-12 w-full" />
+  1216→      ) : value ? (
+  1217→        <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap">
+  1218→          {value}
+  1219→        </p>
+  1220→      ) : (
+  1221→        <p className="text-sm text-muted-foreground">{empty}</p>
+  1222→      )}
+  1223→    </div>
+  1224→  );
+  1225→}
+  1226→
+  1227→// ─── Details tab ─────────────────────────────────────────────────
+  1228→function DetailsTab({
+  1229→  ticket,
+  1230→  onSave,
+  1231→  saving,
+  1232→  categories,
+  1233→  onMarkResolved,
+  1234→  onDelete,
+  1235→}: {
+  1236→  ticket: TicketDetail;
+  1237→  onSave: (id: string, patch: TicketPatch) => Promise<boolean>;
+  1238→  saving: boolean;
+  1239→  categories: Category[];
+  1240→  onMarkResolved: () => void;
+  1241→  onDelete: () => void;
+  1242→}) {
+  1243→  return (
+  1244→    <>
+  1245→      {/* Controls */}
+  1246→      <div className="grid sm:grid-cols-3 gap-3">
+  1247→        <div className="space-y-1.5">
+  1248→          <Label className="text-xs font-medium text-muted-foreground">
+  1249→            Status
+  1250→          </Label>
+  1251→          <Select
+  1252→            value={ticket.status}
+  1253→            onValueChange={(v) =>
+  1254→              onSave(ticket.id, { status: v as TicketStatus })
+  1255→            }
+  1256→            disabled={saving}
+  1257→          >
+  1258→            <SelectTrigger className="w-full">
+  1259→              <SelectValue />
+  1260→            </SelectTrigger>
+  1261→            <SelectContent>
+  1262→              {STATUSES.map((s) => (
+  1263→                <SelectItem key={s} value={s}>
+  1264→                  {formatStatus(s)}
+  1265→                </SelectItem>
+  1266→              ))}
+  1267→            </SelectContent>
+  1268→          </Select>
+  1269→        </div>
+  1270→        <div className="space-y-1.5">
+  1271→          <Label className="text-xs font-medium text-muted-foreground">
+  1272→            Priority
+  1273→          </Label>
+  1274→          <Select
+  1275→            value={ticket.priority}
+  1276→            onValueChange={(v) =>
+  1277→              onSave(ticket.id, { priority: v as TicketPriority })
+  1278→            }
+  1279→            disabled={saving}
+  1280→          >
+  1281→            <SelectTrigger className="w-full">
+  1282→              <SelectValue />
+  1283→            </SelectTrigger>
+  1284→            <SelectContent>
+  1285→              {PRIORITIES.map((p) => (
+  1286→                <SelectItem key={p} value={p} className="capitalize">
+  1287→                  {p}
+  1288→                </SelectItem>
+  1289→              ))}
+  1290→            </SelectContent>
+  1291→          </Select>
+  1292→        </div>
+  1293→        <div className="space-y-1.5">
+  1294→          <Label className="text-xs font-medium text-muted-foreground">
+  1295→            Category
+  1296→          </Label>
+  1297→          <Select
+  1298→            value={ticket.categoryId || "__none__"}
+  1299→            onValueChange={(v) =>
+  1300→              onSave(ticket.id, {
+  1301→                categoryId: v === "__none__" ? null : v,
+  1302→              })
+  1303→            }
+  1304→            disabled={saving}
+  1305→          >
+  1306→            <SelectTrigger className="w-full">
+  1307→              <SelectValue />
+  1308→            </SelectTrigger>
+  1309→            <SelectContent>
+  1310→              <SelectItem value="__none__">No category</SelectItem>
+  1311→              {categories.map((c) => (
+  1312→                <SelectItem key={c.id} value={c.id}>
+  1313→                  {c.name}
+  1314→                </SelectItem>
+  1315→              ))}
+  1316→            </SelectContent>
+  1317→          </Select>
+  1318→        </div>
+  1319→      </div>
+  1320→
+  1321→      {/* Quick action */}
+  1322→      {ticket.status !== "resolved" && ticket.status !== "closed" && (
+  1323→        <Button
+  1324→          variant="default"
+  1325→          size="sm"
+  1326→          onClick={onMarkResolved}
+  1327→          disabled={saving}
+  1328→          className="gap-1.5 w-full"
+  1329→        >
+  1330→          <CheckCircle2 size={14} />
+  1331→          Mark as Resolved
+  1332→        </Button>
+  1333→      )}
+  1334→
+  1335→      <Separator />
+  1336→
+  1337→      {/* Customer info */}
+  1338→      <div>
+  1339→        <Label className="text-xs font-semibold text-foreground uppercase tracking-wide mb-2 block">
+  1340→          Customer
+  1341→        </Label>
+  1342→        <div className="grid sm:grid-cols-2 gap-3">
+  1343→          <InfoRow
+  1344→            icon={UserCircle2}
+  1345→            label="Name"
+  1346→            value={ticket.customerName || "Anonymous"}
+  1347→          />
+  1348→          <InfoRow
+  1349→            icon={Tag}
+  1350→            label="Category"
+  1351→            value={
+  1352→              ticket.category ? (
+  1353→                <span className="flex items-center gap-1.5">
+  1354→                  <span
+  1355→                    className="size-2 rounded-full"
+  1356→                    style={{
+  1357→                      backgroundColor: ticket.category.color || "#64748b",
+  1358→                    }}
+  1359→                  />
+  1360→                  {ticket.category.name}
+  1361→                </span>
+  1362→              ) : (
+  1363→                "—"
+  1364→              )
+  1365→            }
+  1366→          />
+  1367→          <InfoRow
+  1368→            icon={Mail}
+  1369→            label="Email"
+  1370→            value={ticket.customerEmail || "—"}
+  1371→            href={ticket.customerEmail ? `mailto:${ticket.customerEmail}` : undefined}
+  1372→          />
+  1373→          <InfoRow
+  1374→            icon={Phone}
+  1375→            label="Phone"
+  1376→            value={ticket.customerPhone || "—"}
+  1377→            href={ticket.customerPhone ? `tel:${ticket.customerPhone}` : undefined}
+  1378→          />
+  1379→        </div>
+  1380→      </div>
+  1381→
+  1382→      <Separator />
+  1383→
+  1384→      {/* Assignment */}
+  1385→      <div>
+  1386→        <Label className="text-xs font-semibold text-foreground uppercase tracking-wide mb-2 block">
+  1387→          Assignment
+  1388→        </Label>
+  1389→        <InfoRow
+  1390→          icon={Building2}
+  1391→          label="Assigned to"
+  1392→          value={ticket.assignedName || "Unassigned"}
+  1393→        />
+  1394→      </div>
+  1395→
+  1396→      <Separator />
+  1397→
+  1398→      {/* Timestamps */}
+  1399→      <div>
+  1400→        <Label className="text-xs font-semibold text-foreground uppercase tracking-wide mb-2 block">
+  1401→          Timestamps
+  1402→        </Label>
+  1403→        <div className="grid sm:grid-cols-2 gap-3">
+  1404→          <InfoRow
+  1405→            icon={Clock}
+  1406→            label="Created"
+  1407→            value={<span className="text-xs">{fullDate(ticket.createdAt)}</span>}
+  1408→          />
+  1409→          <InfoRow
+  1410→            icon={RefreshCw}
+  1411→            label="Updated"
+  1412→            value={<span className="text-xs">{fullDate(ticket.updatedAt)}</span>}
+  1413→          />
+  1414→          <InfoRow
+  1415→            icon={CheckCircle2}
+  1416→            label="Resolved"
+  1417→            value={
+  1418→              ticket.resolvedAt ? (
+  1419→                <span className="text-xs text-emerald-600 dark:text-emerald-400">
+  1420→                  {fullDate(ticket.resolvedAt)}
+  1421→                </span>
+  1422→              ) : (
+  1423→                <span className="text-muted-foreground">Not resolved</span>
+  1424→              )
+  1425→            }
+  1426→          />
+  1427→          <InfoRow
+  1428→            icon={MessageSquare}
+  1429→            label="Last message"
+  1430→            value={
+  1431→              <span className="text-xs">
+  1432→                {ticket.lastMessageAt
+  1433→                  ? relativeTime(ticket.lastMessageAt)
+  1434→                  : "—"}
+  1435→              </span>
+  1436→            }
+  1437→          />
+  1438→        </div>
+  1439→      </div>
+  1440→
+  1441→      <Separator />
+  1442→
+  1443→      {/* Description (initial customer message) */}
+  1444→      {ticket.description && (
+  1445→        <div className="rounded-lg border bg-muted/30 p-3">
+  1446→          <div className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
+  1447→            <MessageSquare size={12} /> Original description
+  1448→          </div>
+  1449→          <p className="text-sm whitespace-pre-wrap break-words">
+  1450→            {ticket.description}
+  1451→          </p>
+  1452→        </div>
+  1453→      )}
+  1454→
+  1455→      {ticket.chatSessionId && (
+  1456→        <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+  1457→          <ExternalLink size={12} />
+  1458→          Linked to chat session — open the Conversations view for the full transcript.
+  1459→        </p>
+  1460→      )}
+  1461→
+  1462→      <Separator />
+  1463→
+  1464→      {/* Delete */}
+  1465→      <Button
+  1466→        variant="destructive"
+  1467→        size="sm"
+  1468→        onClick={onDelete}
+  1469→        disabled={saving}
+  1470→        className="gap-1.5 w-full sm:w-auto"
+  1471→      >
+  1472→        <Trash2 size={14} />
+  1473→        Delete ticket
+  1474→      </Button>
+  1475→    </>
+  1476→  );
+  1477→}
+  1478→
+  1479→function InfoRow({
+  1480→  icon: Icon,
+  1481→  label,
+  1482→  value,
+  1483→  href,
+  1484→}: {
+  1485→  icon: React.ComponentType<{ size?: number; className?: string }>;
+  1486→  label: string;
+  1487→  value: React.ReactNode;
+  1488→  href?: string;
+  1489→}) {
+  1490→  const content = (
+  1491→    <div className="flex items-start gap-2.5 rounded-lg border bg-card px-3 py-2.5">
+  1492→      <Icon size={15} className="text-muted-foreground mt-0.5 shrink-0" />
+  1493→      <div className="min-w-0 flex-1">
+  1494→        <div className="text-[11px] text-muted-foreground uppercase tracking-wide">
+  1495→          {label}
+  1496→        </div>
+  1497→        <div className="text-sm font-medium truncate">{value}</div>
+  1498→      </div>
+  1499→    </div>
+  1500→  );
+  1501→  if (href) {
+  1502→    return (
+  1503→      <a href={href} className="block hover:opacity-80 transition-opacity">
+  1504→        {content}
+  1505→      </a>
+  1506→    );
+  1507→  }
+  1508→  return content;
+  1509→}
+  1510→
+  1511→// ─── New Ticket Dialog ───────────────────────────────────────────
+  1512→function NewTicketDialog({
+  1513→  open,
+  1514→  onOpenChange,
+  1515→  onCreate,
+  1516→  categories,
+  1517→}: {
+  1518→  open: boolean;
+  1519→  onOpenChange: (v: boolean) => void;
+  1520→  onCreate: (data: {
+  1521→    subject: string;
+  1522→    description: string;
+  1523→    categoryId?: string | null;
+  1524→    priority: TicketPriority;
+  1525→    customerName?: string;
+  1526→    customerEmail?: string;
+  1527→    customerPhone?: string;
+  1528→  }) => Promise<boolean>;
+  1529→  categories: Category[];
+  1530→}) {
+  1531→  const [subject, setSubject] = React.useState("");
+  1532→  const [description, setDescription] = React.useState("");
+  1533→  const [categoryId, setCategoryId] = React.useState<string>("__none__");
+  1534→  const [priority, setPriority] = React.useState<TicketPriority>("medium");
+  1535→  const [customerName, setCustomerName] = React.useState("");
+  1536→  const [customerEmail, setCustomerEmail] = React.useState("");
+  1537→  const [customerPhone, setCustomerPhone] = React.useState("");
+  1538→  const [submitting, setSubmitting] = React.useState(false);
+  1539→
+  1540→  // Reset on close
+  1541→  React.useEffect(() => {
+  1542→    if (!open) {
+  1543→      setSubject("");
+  1544→      setDescription("");
+  1545→      setCategoryId("__none__");
+  1546→      setPriority("medium");
+  1547→      setCustomerName("");
+  1548→      setCustomerEmail("");
+  1549→      setCustomerPhone("");
+  1550→    }
+  1551→  }, [open]);
+  1552→
+  1553→  const valid = subject.trim().length >= 2 && description.trim().length >= 1;
+  1554→
+  1555→  async function submit() {
+  1556→    if (!valid) return;
+  1557→    setSubmitting(true);
+  1558→    const ok = await onCreate({
+  1559→      subject: subject.trim(),
+  1560→      description: description.trim(),
+  1561→      categoryId: categoryId === "__none__" ? null : categoryId,
+  1562→      priority,
+  1563→      customerName: customerName.trim() || undefined,
+  1564→      customerEmail: customerEmail.trim() || undefined,
+  1565→      customerPhone: customerPhone.trim() || undefined,
+  1566→    });
+  1567→    setSubmitting(false);
+  1568→    if (ok) onOpenChange(false);
+  1569→  }
+  1570→
+  1571→  return (
+  1572→    <Dialog open={open} onOpenChange={onOpenChange}>
+  1573→      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto scroll-thin">
+  1574→        <DialogHeader>
+  1575→          <DialogTitle className="flex items-center gap-2">
+  1576→            <Plus size={18} className="text-primary" />
+  1577→            New Support Ticket
+  1578→          </DialogTitle>
+  1579→          <DialogDescription>
+  1580→            Create a ticket manually. A customer message will be created from
+  1581→            the description.
+  1582→          </DialogDescription>
+  1583→        </DialogHeader>
+  1584→
+  1585→        <div className="space-y-4 py-2">
+  1586→          <div className="space-y-1.5">
+  1587→            <Label htmlFor="t-subject">
+  1588→              Subject <span className="text-destructive">*</span>
+  1589→            </Label>
+  1590→            <Input
+  1591→              id="t-subject"
+  1592→              value={subject}
+  1593→              onChange={(e) => setSubject(e.target.value)}
+  1594→              placeholder="Short summary of the issue…"
+  1595→              maxLength={200}
+  1596→              autoFocus
+  1597→            />
+  1598→          </div>
+  1599→
+  1600→          <div className="space-y-1.5">
+  1601→            <Label htmlFor="t-description">
+  1602→              Description <span className="text-destructive">*</span>
+  1603→            </Label>
+  1604→            <Textarea
+  1605→              id="t-description"
+  1606→              value={description}
+  1607→              onChange={(e) => setDescription(e.target.value)}
+  1608→              placeholder="Describe the customer's issue or request in detail…"
+  1609→              rows={5}
+  1610→              maxLength={10000}
+  1611→            />
+  1612→            <div className="text-[11px] text-muted-foreground text-right">
+  1613→              {description.length}/10000
+  1614→            </div>
+  1615→          </div>
+  1616→
+  1617→          <div className="grid sm:grid-cols-2 gap-3">
+  1618→            <div className="space-y-1.5">
+  1619→              <Label htmlFor="t-category">Category</Label>
+  1620→              <Select value={categoryId} onValueChange={setCategoryId}>
+  1621→                <SelectTrigger id="t-category" className="w-full">
+  1622→                  <SelectValue placeholder="No category" />
+  1623→                </SelectTrigger>
+  1624→                <SelectContent>
+  1625→                  <SelectItem value="__none__">No category</SelectItem>
+  1626→                  {categories.map((c) => (
+  1627→                    <SelectItem key={c.id} value={c.id}>
+  1628→                      <span className="flex items-center gap-2">
+  1629→                        <span
+  1630→                          className="size-2 rounded-full"
+  1631→                          style={{ backgroundColor: c.color || "#64748b" }}
+  1632→                        />
+  1633→                        {c.name}
+  1634→                      </span>
+  1635→                    </SelectItem>
+  1636→                  ))}
+  1637→                </SelectContent>
+  1638→              </Select>
+  1639→            </div>
+  1640→            <div className="space-y-1.5">
+  1641→              <Label htmlFor="t-priority">Priority</Label>
+  1642→              <Select
+  1643→                value={priority}
+  1644→                onValueChange={(v) => setPriority(v as TicketPriority)}
+  1645→              >
+  1646→                <SelectTrigger id="t-priority" className="w-full">
+  1647→                  <SelectValue />
+  1648→                </SelectTrigger>
+  1649→                <SelectContent>
+  1650→                  {PRIORITIES.map((p) => (
+  1651→                    <SelectItem key={p} value={p} className="capitalize">
+  1652→                      {p}
+  1653→                    </SelectItem>
+  1654→                  ))}
+  1655→                </SelectContent>
+  1656→              </Select>
+  1657→            </div>
+  1658→          </div>
+  1659→
+  1660→          <Separator />
+  1661→
+  1662→          <div>
+  1663→            <Label className="text-xs font-semibold text-foreground uppercase tracking-wide mb-2 block">
+  1664→              Customer (optional)
+  1665→            </Label>
+  1666→            <div className="grid sm:grid-cols-3 gap-3">
+  1667→              <div className="space-y-1.5">
+  1668→                <Label htmlFor="t-name" className="text-xs text-muted-foreground">
+  1669→                  Name
+  1670→                </Label>
+  1671→                <Input
+  1672→                  id="t-name"
+  1673→                  value={customerName}
+  1674→                  onChange={(e) => setCustomerName(e.target.value)}
+  1675→                  placeholder="Jane Doe"
+  1676→                  maxLength={100}
+  1677→                />
+  1678→              </div>
+  1679→              <div className="space-y-1.5">
+  1680→                <Label htmlFor="t-email" className="text-xs text-muted-foreground">
+  1681→                  Email
+  1682→                </Label>
+  1683→                <Input
+  1684→                  id="t-email"
+  1685→                  type="email"
+  1686→                  value={customerEmail}
+  1687→                  onChange={(e) => setCustomerEmail(e.target.value)}
+  1688→                  placeholder="jane@example.com"
+  1689→                />
+  1690→              </div>
+  1691→              <div className="space-y-1.5">
+  1692→                <Label htmlFor="t-phone" className="text-xs text-muted-foreground">
+  1693→                  Phone
+  1694→                </Label>
+  1695→                <Input
+  1696→                  id="t-phone"
+  1697→                  value={customerPhone}
+  1698→                  onChange={(e) => setCustomerPhone(e.target.value)}
+  1699→                  placeholder="+1 555 0100"
+  1700→                  maxLength={40}
+  1701→                />
+  1702→              </div>
+  1703→            </div>
+  1704→          </div>
+  1705→        </div>
+  1706→
+  1707→        <DialogFooter>
+  1708→          <Button
+  1709→            variant="outline"
+  1710→            onClick={() => onOpenChange(false)}
+  1711→            disabled={submitting}
+  1712→          >
+  1713→            Cancel
+  1714→          </Button>
+  1715→          <Button
+  1716→            onClick={submit}
+  1717→            disabled={!valid || submitting}
+  1718→            className="gap-1.5"
+  1719→          >
+  1720→            {submitting ? (
+  1721→              <Loader2 size={14} className="animate-spin" />
+  1722→            ) : (
+  1723→              <Plus size={14} />
+  1724→            )}
+  1725→            Create ticket
+  1726→          </Button>
+  1727→        </DialogFooter>
+  1728→      </DialogContent>
+  1729→    </Dialog>
+  1730→  );
+  1731→}
+  1732→
+  1733→// ─── Ticket row card ─────────────────────────────────────────────
+  1734→function TicketRowCard({
+  1735→  ticket,
+  1736→  onOpen,
+  1737→  onQuickStatus,
+  1738→  onQuickDelete,
+  1739→}: {
+  1740→  ticket: Ticket;
+  1741→  onOpen: (t: Ticket) => void;
+  1742→  onQuickStatus: (t: Ticket, status: TicketStatus) => void;
+  1743→  onQuickDelete: (t: Ticket) => void;
+  1744→}) {
+  1745→  const isOpen = ticket.status === "open";
+  1746→  return (
+  1747→    <div
+  1748→      onClick={() => onOpen(ticket)}
+  1749→      className={cn(
+  1750→        "rounded-lg border bg-card p-3.5 cursor-pointer hover:bg-muted/30 hover:border-primary/30 transition-colors group",
+  1751→        isOpen && "border-primary/30 bg-primary/[0.03]"
+  1752→      )}
+  1753→    >
+  1754→      <div className="flex items-start gap-3">
+  1755→        <Avatar className="size-9 shrink-0 mt-0.5">
+  1756→          <AvatarFallback className="text-xs font-semibold bg-primary/10 text-primary">
+  1757→            {initials(ticket.customerName) || <TicketIcon size={15} />}
+  1758→          </AvatarFallback>
+  1759→        </Avatar>
+  1760→        <div className="min-w-0 flex-1">
+  1761→          <div className="flex items-start justify-between gap-2">
+  1762→            <div className="min-w-0 flex-1">
+  1763→              <div className="font-medium text-sm truncate flex items-center gap-1.5">
+  1764→                <span className="truncate">{ticket.subject}</span>
+  1765→                {isOpen && (
+  1766→                  <span className="relative flex size-1.5 shrink-0">
+  1767→                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+  1768→                    <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
+  1769→                  </span>
+  1770→                )}
+  1771→              </div>
+  1772→              <div className="text-xs text-muted-foreground truncate mt-0.5">
+  1773→                {ticket.customerName || "Anonymous"}
+  1774→                {ticket.customerEmail && (
+  1775→                  <>
+  1776→                    <span className="text-muted-foreground/50"> · </span>
+  1777→                    {ticket.customerEmail}
+  1778→                  </>
+  1779→                )}
+  1780→              </div>
+  1781→            </div>
+  1782→            <div
+  1783→              onClick={(e) => e.stopPropagation()}
+  1784→              className="shrink-0"
+  1785→            >
+  1786→              <DropdownMenu>
+  1787→                <DropdownMenuTrigger asChild>
+  1788→                  <Button
+  1789→                    variant="ghost"
+  1790→                    size="icon"
+  1791→                    className="size-7 opacity-0 group-hover:opacity-100 transition-opacity"
+  1792→                    aria-label="Ticket actions"
+  1793→                  >
+  1794→                    <MoreHorizontal size={15} />
+  1795→                  </Button>
+  1796→                </DropdownMenuTrigger>
+  1797→                <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+  1798→                  <DropdownMenuLabel>Quick status</DropdownMenuLabel>
+  1799→                  <DropdownMenuItem
+  1800→                    onClick={() => onQuickStatus(ticket, "in_progress")}
+  1801→                    disabled={ticket.status === "in_progress"}
+  1802→                  >
+  1803→                    <CircleDot size={14} /> Mark in progress
+  1804→                  </DropdownMenuItem>
+  1805→                  <DropdownMenuItem
+  1806→                    onClick={() => onQuickStatus(ticket, "pending")}
+  1807→                    disabled={ticket.status === "pending"}
+  1808→                  >
+  1809→                    <Hourglass size={14} /> Mark awaiting reply
+  1810→                  </DropdownMenuItem>
+  1811→                  <DropdownMenuItem
+  1812→                    onClick={() => onQuickStatus(ticket, "resolved")}
+  1813→                    disabled={ticket.status === "resolved"}
+  1814→                  >
+  1815→                    <CheckCheck size={14} className="text-emerald-600" /> Mark resolved
+  1816→                  </DropdownMenuItem>
+  1817→                  <DropdownMenuItem
+  1818→                    onClick={() => onQuickStatus(ticket, "closed")}
+  1819→                    disabled={ticket.status === "closed"}
+  1820→                  >
+  1821→                    <X size={14} /> Close ticket
+  1822→                  </DropdownMenuItem>
+  1823→                  <DropdownMenuSeparator />
+  1824→                  <DropdownMenuItem
+  1825→                    variant="destructive"
+  1826→                    onClick={() => onQuickDelete(ticket)}
+  1827→                  >
+  1828→                    <Trash2 size={14} /> Delete ticket
+  1829→                  </DropdownMenuItem>
+  1830→                </DropdownMenuContent>
+  1831→              </DropdownMenu>
+  1832→            </div>
+  1833→          </div>
+  1834→
+  1835→          {/* Last message preview */}
+  1836→          {ticket.lastMessage && (
+  1837→            <p className="text-xs text-muted-foreground/80 mt-1.5 line-clamp-1">
+  1838→              <MessageSquare size={10} className="inline mr-1 -mt-0.5" />
+  1839→              {ticket.lastMessage}
+  1840→            </p>
+  1841→          )}
+  1842→
+  1843→          {/* Badges */}
+  1844→          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+  1845→            <PriorityBadge priority={ticket.priority} />
+  1846→            <StatusBadge status={ticket.status} />
+  1847→            {ticket.category && <CategoryBadge category={ticket.category} />}
+  1848→            {ticket.aiSentiment && (
+  1849→              <SentimentBadge sentiment={ticket.aiSentiment} />
+  1850→            )}
+  1851→            <span className="text-[11px] text-muted-foreground ml-auto flex items-center gap-1">
+  1852→              <Clock size={11} />
+  1853→              {relativeTime(ticket.lastMessageAt || ticket.createdAt)}
+  1854→            </span>
+  1855→          </div>
+  1856→        </div>
+  1857→      </div>
+  1858→    </div>
+  1859→  );
+  1860→}
+  1861→
+  1862→// ─── Empty state ─────────────────────────────────────────────────
+  1863→function EmptyState({
+  1864→  hasFilters,
+  1865→  onRefresh,
+  1866→  onClearFilters,
+  1867→}: {
+  1868→  hasFilters: boolean;
+  1869→  onRefresh: () => void;
+  1870→  onClearFilters: () => void;
+  1871→}) {
+  1872→  return (
+  1873→    <div className="rounded-xl border border-dashed py-16 px-6 text-center">
+  1874→      <div className="mx-auto size-14 rounded-full bg-primary/10 flex items-center justify-center">
+  1875→        <Inbox className="text-primary" size={26} />
+  1876→      </div>
+  1877→      <h3 className="mt-4 text-lg font-semibold">
+  1878→        {hasFilters ? "No matching tickets" : "No tickets yet"}
+  1879→      </h3>
+  1880→      <p className="mt-1.5 text-sm text-muted-foreground max-w-md mx-auto">
+  1881→        {hasFilters
+  1882→          ? "Try adjusting or clearing your filters to see more tickets."
+  1883→          : "Support tickets will appear here. Create one manually or have your AI chatbot escalate a conversation."}
+  1884→      </p>
+  1885→      <div className="mt-5 flex items-center justify-center gap-2 flex-wrap">
+  1886→        {hasFilters ? (
+  1887→          <Button onClick={onClearFilters} variant="outline">
+  1888→            <Filter size={14} /> Clear filters
+  1889→          </Button>
+  1890→        ) : (
+  1891→          <Button onClick={onRefresh}>
+  1892→            <RefreshCw size={14} /> Refresh
+  1893→          </Button>
+  1894→        )}
+  1895→      </div>
+  1896→    </div>
+  1897→  );
+  1898→}
+  1899→
+  1900→// ─── Skeleton list ───────────────────────────────────────────────
+  1901→function TicketListSkeleton() {
+  1902→  return (
+  1903→    <div className="space-y-2.5">
+  1904→      {Array.from({ length: 5 }).map((_, i) => (
+  1905→        <Card key={i} className="p-3.5">
+  1906→          <div className="flex items-start gap-3">
+  1907→            <Skeleton className="size-9 rounded-full" />
+  1908→            <div className="flex-1 space-y-2">
+  1909→              <Skeleton className="h-4 w-3/4" />
+  1910→              <Skeleton className="h-3 w-1/2" />
+  1911→              <div className="flex gap-2 mt-2">
+  1912→                <Skeleton className="h-5 w-16" />
+  1913→                <Skeleton className="h-5 w-20" />
+  1914→                <Skeleton className="h-5 w-24" />
+  1915→              </div>
+  1916→            </div>
+  1917→          </div>
+  1918→        </Card>
+  1919→      ))}
+  1920→    </div>
+  1921→  );
+  1922→}
+  1923→
+  1924→// ─── Main view ───────────────────────────────────────────────────
+  1925→export function TicketsView({ user }: { user: UserProp }) {
+  1926→  const [tickets, setTickets] = React.useState<Ticket[]>([]);
+  1927→  const [loading, setLoading] = React.useState(true);
+  1928→  const [stats, setStats] = React.useState<TicketStats | null>(null);
+  1929→  const [statsLoading, setStatsLoading] = React.useState(true);
+  1930→  const [categories, setCategories] = React.useState<Category[]>([]);
+  1931→
+  1932→  const [searchInput, setSearchInput] = React.useState("");
+  1933→  const [search, setSearch] = React.useState("");
+  1934→  const [statusFilter, setStatusFilter] = React.useState<string>("all");
+  1935→  const [priorityFilter, setPriorityFilter] = React.useState<string>("all");
+  1936→
+  1937→  const [detailOpen, setDetailOpen] = React.useState(false);
+  1938→  const [selectedTicket, setSelectedTicket] = React.useState<TicketDetail | null>(null);
+  1939→  const [detailLoading, setDetailLoading] = React.useState(false);
+  1940→  const [saving, setSaving] = React.useState(false);
+  1941→
+  1942→  const [createOpen, setCreateOpen] = React.useState(false);
+  1943→  const [deleteTarget, setDeleteTarget] = React.useState<Ticket | null>(null);
+  1944→
+  1945→  // ─── Debounce search input ─────────────────────────────────────
+  1946→  React.useEffect(() => {
+  1947→    const t = setTimeout(() => setSearch(searchInput.trim()), 350);
+  1948→    return () => clearTimeout(t);
+  1949→  }, [searchInput]);
+  1950→
+  1951→  const hasFilters =
+  1952→    !!search || statusFilter !== "all" || priorityFilter !== "all";
+  1953→
+  1954→  // ─── Fetch list ────────────────────────────────────────────────
+  1955→  const fetchTickets = React.useCallback(async () => {
+  1956→    setLoading(true);
+  1957→    try {
+  1958→      const params = new URLSearchParams();
+  1959→      if (search) params.set("q", search);
+  1960→      if (statusFilter !== "all") params.set("status", statusFilter);
+  1961→      if (priorityFilter !== "all") params.set("priority", priorityFilter);
+  1962→      const res = await fetch(`/api/tickets?${params.toString()}`, {
+  1963→        cache: "no-store",
+  1964→      });
+  1965→      if (!res.ok) throw new Error("Failed to load");
+  1966→      const data = await res.json();
+  1967→      setTickets(data.tickets || []);
+  1968→    } catch {
+  1969→      toast.error("Failed to load tickets");
+  1970→    } finally {
+  1971→      setLoading(false);
+  1972→    }
+  1973→  }, [search, statusFilter, priorityFilter]);
+  1974→
+  1975→  React.useEffect(() => {
+  1976→    fetchTickets();
+  1977→  }, [fetchTickets]);
+  1978→
+  1979→  // ─── Fetch stats ───────────────────────────────────────────────
+  1980→  const fetchStats = React.useCallback(async () => {
+  1981→    setStatsLoading(true);
+  1982→    try {
+  1983→      const res = await fetch("/api/tickets/stats", { cache: "no-store" });
+  1984→      if (!res.ok) throw new Error("Failed to load stats");
+  1985→      const data = await res.json();
+  1986→      setStats(data);
+  1987→    } catch {
+  1988→      /* silent */
+  1989→    } finally {
+  1990→      setStatsLoading(false);
+  1991→    }
+  1992→  }, []);
+  1993→
+  1994→  React.useEffect(() => {
+  1995→    fetchStats();
+  1996→  }, [fetchStats]);
+  1997→
+  1998→  // ─── Fetch categories (once) ───────────────────────────────────
+  1999→  React.useEffect(() => {
+  2000→    let active = true;
+
+[showing lines 1-2000 of 2621; use offset=2001 with limit to continue reading]

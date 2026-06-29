@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
+import { logActivity } from "@/lib/activity";
 
 // GET — return the business's AI agent; create a default if none exists.
 export function GET() {
@@ -104,6 +105,15 @@ export function PUT(req: NextRequest) {
         data: { businessId: user.businessId, ...cleanData },
       });
     }
+
+    await logActivity({
+      businessId: user.businessId,
+      userId: user.userId,
+      userName: user.name,
+      action: "ai_agent_updated",
+      module: "agent",
+      description: `Updated AI agent "${cleanData.botName}"`,
+    });
 
     return { agent };
   });

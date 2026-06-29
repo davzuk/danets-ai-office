@@ -17,6 +17,7 @@ import {
   ChevronRight,
   Search,
   Ticket,
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DanetsLogo } from "@/components/dashboard/shared/danets-logo";
@@ -36,7 +37,8 @@ export type ViewId =
   | "tickets"
   | "usage"
   | "embed"
-  | "settings";
+  | "settings"
+  | "audit";
 
 interface NavItem {
   id: ViewId;
@@ -56,6 +58,7 @@ const NAV: NavItem[] = [
   { id: "agent", label: "AI Agent", icon: Bot, group: "tools", desc: "Bot configuration" },
   { id: "knowledge", label: "Knowledge Base", icon: BookOpen, group: "tools", desc: "KB articles" },
   { id: "embed", label: "Widget Embed", icon: Code2, group: "system", desc: "Install instructions" },
+  { id: "audit", label: "Audit Logs", icon: History, group: "system", desc: "Activity tracking" },
   { id: "settings", label: "Settings", icon: Settings, group: "system", desc: "Business settings" },
 ];
 

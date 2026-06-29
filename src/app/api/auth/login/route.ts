@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { createSession } from "@/lib/auth";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
+import { logActivity } from "@/lib/activity";
 
 const schema = z.object({
   email: z.string().email(),
@@ -39,6 +40,15 @@ export async function POST(req: NextRequest) {
   }
 
   await createSession(user.id, user.businessId);
+
+  await logActivity({
+    businessId: user.businessId,
+    userId: user.id,
+    userName: user.name,
+    action: "login",
+    module: "auth",
+    description: `${user.name} signed in`,
+  });
 
   return NextResponse.json({
     user: {

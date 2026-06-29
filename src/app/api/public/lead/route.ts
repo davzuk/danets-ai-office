@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
+import { createNotification } from "@/lib/activity";
 
 const leadSchema = z.object({
   pk: z.string().min(1),
@@ -94,6 +95,16 @@ export async function POST(req: NextRequest) {
       },
     });
   }
+
+  // Create notification for the business
+  const notifType = quality === "high" ? "high_quality_lead" : "new_lead";
+  await createNotification({
+    businessId: business.id,
+    type: notifType,
+    title: quality === "high" ? "High quality lead captured!" : "New lead captured",
+    message: `${name}${service ? ` — ${service}` : ""} (${quality} quality)`,
+    data: { leadId: lead.id, quality, source: lead.source },
+  });
 
   return NextResponse.json({ leadId: lead.id, quality: lead.quality });
 }

@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
+import { logActivity, createNotification } from "@/lib/activity";
 
 const VALID_STATUSES = ["open", "pending", "in_progress", "resolved", "closed"];
 const VALID_PRIORITIES = ["low", "medium", "high", "urgent"];
@@ -106,6 +107,25 @@ export function POST(req: NextRequest) {
         content: d.description.trim(),
         authorName: d.customerName?.trim() || "Customer",
       },
+    });
+
+    await logActivity({
+      businessId: user.businessId,
+      userId: user.userId,
+      userName: user.name,
+      action: "ticket_updated",
+      module: "tickets",
+      description: `Created ticket "${d.subject.trim()}" (${d.priority} priority)`,
+      metadata: { ticketId: ticket.id },
+    });
+
+    const notifType = d.priority === "urgent" ? "urgent_ticket" : "new_ticket";
+    await createNotification({
+      businessId: user.businessId,
+      type: notifType,
+      title: notifType === "urgent_ticket" ? "Urgent ticket created" : "New support ticket",
+      message: `"${d.subject.trim()}" — ${d.priority} priority${d.customerName ? ` from ${d.customerName}` : ""}`,
+      data: { ticketId: ticket.id },
     });
 
     return { ticket };

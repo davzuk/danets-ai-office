@@ -37,6 +37,8 @@ model Business {
   sessions           Session[]
   ticketCategories   SupportTicketCategory[]
   supportTickets     SupportTicket[]
+  notifications      Notification[]
+  activityLogs       ActivityLog[]
 }
 
 model BusinessUser {
@@ -410,3 +412,60 @@ model SubscriptionPlan {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
+
+// ─── Notifications ─────────────────────────────────────────────────
+
+model Notification {
+  id          String    @id @default(cuid())
+  businessId  String
+  userId      String?   // targeted user (null = all business users)
+  type        String    // new_lead | new_ticket | urgent_ticket | proposal_generated | proposal_accepted | follow_up_reminder | high_quality_lead | ai_usage_warning | subscription_expiry | integration_failed | new_chat_session
+  title       String
+  message     String
+  data        String?   // JSON string for extra context (leadId, ticketId, etc.)
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([userId])
+  @@index([type])
+  @@index([readAt])
+}
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  businessId  String
+  userId      String?
+  userName    String?
+  action      String   // login | user_created | user_updated | user_deleted | business_settings_changed | ai_agent_updated | kb_updated | lead_status_changed | proposal_generated | ticket_updated | document_uploaded | integration_changed | subscription_changed
+  module      String   // auth | team | business | agent | knowledge | leads | quotes | tickets | documents | integrations | subscription
+  description String
+  ipAddress   String?
+  userAgent   String?
+  metadata    String?  // JSON string for extra context
+  createdAt   DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([userId])
+  @@index([action])
+  @@index([module])
+}
+
+model NotificationPreference {
+  id          String   @id @default(cuid())
+  businessId  String
+  userId      String
+  type        String   // matches Notification.type
+  inApp       Boolean  @default(true)
+  email       Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([businessId, userId, type])
+  @@index([businessId, userId])
+}
+

@@ -15,6 +15,7 @@ import { TicketsView } from "@/components/dashboard/views/tickets-view";
 import { UsageView } from "@/components/dashboard/views/usage-view";
 import { EmbedView } from "@/components/dashboard/views/embed-view";
 import { SettingsView } from "@/components/dashboard/views/settings-view";
+import { AuditLogsView } from "@/components/dashboard/views/audit-logs-view";
 
 interface AuthUser {
   userId: string;
@@ -75,6 +76,7 @@ export default function Home() {
       case "usage": return <UsageView user={user} />;
       case "embed": return <EmbedView user={user} />;
       case "settings": return <SettingsView user={user} />;
+      case "audit": return <AuditLogsView user={user} />;
       default: return null;
     }
   };

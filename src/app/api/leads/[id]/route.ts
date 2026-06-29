@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
+import { logActivity } from "@/lib/activity";
 
 const LEAD_STATUSES = [
   "new", "contacted", "qualified", "proposal_sent", "negotiation", "won", "lost",
@@ -167,6 +168,17 @@ export function PATCH(req: NextRequest, { params }: RouteCtx) {
           actorId: user.userId,
           actorName: user.name,
         })),
+      });
+
+      // Also log to central audit log
+      await logActivity({
+        businessId: user.businessId,
+        userId: user.userId,
+        userName: user.name,
+        action: "lead_status_changed",
+        module: "leads",
+        description: `Lead "${lead.name}": ${activities[0].description}`,
+        metadata: { leadId: lead.id },
       });
     }
 

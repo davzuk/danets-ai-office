@@ -1269,3 +1269,110 @@ Phase 1 (CRM & Lead Pipeline) was complete. This is Phase 2: a full AI-powered s
 - Phase 2 complete: Full AI Support Ticket Assistant with 4 new models, 8 API routes, complete UI with 4-tab detail dialog, 4 AI actions (summary, suggest reply, detect priority/sentiment, full analysis), chat-to-ticket conversion, categories, stats.
 - All existing functionality preserved.
 - Ready for Phase 3 (Advanced Proposal Generator + Template Library) on user's instruction.
+
+---
+Task ID: P4-AUDIT
+Agent: subagent
+Task: Build the Audit Logs view — a timeline of all business activity for security and accountability.
+
+File created:
+- `src/components/dashboard/views/audit-logs-view.tsx` — full "use client" dashboard view exporting `AuditLogsView({ user })`.
+
+Work Log:
+- Consumes the existing `GET /api/audit-logs` endpoint (supports `?module=`, `?q=`, `?limit=`). All fetches are relative and use `cache: "no-store"`. Default limit set to 200 (max the API allows).
+- Header: title "Audit Logs" with `ShieldCheck` icon, subtitle "Track all activity across <businessName> for security and accountability.", and a small info badge showing total entry count (with smart singular/plural "entry"/"entries").
+- Toolbar (inside a `Card`):
+  - Search `Input` (debounced 350ms via `useEffect` + `setTimeout`) — searches description + userName (server-side `?q=`).
+  - Clear-search `X` button appears inside the input when text is present.
+  - Module `Select` (`All modules` + the 11 valid modules in the spec's required display order: Auth, Team, Business, AI Agent, Knowledge Base, Leads, Quotes, Tickets, Documents, Integrations, Subscription). Each option shows a colored dot matching the module's color.
+  - Conditional `Clear` button when any filter is active.
+  - Refresh icon button (`RefreshCw`) with `animate-spin` while loading.
+- Timeline list (NOT a table):
+  - Wrapped in `max-h-[70vh] overflow-y-auto scroll-thin pr-1` per spec.
+  - Each entry has a left column with a colored icon node (size-9 rounded-full, ring-4 ring-card, tinted bg + colored module icon) and a vertical connector line (w-px flex-1 opacity-30) extending to the next entry within the same date group.
+  - Content shows: description (main text), actor name + time-ago ("Danets Admin · 5m ago" with full-date `title` tooltip), a module badge (colored by module), a muted action badge (snake_case → Title Case via `formatTitleCase`), and an IP badge (monospace, with `Globe` icon) shown only when `ipAddress` is present.
+  - Empty entries render "System" as the actor when `userName` is null/empty.
+  - Date grouping: entries grouped into buckets labelled `Today`, `Yesterday`, or `<Weekday>, Mon D, YYYY`. Date headers are `sticky top-0 z-20` with translucent `bg-card/95 backdrop-blur-sm` and a divider line — so as you scroll the timeline the active date stays visible.
+- Module color mapping (per spec, NOT raw indigo/blue):
+  - auth → primary (brand blue), team → emerald, business → orange, agent → violet, knowledge → cyan, leads → accent (lemon green), quotes → amber, tickets → rose, documents → teal, integrations → fuchsia, subscription → lime.
+  - Each module has a `MODULE_CONFIG` entry (icon, label, dotClass, iconBg, iconText, badgeClass) with a `FALLBACK_CONFIG` (gray, `History` icon) for any unexpected module value.
+  - Module icon mapping per spec: auth=LogIn, team=Users, agent=Bot, knowledge=BookOpen, leads=Users, quotes=FileText, tickets=Ticket, business=Building2, documents=FileText, integrations=Plug, subscription=CreditCard.
+- Loading state: 6 `SkeletonLog` placeholder rows mimicking the timeline layout (icon node + connector + content skeletons).
+- Empty state: friendly message differentiating "No activity yet" (no rows at all — refresh CTA) vs "No matching activity" (filtered — clear-filters CTA).
+- Error handling: `sonner` `toast.error` only on fetch failure (per spec — toasts only for errors); on error, logs/total are reset to empty/0.
+- shadcn/ui components used: `Card`, `CardContent`, `Button`, `Badge`, `Input`, `Skeleton`, `Select`, `SelectContent`, `SelectItem`, `SelectTrigger`, `SelectValue`. (Spec listed `ScrollArea` but the long-list instruction explicitly required `max-h-[70vh] overflow-y-auto scroll-thin` — used that to match the project convention adopted by `leads-view` / `tickets-view`.)
+- Lucide icons: `LogIn`, `Users`, `Bot`, `BookOpen`, `FileText`, `Ticket`, `Building2`, `Plug`, `CreditCard`, `Search`, `RefreshCw`, `X`, `ShieldCheck`, `History`, `Globe`, `Filter`, `Inbox` (+ `LucideIcon` type).
+- Brand colors only (`bg-primary`, `bg-accent`, `text-accent-foreground`); all other module colors are explicit Tailwind palette tints (emerald/violet/cyan/amber/rose/orange/teal/fuchsia/lime) per the spec's mapping — no raw indigo/blue.
+
+Constraints honoured:
+- Created ONLY `src/components/dashboard/views/audit-logs-view.tsx`. Did not modify `page.tsx`, `app-shell.tsx`, or the existing `/api/audit-logs/route.ts`.
+- Export signature matches spec: `export function AuditLogsView({ user }: { user: { userId, businessId, name, email, role, businessName } })`.
+- All fetches relative (`/api/audit-logs`). Multi-tenant scoping already enforced server-side via `withSession` + `user.businessId` filter — view trusts the response.
+
+Verification:
+- `bunx tsc --noEmit` — no errors in `src/components/dashboard/views/audit-logs-view.tsx` (pre-existing unrelated errors in `examples/` and `skills/` remain).
+- `bunx eslint src/components/dashboard/views/audit-logs-view.tsx` — clean (0 warnings / 0 errors).
+
+Stage Summary:
+- Audit Logs view complete and type-safe. Renders a vertical, color-coded, date-grouped timeline of all `ActivityLog` rows for the current business, with debounced search + module filter + refresh. Ready to be wired into the app shell nav (`ViewId` extension + `page.tsx` router) — left to the integrator to avoid touching shared files outside this task's scope.
+
+---
+Task ID: PHASE-4
+Agent: main
+Task: Notification System + Audit Logs — Phase 4 of advanced modules roadmap.
+
+## Current Project Status
+Phases 1-2 complete (CRM + Support Tickets). Phase 3 (Advanced Proposal Generator) was skipped per user request. This phase adds a real notification system (replacing the computed-counts approach) and a full audit log/activity tracking system.
+
+## Work Log
+
+### Schema Changes (prisma/schema.prisma)
+- **New model: Notification** — id, businessId, userId (nullable for business-wide), type (11 types: new_lead, new_ticket, urgent_ticket, proposal_generated, proposal_accepted, follow_up_reminder, high_quality_lead, ai_usage_warning, subscription_expiry, integration_failed, new_chat_session), title, message, data (JSON), readAt, createdAt.
+- **New model: NotificationPreference** — id, businessId, userId, type, inApp (bool), email (bool). Unique constraint on [businessId, userId, type].
+- **New model: ActivityLog** — id, businessId, userId, userName, action (13 actions), module (11 modules), description, ipAddress, userAgent, metadata (JSON), createdAt.
+- Added back-relations on Business (notifications, activityLogs).
+- Ran `bun run db:push` (success).
+
+### Helper Library (src/lib/activity.ts)
+- `logActivity({ businessId, userId, userName, action, module, description, metadata? })` — creates an ActivityLog entry with auto-captured IP + user-agent from headers. Never throws (side-effect only).
+- `createNotification({ businessId, userId?, type, title, message, data? })` — creates a Notification record. Never throws.
+
+### API Routes Created (6 new endpoints)
+- `GET /api/notifications` — upgraded to return real Notification records (not just computed counts) + summary chips (leads/sessions/tickets) + recentUnread list.
+- `POST /api/notifications/[id]/read` — mark single notification as read.
+- `POST /api/notifications/read-all` — mark all as read.
+- `GET/PUT /api/notifications/preferences` — get/update notification type preferences (inApp + email toggles for 10 notification types).
+- `GET /api/audit-logs` — list activity logs with ?module=, ?action=, ?q=, ?limit= filters.
+
+### Activity Logging Integration
+Added `logActivity()` calls to:
+- `POST /api/auth/login` — logs "login" action.
+- `PATCH /api/leads/[id]` — logs "lead_status_changed" when status changes.
+- `POST /api/tickets` — logs "ticket_updated" on creation.
+- `PUT /api/agent` — logs "ai_agent_updated" on config change.
+
+Added `createNotification()` calls to:
+- `POST /api/public/lead` — creates "new_lead" or "high_quality_lead" notification when a visitor submits the lead form.
+- `POST /api/tickets` — creates "new_ticket" or "urgent_ticket" notification on ticket creation.
+
+### UI Changes
+- **Notification bell upgraded** (`notification-bell.tsx`): Now shows real Notification records (not just computed leads). Type-specific icons (Users, Ticket, AlertTriangle, TrendingUp, etc.) + type-specific colors. "Mark all read" button. Click a notification to navigate to the relevant view + mark as read. Unread indicator dot. 30-second polling.
+- **Audit Logs view created** (`audit-logs-view.tsx`, subagent P4-AUDIT, ~620 lines): Vertical timeline with module-specific icons + colors, date grouping (Today/Yesterday/date), action/module badges, IP address display, debounced search, module filter. 11 module color mappings.
+- **Nav updated**: Added "Audit Logs" (History icon, system group) to app-shell + page.tsx + command palette.
+
+### Seed Data
+- Created 5 sample notifications (high_quality_lead, new_lead, urgent_ticket, new_ticket, ai_usage_warning).
+- Created 6 sample audit logs (login, ai_agent_updated, kb_updated, lead_status_changed, proposal_generated, ticket_updated).
+
+## Verification
+- Lint: clean (0 errors).
+- Notification API: 5 unread notifications returned ✓, mark-all-read works ✓.
+- Audit log API: 7 entries returned (6 seeded + 1 from login) ✓, filters work ✓.
+- Notification bell: shows real notifications with type icons/colors, "Mark all read" clears badge ✓ (VLM confirmed clean).
+- Audit Logs view: timeline renders with icons, badges, date grouping, IP addresses ✓ (VLM confirmed clean).
+- Dev server stable.
+
+## Stage Summary
+- Phase 4 complete: Full notification system (3 models, 6 API routes, upgraded bell with real records) + audit log system (1 model, logActivity helper, 4 integration points, audit logs view with timeline).
+- All existing functionality preserved.
+- Ready for Phase 5 (AI Document Assistant + WhatsApp Prep) on user's instruction.
