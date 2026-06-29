@@ -62,6 +62,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 interface KbUser {
@@ -92,6 +93,23 @@ interface KbStats {
   archived: number;
   byCategory: { category: string; count: number }[];
   bySource: { sourceType: string; count: number }[];
+}
+
+/** A single matched KB article returned by /api/knowledge-base/test-search. */
+interface TestSearchMatch {
+  rank: number;
+  id: string;
+  title: string;
+  category: string;
+  contentPreview: string;
+}
+
+/** Full response from the KB test-search endpoint. */
+interface TestSearchResults {
+  query: string;
+  totalActiveKb: number;
+  matchedCount: number;
+  matches: TestSearchMatch[];
 }
 
 const SOURCE_TYPE_OPTIONS: {
@@ -352,6 +370,14 @@ const IMPORT_EXAMPLES: Record<ImportFormat, string> = {
   json: '[{"title":"...","content":"...","category":"..."}]',
 };
 
+/** Example visitor queries shown as clickable chips in the Test Search dialog. */
+const EXAMPLE_TEST_QUERIES: string[] = [
+  "What are your pricing plans?",
+  "Do you offer cybersecurity services?",
+  "How can I contact support?",
+  "What services do you provide?",
+];
+
 /**
  * Category color system.
  *
@@ -497,6 +523,15 @@ export function KnowledgeView({ user: _user }: { user: KbUser }) {
   const [importCategory, setImportCategory] = useState("Imported");
   const [importText, setImportText] = useState("");
   const [importing, setImporting] = useState(false);
+
+  // Test search dialog state
+  const [testSearchOpen, setTestSearchOpen] = useState(false);
+  const [testQuery, setTestQuery] = useState("");
+  const [testSearching, setTestSearching] = useState(false);
+  const [testResults, setTestResults] = useState<TestSearchResults | null>(null);
+  const [testError, setTestError] = useState<string | null>(null);
+  const testSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const testSearchAbort = useRef<AbortController | null>(null);
 
   const fetchInFlight = useRef(false);
 
@@ -745,6 +780,92 @@ export function KnowledgeView({ user: _user }: { user: KbUser }) {
     }
   }
 
+  /** Run a KB test search against the TF-IDF retrieval system. Aborts any
+   * in-flight request so the latest query wins. Errors are toasted (per spec)
+   * and also surfaced inline in the dialog. */
+  const runTestSearch = useCallback(async (q: string) => {
+    const query = q.trim();
+    if (!query) return;
+    testSearchAbort.current?.abort();
+    const ac = new AbortController();
+    testSearchAbort.current = ac;
+    setTestSearching(true);
+    setTestError(null);
+    try {
+      const res = await fetch("/api/knowledge-base/test-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query }),
+        signal: ac.signal,
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || "Search failed");
+      }
+      setTestResults(data as TestSearchResults);
+    } catch (e: any) {
+      if (e?.name === "AbortError") return;
+      const msg = e?.message || "Could not run search";
+      setTestError(msg);
+      toast.error(msg);
+    } finally {
+      if (!ac.signal.aborted) setTestSearching(false);
+    }
+  }, []);
+
+  // Debounced auto-search — fires 400ms after typing stops. Clears immediately
+  // when the input is emptied, and is bypassed by manual submit / chip clicks.
+  useEffect(() => {
+    if (!testSearchOpen) return;
+    const query = testQuery.trim();
+    if (testSearchTimer.current) {
+      clearTimeout(testSearchTimer.current);
+      testSearchTimer.current = null;
+    }
+    if (!query) {
+      setTestResults(null);
+      setTestError(null);
+      setTestSearching(false);
+      return;
+    }
+    setTestSearching(true);
+    testSearchTimer.current = setTimeout(() => {
+      testSearchTimer.current = null;
+      runTestSearch(query);
+    }, 400);
+    return () => {
+      if (testSearchTimer.current) {
+        clearTimeout(testSearchTimer.current);
+        testSearchTimer.current = null;
+      }
+    };
+  }, [testQuery, testSearchOpen, runTestSearch]);
+
+  /** Manual submit (Search button / Enter) — cancels any pending debounce and
+   * fires the request immediately so the user gets instant feedback. */
+  function handleTestSearchSubmit() {
+    if (testSearchTimer.current) {
+      clearTimeout(testSearchTimer.current);
+      testSearchTimer.current = null;
+    }
+    runTestSearch(testQuery);
+  }
+
+  // Reset test-search state when the dialog closes so reopening starts clean.
+  useEffect(() => {
+    if (!testSearchOpen) {
+      if (testSearchTimer.current) {
+        clearTimeout(testSearchTimer.current);
+        testSearchTimer.current = null;
+      }
+      testSearchAbort.current?.abort();
+      setTestQuery("");
+      setTestResults(null);
+      setTestError(null);
+      setTestSearching(false);
+    }
+  }, [testSearchOpen]);
+
   const visibleCount = items.length;
 
   return (
@@ -784,6 +905,15 @@ export function KnowledgeView({ user: _user }: { user: KbUser }) {
           >
             <Upload className="size-4" />
             Import
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setTestSearchOpen(true)}
+            className="gap-2 border-primary/30 text-primary hover:bg-primary/10 hover:text-primary"
+            title="Test how the AI retrieves KB articles for a visitor query"
+          >
+            <Search className="size-4" />
+            Test Search
           </Button>
           <Button onClick={openCreate} className="gap-2">
             <Plus className="size-4" />
@@ -1242,6 +1372,169 @@ export function KnowledgeView({ user: _user }: { user: KbUser }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Test Search dialog — preview which KB articles the AI would match */}
+      <Dialog
+        open={testSearchOpen}
+        onOpenChange={(o) => setTestSearchOpen(o)}
+      >
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col gap-4">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Search className="size-4" />
+              </span>
+              Test KB Search
+            </DialogTitle>
+            <DialogDescription>
+              Type a question your visitors might ask. See which knowledge base
+              articles the AI would use to answer.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Search input */}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleTestSearchSubmit();
+            }}
+            className="flex gap-2"
+          >
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+              <Input
+                value={testQuery}
+                onChange={(e) => setTestQuery(e.target.value)}
+                placeholder="e.g. What are your pricing plans?"
+                className="pl-9 pr-9"
+                aria-label="Test search query"
+                autoFocus
+              />
+              {testSearching && (
+                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 size-4 animate-spin text-muted-foreground pointer-events-none" />
+              )}
+            </div>
+            <Button
+              type="submit"
+              disabled={testSearching || !testQuery.trim()}
+              className="gap-2"
+            >
+              <Search className="size-4" />
+              Search
+            </Button>
+          </form>
+
+          {/* Example query chips */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">Try:</span>
+            {EXAMPLE_TEST_QUERIES.map((q) => (
+              <button
+                key={q}
+                type="button"
+                onClick={() => {
+                  setTestQuery(q);
+                  runTestSearch(q);
+                }}
+                className="rounded-full border border-primary/30 bg-primary/5 px-3 py-1 text-xs text-primary hover:bg-primary/10 transition-colors"
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+
+          {/* Results area */}
+          <div className="flex-1 overflow-y-auto scroll-thin -mx-1 px-1 min-h-[220px]">
+            {testError ? (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center">
+                <div className="mx-auto mb-3 h-10 w-10 rounded-full bg-destructive/10 flex items-center justify-center">
+                  <Search className="size-5 text-destructive" />
+                </div>
+                <p className="text-sm font-medium text-destructive">
+                  Search failed
+                </p>
+                <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+                  {testError}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => runTestSearch(testQuery)}
+                  disabled={testSearching || !testQuery.trim()}
+                >
+                  Try again
+                </Button>
+              </div>
+            ) : testSearching && !testResults ? (
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="rounded-lg border p-3 space-y-2">
+                    <Skeleton className="h-4 w-1/3" />
+                    <Skeleton className="h-3 w-full" />
+                    <Skeleton className="h-3 w-2/3" />
+                    <Skeleton className="h-1.5 w-full rounded-full" />
+                  </div>
+                ))}
+              </div>
+            ) : testResults ? (
+              <div className="space-y-3">
+                {testSearching && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="size-3 animate-spin" />
+                    Updating…
+                  </div>
+                )}
+                {testResults.matchedCount === 0 ? (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-center">
+                    <div className="mx-auto mb-3 h-10 w-10 rounded-full bg-amber-100 flex items-center justify-center">
+                      <Search className="size-5 text-amber-600" />
+                    </div>
+                    <p className="text-sm font-medium text-amber-900">
+                      No matches found
+                    </p>
+                    <p className="text-xs text-amber-700 mt-1 max-w-sm mx-auto">
+                      Consider adding a KB article for this topic so the AI can
+                      answer similar visitor questions.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="text-sm text-muted-foreground">
+                      Found{" "}
+                      <span className="font-semibold text-foreground">
+                        {testResults.matchedCount}
+                      </span>{" "}
+                      {testResults.matchedCount === 1 ? "match" : "matches"}{" "}
+                      out of{" "}
+                      <span className="font-semibold text-foreground">
+                        {testResults.totalActiveKb}
+                      </span>{" "}
+                      active{" "}
+                      {testResults.totalActiveKb === 1 ? "article" : "articles"}
+                    </div>
+                    {testResults.matches.map((m) => (
+                      <TestSearchResultCard key={m.id} match={m} />
+                    ))}
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center text-center py-10">
+                <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center mb-3">
+                  <Search className="size-5 text-primary" />
+                </div>
+                <p className="text-sm font-medium">
+                  Search to see matching articles
+                </p>
+                <p className="text-xs text-muted-foreground mt-1 max-w-sm">
+                  Results use the same TF-IDF retrieval the AI applies to real
+                  visitor chats — only active articles are matched.
+                </p>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1431,6 +1724,63 @@ function EmptyState({
           <Plus className="size-4" />
           Create your first item
         </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function TestSearchResultCard({ match }: { match: TestSearchMatch }) {
+  // Rank-based relevance: #1 = 100%, #2 = 80%, #3 = 60%, #4 = 40%, #5 = 20%.
+  // Ranks beyond 5 (backend caps at 5) floor at 20%.
+  const relevance = Math.max(20, 100 - (match.rank - 1) * 20);
+  const barColor =
+    relevance >= 80
+      ? "bg-emerald-500"
+      : relevance >= 60
+      ? "bg-primary"
+      : relevance >= 40
+      ? "bg-amber-500"
+      : "bg-rose-500";
+  const color = getCategoryColor(match.category);
+  return (
+    <Card className="py-0 transition-shadow hover:shadow-md hover:border-primary/30">
+      <CardContent className="px-4 py-3">
+        <div className="flex items-start gap-3">
+          <div className="shrink-0 h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-sm font-bold tabular-nums">
+            #{match.rank}
+          </div>
+          <div className="flex-1 min-w-0 space-y-1.5">
+            <div className="flex items-start justify-between gap-2 flex-wrap">
+              <h4 className="font-semibold text-sm leading-snug line-clamp-1">
+                {match.title}
+              </h4>
+              <Badge
+                variant="outline"
+                className={cn("gap-1 font-medium border", color.soft)}
+              >
+                <span className={cn("h-1.5 w-1.5 rounded-full", color.dot)} />
+                {match.category}
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground line-clamp-3">
+              {match.contentPreview}
+            </p>
+            <div className="flex items-center gap-2 pt-1">
+              <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+                Relevance
+              </span>
+              <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
+                <div
+                  className={cn("h-full rounded-full transition-all", barColor)}
+                  style={{ width: `${relevance}%` }}
+                />
+              </div>
+              <span className="text-[11px] font-semibold tabular-nums w-9 text-right">
+                {relevance}%
+              </span>
+            </div>
+          </div>
+        </div>
       </CardContent>
     </Card>
   );

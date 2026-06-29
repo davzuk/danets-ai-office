@@ -956,3 +956,77 @@ MVP stable and feature-rich from prior rounds (10 modules + dark mode + quick re
 - Usage limits/alerts based on subscription plan.
 - Touch-device drag support for pipeline board (currently desktop HTML5 DnD only).
 - Consider adding a KB test-search UI so admins can test which articles match a query before going live.
+
+---
+Task ID: F1
+Agent: subagent
+Task: Add KB Test Search dialog UI so admins can preview which KB articles the AI's TF-IDF retrieval would match for a visitor query.
+
+## Scope
+Single-file change: `src/components/dashboard/views/knowledge-view.tsx`. Backend endpoint `POST /api/knowledge-base/test-search` already existed (returns `{ query, totalActiveKb, matchedCount, matches: [{ rank, id, title, category, contentPreview }] }`).
+
+## Work Log
+
+### Changes to `knowledge-view.tsx`
+
+1. **Imports**: Added `Skeleton` from `@/components/ui/skeleton` (for loading state). `Search`, `Loader2`, `Badge`, `Card`, `Input`, `Button`, `Dialog*`, `cn`, `toast` were already imported.
+
+2. **Types**: Added `TestSearchMatch` and `TestSearchResults` interfaces (mirroring the API response shape).
+
+3. **Constants**: Added `EXAMPLE_TEST_QUERIES` — 4 example visitor queries ("What are your pricing plans?", "Do you offer cybersecurity services?", "How can I contact support?", "What services do you provide?").
+
+4. **State (in `KnowledgeView`)**:
+   - `testSearchOpen`, `testQuery`, `testSearching`, `testResults: TestSearchResults | null`, `testError: string | null`.
+   - `testSearchTimer` ref (debounce handle) + `testSearchAbort` ref (AbortController for cancelling in-flight requests).
+
+5. **`runTestSearch(q)` (useCallback)**: POSTs to `/api/knowledge-base/test-search`, aborts any prior request, sets results / error. Errors are both toasted (per spec — sonner for errors only) and surfaced inline in the dialog with a "Try again" button. AbortError is swallowed.
+
+6. **Debounced auto-search effect (400ms)**: Fires `runTestSearch` 400ms after typing stops while the dialog is open. Clears results immediately when the input is emptied. Spinner (`Loader2`) shows in the input during the debounce + fetch window.
+
+7. **`handleTestSearchSubmit()`**: Manual submit (Search button / Enter key) — cancels the pending debounce timer and fires the request immediately for instant feedback.
+
+8. **Reset-on-close effect**: When the dialog closes, aborts in-flight request, clears the timer, and resets `testQuery` / `testResults` / `testError` / `testSearching` so reopening starts clean.
+
+9. **Test Search button** (header): Added between "Import" and "New item". Outline variant with primary tint (`border-primary/30 text-primary hover:bg-primary/10`) and a `Search` icon — visually distinct from the plain outline Import button and the primary New item CTA.
+
+10. **Test Search dialog** (`sm:max-w-2xl`, `max-h-[85vh]`, flex-col with scrollable results area):
+    - Header: "Test KB Search" with a primary-tinted Search icon badge + the required description ("Type a question your visitors might ask. See which knowledge base articles the AI would use to answer.").
+    - Search form: large input with leading Search icon + trailing spinner, plus a "Search" button. Submit on Enter or click.
+    - Example chips: 4 primary-tinted clickable chips below the input. Clicking fills the input AND triggers the search immediately (bypasses debounce).
+    - Results area (`flex-1 overflow-y-auto scroll-thin min-h-[220px]`) with 4 states:
+      - **Error**: destructive-tinted card with message + "Try again" button.
+      - **Loading (first search)**: 3 skeleton cards (title bar, 2 text lines, relevance bar).
+      - **Loading (refine)**: previous results stay visible with a small "Updating…" spinner above (better UX than flashing skeletons).
+      - **Results**: summary line ("Found N matches out of M active articles") + `TestSearchResultCard` list.
+      - **0 matches**: amber-tinted card: "No matches found — Consider adding a KB article for this topic so the AI can answer similar visitor questions."
+      - **Empty (no search yet)**: friendly prompt with primary-tinted Search icon + "Search to see matching articles" + note that results use the same TF-IDF retrieval as real visitor chats.
+
+11. **`TestSearchResultCard` component**: Each card shows:
+    - Rank badge (`#1`, `#2`…) in a primary-tinted rounded square.
+    - Title (line-clamp-1).
+    - Category badge using the existing `getCategoryColor()` system (`color.soft` background + `color.dot`), so colors stay consistent with the KB list (Pricing=amber, Services=primary, Support=accent, etc.).
+    - Content preview (line-clamp-3; backend already truncates to ~200 chars).
+    - Relevance bar: rank-based percentage (`#1=100%, #2=80%, #3=60%, #4=40%, #5=20%`, floored at 20%). Colored by tier (emerald ≥80%, primary ≥60%, amber ≥40%, rose <40%) with a `bg-muted` track, plus a numeric % label.
+
+## Verification
+
+- **TypeScript**: `bunx tsc --noEmit` — 0 errors in `knowledge-view.tsx` (pre-existing unrelated errors in `examples/`, `skills/`, `leads-view.tsx` remain).
+- **ESLint**: `bunx eslint src/components/dashboard/views/knowledge-view.tsx` — clean.
+- **Browser smoke test** (agent-browser, logged in as `admin@danetstecpro.com`):
+  - KB view header shows Refresh | Import | **Test Search** | New item.
+  - Clicking Test Search opens the dialog with description, empty search input, disabled Search button, 4 example chips, and the empty-state prompt ("Search to see matching articles").
+  - Clicking the "What are your pricing plans?" chip → filled the input and immediately returned results: "Found 2 matches out of 9 active articles" → #1 Pricing & Plans (100%) + #2 AI Automation Services (80%). Category badges rendered with correct colors (Pricing=amber, Services=primary). Relevance bars + % labels visible.
+  - Typing a different query triggered the debounced auto-search and updated results inline (previous results stayed visible with an "Updating…" indicator during the refresh).
+  - Dialog closes cleanly via the Close (X) button.
+
+## Constraints honored
+- Modified ONLY `src/components/dashboard/views/knowledge-view.tsx`.
+- Used existing shadcn/ui components (Dialog, Input, Button, Badge, Skeleton, Card).
+- Reused `getCategoryColor()` for category badge colors (consistency with KB list).
+- `sonner` toasts only for errors (success results show inline).
+- Relative fetch path (`/api/knowledge-base/test-search`).
+- Brand color classes (`bg-primary`, `bg-primary/10`, `text-primary`, `border-primary/30`, `bg-accent`, etc.).
+- All existing functionality (list, create/edit, delete, import, preview, filters) preserved.
+
+## Stage Summary
+Admins can now click "Test Search" on the Knowledge Base view, type or pick a sample visitor query, and instantly see which active KB articles the AI's TF-IDF retrieval would surface — ranked, color-coded by category, with a relevance bar — before going live. Closes the "Consider adding a KB test-search UI" item from the CRON-7 next-steps list.

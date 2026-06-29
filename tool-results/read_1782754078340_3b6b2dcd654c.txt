@@ -1,0 +1,1440 @@
+     1→     1→"use client";
+     2→     2→
+     3→     3→import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+     4→     4→import { toast } from "sonner";
+     5→     5→import {
+     6→     6→  BookOpen,
+     7→     7→  Plus,
+     8→     8→  Search,
+     9→     9→  MoreVertical,
+    10→    10→  Pencil,
+    11→    11→  Trash2,
+    12→    12→  Power,
+    13→    13→  FileText,
+    14→    14→  Loader2,
+    15→    15→  RefreshCw,
+    16→    16→  CheckCircle2,
+    17→    17→  Archive,
+    18→    18→  Eye,
+    19→    19→  ExternalLink,
+    20→    20→  Link as LinkIcon,
+    21→    21→  Upload,
+    22→    22→} from "lucide-react";
+    23→    23→
+    24→    24→import { Button } from "@/components/ui/button";
+    25→    25→import { Card, CardContent } from "@/components/ui/card";
+    26→    26→import { Input } from "@/components/ui/input";
+    27→    27→import { Textarea } from "@/components/ui/textarea";
+    28→    28→import { Label } from "@/components/ui/label";
+    29→    29→import {
+    30→    30→  Select,
+    31→    31→  SelectContent,
+    32→    32→  SelectItem,
+    33→    33→  SelectTrigger,
+    34→    34→  SelectValue,
+    35→    35→} from "@/components/ui/select";
+    36→    36→import { Badge } from "@/components/ui/badge";
+    37→    37→import {
+    38→    38→  Dialog,
+    39→    39→  DialogContent,
+    40→    40→  DialogDescription,
+    41→    41→  DialogFooter,
+    42→    42→  DialogHeader,
+    43→    43→  DialogTitle,
+    44→    44→} from "@/components/ui/dialog";
+    45→    45→import {
+    46→    46→  DropdownMenu,
+    47→    47→  DropdownMenuContent,
+    48→    48→  DropdownMenuItem,
+    49→    49→  DropdownMenuLabel,
+    50→    50→  DropdownMenuSeparator,
+    51→    51→  DropdownMenuTrigger,
+    52→    52→} from "@/components/ui/dropdown-menu";
+    53→    53→import {
+    54→    54→  AlertDialog,
+    55→    55→  AlertDialogAction,
+    56→    56→  AlertDialogCancel,
+    57→    57→  AlertDialogContent,
+    58→    58→  AlertDialogDescription,
+    59→    59→  AlertDialogFooter,
+    60→    60→  AlertDialogHeader,
+    61→    61→  AlertDialogTitle,
+    62→    62→} from "@/components/ui/alert-dialog";
+    63→    63→import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+    64→    64→import { ScrollArea } from "@/components/ui/scroll-area";
+    65→    65→import { cn } from "@/lib/utils";
+    66→    66→
+    67→    67→interface KbUser {
+    68→    68→  userId: string;
+    69→    69→  businessId: string;
+    70→    70→  name: string;
+    71→    71→  email: string;
+    72→    72→  role: string;
+    73→    73→  businessName: string;
+    74→    74→}
+    75→    75→
+    76→    76→interface KbItem {
+    77→    77→  id: string;
+    78→    78→  title: string;
+    79→    79→  content: string;
+    80→    80→  category: string;
+    81→    81→  sourceType: "manual" | "faq" | "doc" | "url";
+    82→    82→  status: "active" | "draft" | "archived";
+    83→    83→  views: number;
+    84→    84→  createdAt: string;
+    85→    85→  updatedAt: string;
+    86→    86→}
+    87→    87→
+    88→    88→interface KbStats {
+    89→    89→  total: number;
+    90→    90→  active: number;
+    91→    91→  draft: number;
+    92→    92→  archived: number;
+    93→    93→  byCategory: { category: string; count: number }[];
+    94→    94→  bySource: { sourceType: string; count: number }[];
+    95→    95→}
+    96→    96→
+    97→    97→const SOURCE_TYPE_OPTIONS: {
+    98→    98→  value: KbItem["sourceType"];
+    99→    99→  label: string;
+   100→   100→  icon: React.ComponentType<{ className?: string }>;
+   101→   101→}[] = [
+   102→   102→  { value: "manual", label: "Manual", icon: FileText },
+   103→   103→  { value: "faq", label: "FAQ", icon: HelpCircleIcon },
+   104→   104→  { value: "doc", label: "Document", icon: FileText },
+   105→   105→  { value: "url", label: "URL", icon: LinkIcon },
+   106→   106→];
+   107→   107→
+   108→   108→const STATUS_OPTIONS = [
+   109→   109→  { value: "active", label: "Active" },
+   110→   110→  { value: "draft", label: "Draft" },
+   111→   111→  { value: "archived", label: "Archived" },
+   112→   112→] as const;
+   113→   113→
+   114→   114→const STATUS_FILTER_OPTIONS = [
+   115→   115→  { value: "all", label: "All statuses" },
+   116→   116→  { value: "active", label: "Active" },
+   117→   117→  { value: "draft", label: "Draft" },
+   118→   118→  { value: "archived", label: "Archived" },
+   119→   119→] as const;
+   120→   120→
+   121→   121→function HelpCircleIcon({ className }: { className?: string }) {
+   122→   122→  return (
+   123→   123→    <svg
+   124→   124→      xmlns="http://www.w3.org/2000/svg"
+   125→   125→      viewBox="0 0 24 24"
+   126→   126→      fill="none"
+   127→   127→      stroke="currentColor"
+   128→   128→      strokeWidth="2"
+   129→   129→      strokeLinecap="round"
+   130→   130→      strokeLinejoin="round"
+   131→   131→      className={className}
+   132→   132→    >
+   133→   133→      <circle cx="12" cy="12" r="10" />
+   134→   134→      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+   135→   135→      <path d="M12 17h.01" />
+   136→   136→    </svg>
+   137→   137→  );
+   138→   138→}
+   139→   139→
+   140→   140→function StatusBadge({ status }: { status: KbItem["status"] }) {
+   141→   141→  if (status === "active") {
+   142→   142→    return (
+   143→   143→      <Badge className="bg-accent text-accent-foreground hover:bg-accent/90 border-transparent gap-1">
+   144→   144→        <span className="h-1.5 w-1.5 rounded-full bg-accent-foreground/70" />
+   145→   145→        Active
+   146→   146→      </Badge>
+   147→   147→    );
+   148→   148→  }
+   149→   149→  if (status === "draft") {
+   150→   150→    return (
+   151→   151→      <Badge variant="secondary" className="gap-1">
+   152→   152→        <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
+   153→   153→        Draft
+   154→   154→      </Badge>
+   155→   155→    );
+   156→   156→  }
+   157→   157→  return (
+   158→   158→    <Badge variant="destructive" className="gap-1">
+   159→   159→      <Archive className="size-3" />
+   160→   160→      Archived
+   161→   161→    </Badge>
+   162→   162→  );
+   163→   163→}
+   164→   164→
+   165→   165→function SourceBadge({ sourceType }: { sourceType: KbItem["sourceType"] }) {
+   166→   166→  const opt = SOURCE_TYPE_OPTIONS.find((o) => o.value === sourceType);
+   167→   167→  const Icon = opt?.icon || FileText;
+   168→   168→  return (
+   169→   169→    <Badge variant="outline" className="gap-1 text-muted-foreground font-normal">
+   170→   170→      <Icon className="size-3" />
+   171→   171→      {opt?.label || sourceType}
+   172→   172→    </Badge>
+   173→   173→  );
+   174→   174→}
+   175→   175→
+   176→   176→function CategoryBadge({
+   177→   177→  category,
+   178→   178→  onClick,
+   179→   179→  active,
+   180→   180→}: {
+   181→   181→  category: string;
+   182→   182→  onClick?: () => void;
+   183→   183→  active?: boolean;
+   184→   184→}) {
+   185→   185→  const color = getCategoryColor(category);
+   186→   186→  const classes = cn(
+   187→   187→    "gap-1 font-medium border transition-opacity",
+   188→   188→    active ? color.filled : color.soft,
+   189→   189→    onClick && "cursor-pointer hover:opacity-80"
+   190→   190→  );
+   191→   191→  const inner = (
+   192→   192→    <>
+   193→   193→      <span
+   194→   194→        className={cn(
+   195→   195→          "h-1.5 w-1.5 rounded-full",
+   196→   196→          active ? "bg-white/80" : color.dot
+   197→   197→        )}
+   198→   198→      />
+   199→   199→      {category}
+   200→   200→    </>
+   201→   201→  );
+   202→   202→  if (onClick) {
+   203→   203→    return (
+   204→   204→      <Badge asChild variant="outline" className={classes}>
+   205→   205→        <button
+   206→   206→          type="button"
+   207→   207→          onClick={onClick}
+   208→   208→          aria-label={`Filter by ${category}`}
+   209→   209→          aria-pressed={active}
+   210→   210→        >
+   211→   211→          {inner}
+   212→   212→        </button>
+   213→   213→      </Badge>
+   214→   214→    );
+   215→   215→  }
+   216→   216→  return (
+   217→   217→    <Badge variant="outline" className={classes}>
+   218→   218→      {inner}
+   219→   219→    </Badge>
+   220→   220→  );
+   221→   221→}
+   222→   222→
+   223→   223→function CategoryChip({
+   224→   224→  label,
+   225→   225→  count,
+   226→   226→  active,
+   227→   227→  onClick,
+   228→   228→  category,
+   229→   229→}: {
+   230→   230→  label: string;
+   231→   231→  count: number;
+   232→   232→  active: boolean;
+   233→   233→  onClick: () => void;
+   234→   234→  category?: string;
+   235→   235→}) {
+   236→   236→  const color = category ? getCategoryColor(category) : null;
+   237→   237→  return (
+   238→   238→    <button
+   239→   239→      type="button"
+   240→   240→      onClick={onClick}
+   241→   241→      aria-pressed={active}
+   242→   242→      title={`Filter by ${label}`}
+   243→   243→      className={cn(
+   244→   244→        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium whitespace-nowrap transition-colors shrink-0",
+   245→   245→        active
+   246→   246→          ? color
+   247→   247→            ? color.filled
+   248→   248→            : "bg-primary text-primary-foreground border-primary"
+   249→   249→          : color
+   250→   250→          ? cn("bg-background", color.outline)
+   251→   251→          : "bg-background border-border text-foreground hover:bg-muted/50"
+   252→   252→      )}
+   253→   253→    >
+   254→   254→      {color && (
+   255→   255→        <span
+   256→   256→          className={cn(
+   257→   257→            "h-1.5 w-1.5 rounded-full",
+   258→   258→            active ? "bg-white/80" : color.dot
+   259→   259→          )}
+   260→   260→        />
+   261→   261→      )}
+   262→   262→      <span>{label}</span>
+   263→   263→      <span
+   264→   264→        className={cn(
+   265→   265→          "ml-0.5 inline-flex items-center justify-center rounded-full px-1.5 text-[10px] font-semibold tabular-nums leading-4 min-w-[1.25rem]",
+   266→   266→          active ? "bg-white/25 text-current" : "bg-muted text-muted-foreground"
+   267→   267→        )}
+   268→   268→      >
+   269→   269→        {count}
+   270→   270→      </span>
+   271→   271→    </button>
+   272→   272→  );
+   273→   273→}
+   274→   274→
+   275→   275→function formatDate(iso: string) {
+   276→   276→  try {
+   277→   277→    const d = new Date(iso);
+   278→   278→    return d.toLocaleDateString(undefined, {
+   279→   279→      year: "numeric",
+   280→   280→      month: "short",
+   281→   281→      day: "numeric",
+   282→   282→    });
+   283→   283→  } catch {
+   284→   284→    return iso;
+   285→   285→  }
+   286→   286→}
+   287→   287→
+   288→   288→function relativeTime(iso: string) {
+   289→   289→  try {
+   290→   290→    const d = new Date(iso).getTime();
+   291→   291→    const now = Date.now();
+   292→   292→    const diff = Math.max(0, now - d);
+   293→   293→    const mins = Math.floor(diff / 60_000);
+   294→   294→    if (mins < 1) return "just now";
+   295→   295→    if (mins < 60) return `${mins}m ago`;
+   296→   296→    const hrs = Math.floor(mins / 60);
+   297→   297→    if (hrs < 24) return `${hrs}h ago`;
+   298→   298→    const days = Math.floor(hrs / 24);
+   299→   299→    if (days < 30) return `${days}d ago`;
+   300→   300→    return formatDate(iso);
+   301→   301→  } catch {
+   302→   302→    return formatDate(iso);
+   303→   303→  }
+   304→   304→}
+   305→   305→
+   306→   306→function truncate(text: string, max = 120) {
+   307→   307→  const clean = text.replace(/\s+/g, " ").trim();
+   308→   308→  if (clean.length <= max) return clean;
+   309→   309→  return clean.slice(0, max).trimEnd() + "…";
+   310→   310→}
+   311→   311→
+   312→   312→interface FormState {
+   313→   313→  title: string;
+   314→   314→  content: string;
+   315→   315→  category: string;
+   316→   316→  sourceType: KbItem["sourceType"];
+   317→   317→  status: KbItem["status"];
+   318→   318→}
+   319→   319→
+   320→   320→const EMPTY_FORM: FormState = {
+   321→   321→  title: "",
+   322→   322→  content: "",
+   323→   323→  category: "General",
+   324→   324→  sourceType: "manual",
+   325→   325→  status: "active",
+   326→   326→};
+   327→   327→
+   328→   328→type ImportFormat = "auto" | "colon" | "blocks" | "json";
+   329→   329→
+   330→   330→const IMPORT_HELP: Record<ImportFormat, string> = {
+   331→   331→  auto: "We'll detect the format automatically — JSON array first, then blank-line-separated blocks, then 'Title: content' lines.",
+   332→   332→  colon: "One item per line, 'Title: content' separated by the first colon.",
+   333→   333→  blocks:
+   334→   334→    "First line is the title, following lines are content, separated by blank lines.",
+   335→   335→  json: 'A JSON array of objects: [{"title":"...","content":"...","category":"..."}]. Category is optional.',
+   336→   336→};
+   337→   337→
+   338→   338→const IMPORT_PLACEHOLDERS: Record<ImportFormat, string> = {
+   339→   339→  auto: "Paste content here…",
+   340→   340→  colon:
+   341→   341→    "Refund Policy: We offer 30-day refunds on all plans.\nSupport Hours: Mon–Fri, 9am–6pm.",
+   342→   342→  blocks:
+   343→   343→    "Refund Policy\nWe offer 30-day refunds on all plans.\n\nSupport Hours\nMon–Fri, 9am–6pm.",
+   344→   344→  json: '[\n  {"title":"Refund Policy","content":"We offer 30-day refunds on all plans."},\n  {"title":"Support Hours","content":"Mon–Fri, 9am–6pm.","category":"Support"}\n]',
+   345→   345→};
+   346→   346→
+   347→   347→const IMPORT_EXAMPLES: Record<ImportFormat, string> = {
+   348→   348→  auto: "Any of the formats below — we'll pick the right one.",
+   349→   349→  colon: "Refund Policy: We offer 30-day refunds on all plans.",
+   350→   350→  blocks:
+   351→   351→    "Refund Policy\nWe offer 30-day refunds on all plans.\n\nSupport Hours\nMon–Fri, 9am–6pm.",
+   352→   352→  json: '[{"title":"...","content":"...","category":"..."}]',
+   353→   353→};
+   354→   354→
+   355→   355→/**
+   356→   356→ * Category color system.
+   357→   357→ *
+   358→   358→ * Common categories are mapped explicitly. Unknown categories are hashed to
+   359→   359→ * one of the palette keys for deterministic per-category coloring. Both the
+   360→   360→ * filter chips and the card badges read from this map so colors stay
+   361→   361→ * consistent across the UI. No raw indigo/blue — uses project brand tokens
+   362→   362→ * (`primary` / `accent`) plus Tailwind emerald/amber/violet/rose/cyan/orange.
+   363→   363→ */
+   364→   364→interface CategoryColorClasses {
+   365→   365→  /** Small solid dot shown inside chips/badges. */
+   366→   366→  dot: string;
+   367→   367→  /** Filled background — active chips + active card badges. */
+   368→   368→  filled: string;
+   369→   369→  /** Soft tinted background — default card badges. */
+   370→   370→  soft: string;
+   371→   371→  /** Outline style — inactive chips. */
+   372→   372→  outline: string;
+   373→   373→}
+   374→   374→
+   375→   375→const CATEGORY_PALETTE: Record<string, CategoryColorClasses> = {
+   376→   376→  emerald: {
+   377→   377→    dot: "bg-emerald-500",
+   378→   378→    filled: "bg-emerald-500 text-white border-emerald-600",
+   379→   379→    soft: "bg-emerald-50 text-emerald-700 border-emerald-200",
+   380→   380→    outline: "border-emerald-300 text-emerald-700 hover:bg-emerald-50",
+   381→   381→  },
+   382→   382→  primary: {
+   383→   383→    dot: "bg-primary",
+   384→   384→    filled: "bg-primary text-primary-foreground border-primary",
+   385→   385→    soft: "bg-primary/10 text-primary border-primary/25",
+   386→   386→    outline: "border-primary/30 text-primary hover:bg-primary/10",
+   387→   387→  },
+   388→   388→  accent: {
+   389→   389→    dot: "bg-accent",
+   390→   390→    filled: "bg-accent text-accent-foreground border-accent",
+   391→   391→    soft: "bg-accent/25 text-accent-foreground border-accent/40",
+   392→   392→    outline: "border-accent/50 text-accent-foreground hover:bg-accent/20",
+   393→   393→  },
+   394→   394→  amber: {
+   395→   395→    dot: "bg-amber-500",
+   396→   396→    filled: "bg-amber-500 text-white border-amber-600",
+   397→   397→    soft: "bg-amber-50 text-amber-700 border-amber-200",
+   398→   398→    outline: "border-amber-300 text-amber-700 hover:bg-amber-50",
+   399→   399→  },
+   400→   400→  violet: {
+   401→   401→    dot: "bg-violet-500",
+   402→   402→    filled: "bg-violet-500 text-white border-violet-600",
+   403→   403→    soft: "bg-violet-50 text-violet-700 border-violet-200",
+   404→   404→    outline: "border-violet-300 text-violet-700 hover:bg-violet-50",
+   405→   405→  },
+   406→   406→  rose: {
+   407→   407→    dot: "bg-rose-500",
+   408→   408→    filled: "bg-rose-500 text-white border-rose-600",
+   409→   409→    soft: "bg-rose-50 text-rose-700 border-rose-200",
+   410→   410→    outline: "border-rose-300 text-rose-700 hover:bg-rose-50",
+   411→   411→  },
+   412→   412→  cyan: {
+   413→   413→    dot: "bg-cyan-500",
+   414→   414→    filled: "bg-cyan-500 text-white border-cyan-600",
+   415→   415→    soft: "bg-cyan-50 text-cyan-700 border-cyan-200",
+   416→   416→    outline: "border-cyan-300 text-cyan-700 hover:bg-cyan-50",
+   417→   417→  },
+   418→   418→  orange: {
+   419→   419→    dot: "bg-orange-500",
+   420→   420→    filled: "bg-orange-500 text-white border-orange-600",
+   421→   421→    soft: "bg-orange-50 text-orange-700 border-orange-200",
+   422→   422→    outline: "border-orange-300 text-orange-700 hover:bg-orange-50",
+   423→   423→  },
+   424→   424→};
+   425→   425→
+   426→   426→const CATEGORY_HASH_KEYS = [
+   427→   427→  "emerald",
+   428→   428→  "primary",
+   429→   429→  "accent",
+   430→   430→  "amber",
+   431→   431→  "violet",
+   432→   432→  "rose",
+   433→   433→  "cyan",
+   434→   434→  "orange",
+   435→   435→] as const;
+   436→   436→
+   437→   437→const CATEGORY_NAME_MAP: Record<string, keyof typeof CATEGORY_PALETTE> = {
+   438→   438→  about: "emerald",
+   439→   439→  services: "primary",
+   440→   440→  service: "primary",
+   441→   441→  support: "accent",
+   442→   442→  pricing: "amber",
+   443→   443→  faq: "violet",
+   444→   444→  faqs: "violet",
+   445→   445→  imported: "rose",
+   446→   446→};
+   447→   447→
+   448→   448→function hashCategoryToKey(category: string): keyof typeof CATEGORY_PALETTE {
+   449→   449→  let hash = 0;
+   450→   450→  const str = category.toLowerCase();
+   451→   451→  for (let i = 0; i < str.length; i++) {
+   452→   452→    hash = (hash << 5) - hash + str.charCodeAt(i);
+   453→   453→    hash |= 0;
+   454→   454→  }
+   455→   455→  return CATEGORY_HASH_KEYS[Math.abs(hash) % CATEGORY_HASH_KEYS.length];
+   456→   456→}
+   457→   457→
+   458→   458→function getCategoryColorKey(
+   459→   459→  category: string
+   460→   460→): keyof typeof CATEGORY_PALETTE {
+   461→   461→  const key = category.trim().toLowerCase();
+   462→   462→  return CATEGORY_NAME_MAP[key] ?? hashCategoryToKey(category);
+   463→   463→}
+   464→   464→
+   465→   465→function getCategoryColor(category: string): CategoryColorClasses {
+   466→   466→  return CATEGORY_PALETTE[getCategoryColorKey(category)];
+   467→   467→}
+   468→   468→
+   469→   469→export function KnowledgeView({ user: _user }: { user: KbUser }) {
+   470→   470→  const [items, setItems] = useState<KbItem[]>([]);
+   471→   471→  const [stats, setStats] = useState<KbStats | null>(null);
+   472→   472→  const [loading, setLoading] = useState(true);
+   473→   473→  const [refreshing, setRefreshing] = useState(false);
+   474→   474→
+   475→   475→  // Toolbar state
+   476→   476→  const [searchInput, setSearchInput] = useState("");
+   477→   477→  const [debouncedSearch, setDebouncedSearch] = useState("");
+   478→   478→  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+   479→   479→  const [statusFilter, setStatusFilter] = useState<string>("all");
+   480→   480→
+   481→   481→  // Dialog state
+   482→   482→  const [dialogOpen, setDialogOpen] = useState(false);
+   483→   483→  const [editingId, setEditingId] = useState<string | null>(null);
+   484→   484→  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+   485→   485→  const [saving, setSaving] = useState(false);
+   486→   486→
+   487→   487→  // Delete state
+   488→   488→  const [deleteTarget, setDeleteTarget] = useState<KbItem | null>(null);
+   489→   489→  const [deleting, setDeleting] = useState(false);
+   490→   490→
+   491→   491→  // Preview dialog
+   492→   492→  const [previewItem, setPreviewItem] = useState<KbItem | null>(null);
+   493→   493→
+   494→   494→  // Bulk import dialog state
+   495→   495→  const [importDialogOpen, setImportDialogOpen] = useState(false);
+   496→   496→  const [importFormat, setImportFormat] = useState<ImportFormat>("auto");
+   497→   497→  const [importCategory, setImportCategory] = useState("Imported");
+   498→   498→  const [importText, setImportText] = useState("");
+   499→   499→  const [importing, setImporting] = useState(false);
+   500→   500→
+   501→   501→  const fetchInFlight = useRef(false);
+   502→   502→
+   503→   503→  // Debounced search (300ms)
+   504→   504→  useEffect(() => {
+   505→   505→    const t = setTimeout(() => {
+   506→   506→      setDebouncedSearch(searchInput.trim());
+   507→   507→    }, 300);
+   508→   508→    return () => clearTimeout(t);
+   509→   509→  }, [searchInput]);
+   510→   510→
+   511→   511→  const loadStats = useCallback(async () => {
+   512→   512→    try {
+   513→   513→      const res = await fetch("/api/knowledge-base/stats", { cache: "no-store" });
+   514→   514→      if (!res.ok) throw new Error("Failed to load stats");
+   515→   515→      const data = await res.json();
+   516→   516→      setStats(data);
+   517→   517→    } catch {
+   518→   518→      // Silent — stats are best-effort
+   519→   519→    }
+   520→   520→  }, []);
+   521→   521→
+   522→   522→  const loadItems = useCallback(
+   523→   523→    async (opts?: { silent?: boolean }) => {
+   524→   524→      if (fetchInFlight.current) return;
+   525→   525→      fetchInFlight.current = true;
+   526→   526→      if (!opts?.silent) setLoading(true);
+   527→   527→      try {
+   528→   528→        const params = new URLSearchParams();
+   529→   529→        if (debouncedSearch) params.set("q", debouncedSearch);
+   530→   530→        if (categoryFilter !== "all") params.set("category", categoryFilter);
+   531→   531→        if (statusFilter !== "all") params.set("status", statusFilter);
+   532→   532→        const url = `/api/knowledge-base${params.toString() ? `?${params}` : ""}`;
+   533→   533→        const res = await fetch(url, { cache: "no-store" });
+   534→   534→        if (!res.ok) throw new Error("Failed to load knowledge base");
+   535→   535→        const data = await res.json();
+   536→   536→        setItems(data.items || []);
+   537→   537→      } catch (e: any) {
+   538→   538→        toast.error(e?.message || "Could not load knowledge base");
+   539→   539→      } finally {
+   540→   540→        setLoading(false);
+   541→   541→        fetchInFlight.current = false;
+   542→   542→      }
+   543→   543→    },
+   544→   544→    [debouncedSearch, categoryFilter, statusFilter]
+   545→   545→  );
+   546→   546→
+   547→   547→  useEffect(() => {
+   548→   548→    loadItems();
+   549→   549→  }, [loadItems]);
+   550→   550→
+   551→   551→  useEffect(() => {
+   552→   552→    loadStats();
+   553→   553→  }, [loadStats]);
+   554→   554→
+   555→   555→  // Derived: unique categories from items (for the toolbar filter)
+   556→   556→  const categoryOptions = useMemo(() => {
+   557→   557→    const set = new Set<string>();
+   558→   558→    items.forEach((i) => set.add(i.category));
+   559→   559→    if (stats?.byCategory) {
+   560→   560→      stats.byCategory.forEach((c) => set.add(c.category));
+   561→   561→    }
+   562→   562→    return Array.from(set).sort((a, b) => a.localeCompare(b));
+   563→   563→  }, [items, stats]);
+   564→   564→
+   565→   565→  // All known categories for the create/edit datalist
+   566→   566→  const allCategories = useMemo(() => {
+   567→   567→    const set = new Set<string>(["General"]);
+   568→   568→    categoryOptions.forEach((c) => set.add(c));
+   569→   569→    return Array.from(set).sort((a, b) => a.localeCompare(b));
+   570→   570→  }, [categoryOptions]);
+   571→   571→
+   572→   572→  // Per-category total counts (from stats; falls back to current items list
+   573→   573→  // before stats load). Used by the filter chips so counts stay stable even
+   574→   574→  // while other filters (search / status) narrow the visible list.
+   575→   575→  const categoryCounts = useMemo(() => {
+   576→   576→    const map: Record<string, number> = {};
+   577→   577→    if (stats?.byCategory && stats.byCategory.length > 0) {
+   578→   578→      stats.byCategory.forEach((c) => {
+   579→   579→        map[c.category] = c.count;
+   580→   580→      });
+   581→   581→    } else {
+   582→   582→      items.forEach((i) => {
+   583→   583→        map[i.category] = (map[i.category] ?? 0) + 1;
+   584→   584→      });
+   585→   585→    }
+   586→   586→    return map;
+   587→   587→  }, [stats, items]);
+   588→   588→
+   589→   589→  function openCreate() {
+   590→   590→    setEditingId(null);
+   591→   591→    setForm(EMPTY_FORM);
+   592→   592→    setDialogOpen(true);
+   593→   593→  }
+   594→   594→
+   595→   595→  function openEdit(item: KbItem) {
+   596→   596→    setEditingId(item.id);
+   597→   597→    setForm({
+   598→   598→      title: item.title,
+   599→   599→      content: item.content,
+   600→   600→      category: item.category,
+   601→   601→      sourceType: item.sourceType,
+   602→   602→      status: item.status,
+   603→   603→    });
+   604→   604→    setDialogOpen(true);
+   605→   605→  }
+   606→   606→
+   607→   607→  async function handleSave() {
+   608→   608→    if (!form.title.trim() || form.title.trim().length < 2) {
+   609→   609→      toast.error("Title must be at least 2 characters");
+   610→   610→      return;
+   611→   611→    }
+   612→   612→    if (!form.content.trim()) {
+   613→   613→      toast.error("Content is required");
+   614→   614→      return;
+   615→   615→    }
+   616→   616→    if (!form.category.trim()) {
+   617→   617→      toast.error("Category is required");
+   618→   618→      return;
+   619→   619→    }
+   620→   620→    setSaving(true);
+   621→   621→    try {
+   622→   622→      const payload = {
+   623→   623→        title: form.title.trim(),
+   624→   624→        content: form.content,
+   625→   625→        category: form.category.trim(),
+   626→   626→        sourceType: form.sourceType,
+   627→   627→        status: form.status,
+   628→   628→      };
+   629→   629→      const isEdit = !!editingId;
+   630→   630→      const url = isEdit
+   631→   631→        ? `/api/knowledge-base/${editingId}`
+   632→   632→        : "/api/knowledge-base";
+   633→   633→      const method = isEdit ? "PUT" : "POST";
+   634→   634→      const res = await fetch(url, {
+   635→   635→        method,
+   636→   636→        headers: { "Content-Type": "application/json" },
+   637→   637→        body: JSON.stringify(payload),
+   638→   638→      });
+   639→   639→      const data = await res.json();
+   640→   640→      if (!res.ok) {
+   641→   641→        throw new Error(data?.error || "Save failed");
+   642→   642→      }
+   643→   643→      toast.success(isEdit ? "Item updated" : "Item created", {
+   644→   644→        description: payload.title,
+   645→   645→      });
+   646→   646→      setDialogOpen(false);
+   647→   647→      setEditingId(null);
+   648→   648→      setForm(EMPTY_FORM);
+   649→   649→      await Promise.all([loadItems({ silent: true }), loadStats()]);
+   650→   650→    } catch (e: any) {
+   651→   651→      toast.error(e?.message || "Could not save item");
+   652→   652→    } finally {
+   653→   653→      setSaving(false);
+   654→   654→    }
+   655→   655→  }
+   656→   656→
+   657→   657→  async function handleToggleStatus(item: KbItem) {
+   658→   658→    const next = item.status === "active" ? "draft" : "active";
+   659→   659→    try {
+   660→   660→      const res = await fetch(`/api/knowledge-base/${item.id}`, {
+   661→   661→        method: "PUT",
+   662→   662→        headers: { "Content-Type": "application/json" },
+   663→   663→        body: JSON.stringify({ status: next }),
+   664→   664→      });
+   665→   665→      const data = await res.json();
+   666→   666→      if (!res.ok) throw new Error(data?.error || "Update failed");
+   667→   667→      toast.success(`Marked as ${next}`, { description: item.title });
+   668→   668→      await Promise.all([loadItems({ silent: true }), loadStats()]);
+   669→   669→    } catch (e: any) {
+   670→   670→      toast.error(e?.message || "Could not update status");
+   671→   671→    }
+   672→   672→  }
+   673→   673→
+   674→   674→  async function handleConfirmDelete() {
+   675→   675→    if (!deleteTarget) return;
+   676→   676→    setDeleting(true);
+   677→   677→    try {
+   678→   678→      const res = await fetch(`/api/knowledge-base/${deleteTarget.id}`, {
+   679→   679→        method: "DELETE",
+   680→   680→      });
+   681→   681→      const data = await res.json();
+   682→   682→      if (!res.ok) throw new Error(data?.error || "Delete failed");
+   683→   683→      toast.success("Item deleted", { description: deleteTarget.title });
+   684→   684→      setDeleteTarget(null);
+   685→   685→      await Promise.all([loadItems({ silent: true }), loadStats()]);
+   686→   686→    } catch (e: any) {
+   687→   687→      toast.error(e?.message || "Could not delete item");
+   688→   688→    } finally {
+   689→   689→      setDeleting(false);
+   690→   690→    }
+   691→   691→  }
+   692→   692→
+   693→   693→  async function handleRefresh() {
+   694→   694→    setRefreshing(true);
+   695→   695→    await Promise.all([loadItems({ silent: true }), loadStats()]);
+   696→   696→    setRefreshing(false);
+   697→   697→    toast.success("Refreshed");
+   698→   698→  }
+   699→   699→
+   700→   700→  function openImport() {
+   701→   701→    setImportFormat("auto");
+   702→   702→    setImportCategory("Imported");
+   703→   703→    setImportText("");
+   704→   704→    setImportDialogOpen(true);
+   705→   705→  }
+   706→   706→
+   707→   707→  async function handleImport() {
+   708→   708→    if (!importText.trim()) {
+   709→   709→      toast.error("Paste some content to import");
+   710→   710→      return;
+   711→   711→    }
+   712→   712→    setImporting(true);
+   713→   713→    try {
+   714→   714→      const res = await fetch("/api/knowledge-base/import", {
+   715→   715→        method: "POST",
+   716→   716→        headers: { "Content-Type": "application/json" },
+   717→   717→        body: JSON.stringify({
+   718→   718→          format: importFormat,
+   719→   719→          category: importCategory.trim() || "Imported",
+   720→   720→          text: importText,
+   721→   721→        }),
+   722→   722→      });
+   723→   723→      const data = await res.json().catch(() => null);
+   724→   724→      if (!res.ok) {
+   725→   725→        throw new Error(data?.error || "Import failed");
+   726→   726→      }
+   727→   727→      const imported: number = Number(data?.imported ?? 0);
+   728→   728→      const skipped: number = Number(data?.skipped ?? 0);
+   729→   729→      toast.success(
+   730→   730→        `Imported ${imported} item${imported === 1 ? "" : "s"}`,
+   731→   731→        {
+   732→   732→          description:
+   733→   733→            skipped > 0
+   734→   734→              ? `${skipped} skipped · knowledge base updated.`
+   735→   735→              : "Your knowledge base has been updated.",
+   736→   736→        }
+   737→   737→      );
+   738→   738→      setImportDialogOpen(false);
+   739→   739→      setImportText("");
+   740→   740→      await Promise.all([loadItems({ silent: true }), loadStats()]);
+   741→   741→    } catch (e: any) {
+   742→   742→      toast.error(e?.message || "Could not import items");
+   743→   743→    } finally {
+   744→   744→      setImporting(false);
+   745→   745→    }
+   746→   746→  }
+   747→   747→
+   748→   748→  const visibleCount = items.length;
+   749→   749→
+   750→   750→  return (
+   751→   751→    <div className="space-y-6">
+   752→   752→      {/* Header */}
+   753→   753→      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+   754→   754→        <div className="space-y-1">
+   755→   755→          <div className="flex items-center gap-2">
+   756→   756→            <div className="hidden sm:flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+   757→   757→              <BookOpen className="size-5" />
+   758→   758→            </div>
+   759→   759→            <div>
+   760→   760→              <h1 className="text-2xl font-bold tracking-tight">Knowledge Base</h1>
+   761→   761→              <p className="text-sm text-muted-foreground">
+   762→   762→                Articles, FAQs, and reference docs your AI agent uses to answer
+   763→   763→                visitors.
+   764→   764→              </p>
+   765→   765→            </div>
+   766→   766→          </div>
+   767→   767→        </div>
+   768→   768→        <div className="flex items-center gap-2">
+   769→   769→          <Button
+   770→   770→            variant="outline"
+   771→   771→            size="icon"
+   772→   772→            onClick={handleRefresh}
+   773→   773→            disabled={refreshing}
+   774→   774→            title="Refresh"
+   775→   775→          >
+   776→   776→            <RefreshCw
+   777→   777→              className={cn("size-4", refreshing && "animate-spin")}
+   778→   778→            />
+   779→   779→          </Button>
+   780→   780→          <Button
+   781→   781→            variant="outline"
+   782→   782→            onClick={openImport}
+   783→   783→            className="gap-2"
+   784→   784→          >
+   785→   785→            <Upload className="size-4" />
+   786→   786→            Import
+   787→   787→          </Button>
+   788→   788→          <Button onClick={openCreate} className="gap-2">
+   789→   789→            <Plus className="size-4" />
+   790→   790→            New item
+   791→   791→          </Button>
+   792→   792→        </div>
+   793→   793→      </div>
+   794→   794→
+   795→   795→      {/* Stats row */}
+   796→   796→      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+   797→   797→        <StatCard
+   798→   798→          label="Total"
+   799→   799→          value={stats?.total ?? 0}
+   800→   800→          icon={<BookOpen className="size-4" />}
+   801→   801→          tone="primary"
+   802→   802→        />
+   803→   803→        <StatCard
+   804→   804→          label="Active"
+   805→   805→          value={stats?.active ?? 0}
+   806→   806→          icon={<CheckCircle2 className="size-4" />}
+   807→   807→          tone="accent"
+   808→   808→        />
+   809→   809→        <StatCard
+   810→   810→          label="Drafts"
+   811→   811→          value={stats?.draft ?? 0}
+   812→   812→          icon={<FileText className="size-4" />}
+   813→   813→          tone="muted"
+   814→   814→        />
+   815→   815→        <StatCard
+   816→   816→          label="Archived"
+   817→   817→          value={stats?.archived ?? 0}
+   818→   818→          icon={<Archive className="size-4" />}
+   819→   819→          tone="muted"
+   820→   820→        />
+   821→   821→      </div>
+   822→   822→
+   823→   823→      {/* Toolbar */}
+   824→   824→      <Card className="py-4">
+   825→   825→        <CardContent className="px-4 py-0 space-y-3">
+   826→   826→          <div className="flex flex-col md:flex-row md:items-center gap-3">
+   827→   827→            <div className="relative flex-1 min-w-0">
+   828→   828→              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+   829→   829→              <Input
+   830→   830→                value={searchInput}
+   831→   831→                onChange={(e) => setSearchInput(e.target.value)}
+   832→   832→                placeholder="Search by title or content…"
+   833→   833→                className="pl-9"
+   834→   834→                aria-label="Search knowledge base"
+   835→   835→              />
+   836→   836→              {searchInput && (
+   837→   837→                <button
+   838→   838→                  onClick={() => setSearchInput("")}
+   839→   839→                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs px-1.5 py-0.5 rounded"
+   840→   840→                  aria-label="Clear search"
+   841→   841→                >
+   842→   842→                  Clear
+   843→   843→                </button>
+   844→   844→              )}
+   845→   845→            </div>
+   846→   846→          </div>
+   847→   847→          {/* Category filter chips — horizontal scroll on overflow */}
+   848→   848→          <div
+   849→   849→            className="flex items-center gap-2 overflow-x-auto pb-1 -mb-1 scroll-thin -mx-1 px-1"
+   850→   850→            role="group"
+   851→   851→            aria-label="Filter by category"
+   852→   852→          >
+   853→   853→            <CategoryChip
+   854→   854→              label="All"
+   855→   855→              count={stats?.total ?? items.length}
+   856→   856→              active={categoryFilter === "all"}
+   857→   857→              onClick={() => setCategoryFilter("all")}
+   858→   858→            />
+   859→   859→            {categoryOptions.map((cat) => (
+   860→   860→              <CategoryChip
+   861→   861→                key={cat}
+   862→   862→                label={cat}
+   863→   863→                category={cat}
+   864→   864→                count={categoryCounts[cat] ?? 0}
+   865→   865→                active={categoryFilter === cat}
+   866→   866→                onClick={() => setCategoryFilter(cat)}
+   867→   867→              />
+   868→   868→            ))}
+   869→   869→          </div>
+   870→   870→          <div className="flex items-center justify-between gap-3 flex-wrap">
+   871→   871→            <Tabs
+   872→   872→              value={statusFilter}
+   873→   873→              onValueChange={setStatusFilter}
+   874→   874→              className="w-fit"
+   875→   875→            >
+   876→   876→              <TabsList>
+   877→   877→                {STATUS_FILTER_OPTIONS.map((s) => (
+   878→   878→                  <TabsTrigger key={s.value} value={s.value}>
+   879→   879→                    {s.label}
+   880→   880→                  </TabsTrigger>
+   881→   881→                ))}
+   882→   882→              </TabsList>
+   883→   883→            </Tabs>
+   884→   884→            {(debouncedSearch ||
+   885→   885→              categoryFilter !== "all" ||
+   886→   886→              statusFilter !== "all") && (
+   887→   887→              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+   888→   888→                <span>
+   889→   889→                  {visibleCount} {visibleCount === 1 ? "item" : "items"} match
+   890→   890→                </span>
+   891→   891→                <button
+   892→   892→                  onClick={() => {
+   893→   893→                    setSearchInput("");
+   894→   894→                    setDebouncedSearch("");
+   895→   895→                    setCategoryFilter("all");
+   896→   896→                    setStatusFilter("all");
+   897→   897→                  }}
+   898→   898→                  className="text-primary hover:underline"
+   899→   899→                >
+   900→   900→                  Reset filters
+   901→   901→                </button>
+   902→   902→              </div>
+   903→   903→            )}
+   904→   904→          </div>
+   905→   905→        </CardContent>
+   906→   906→      </Card>
+   907→   907→
+   908→   908→      {/* List */}
+   909→   909→      {loading ? (
+   910→   910→        <div className="flex items-center justify-center py-16 text-muted-foreground">
+   911→   911→          <Loader2 className="size-5 animate-spin mr-2" />
+   912→   912→          Loading knowledge base…
+   913→   913→        </div>
+   914→   914→      ) : items.length === 0 ? (
+   915→   915→        <EmptyState onCreate={openCreate} hasFilters={!!debouncedSearch || categoryFilter !== "all" || statusFilter !== "all"} />
+   916→   916→      ) : (
+   917→   917→        <div className="max-h-[70vh] overflow-y-auto scroll-thin pr-1 -mr-1 space-y-3">
+   918→   918→          {items.map((item) => (
+   919→   919→            <KbCard
+   920→   920→              key={item.id}
+   921→   921→              item={item}
+   922→   922→              onEdit={() => openEdit(item)}
+   923→   923→              onToggle={() => handleToggleStatus(item)}
+   924→   924→              onDelete={() => setDeleteTarget(item)}
+   925→   925→              onPreview={() => setPreviewItem(item)}
+   926→   926→              onFilterCategory={setCategoryFilter}
+   927→   927→              activeCategory={categoryFilter !== "all" ? categoryFilter : undefined}
+   928→   928→            />
+   929→   929→          ))}
+   930→   930→        </div>
+   931→   931→      )}
+   932→   932→
+   933→   933→      {/* Create / Edit Dialog */}
+   934→   934→      <Dialog
+   935→   935→        open={dialogOpen}
+   936→   936→        onOpenChange={(o) => {
+   937→   937→          setDialogOpen(o);
+   938→   938→          if (!o) {
+   939→   939→            setEditingId(null);
+   940→   940→            setForm(EMPTY_FORM);
+   941→   941→          }
+   942→   942→        }}
+   943→   943→      >
+   944→   944→        <DialogContent className="sm:max-w-2xl">
+   945→   945→          <DialogHeader>
+   946→   946→            <DialogTitle>
+   947→   947→              {editingId ? "Edit knowledge item" : "New knowledge item"}
+   948→   948→            </DialogTitle>
+   949→   949→            <DialogDescription>
+   950→   950→              {editingId
+   951→   951→                ? "Update this article. Changes are picked up by the AI agent on the next chat."
+   952→   952→                : "Add a new article the AI agent can use to answer visitor questions."}
+   953→   953→            </DialogDescription>
+   954→   954→          </DialogHeader>
+   955→   955→
+   956→   956→          <div className="grid gap-4">
+   957→   957→            <div className="grid gap-1.5">
+   958→   958→              <Label htmlFor="kb-title">Title</Label>
+   959→   959→              <Input
+   960→   960→                id="kb-title"
+   961→   961→                value={form.title}
+   962→   962→                onChange={(e) =>
+   963→   963→                  setForm((f) => ({ ...f, title: e.target.value }))
+   964→   964→                }
+   965→   965→                placeholder="e.g. Refund policy"
+   966→   966→                autoFocus
+   967→   967→              />
+   968→   968→            </div>
+   969→   969→
+   970→   970→            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   971→   971→              <div className="grid gap-1.5">
+   972→   972→                <Label htmlFor="kb-category">Category</Label>
+   973→   973→                <Input
+   974→   974→                  id="kb-category"
+   975→   975→                  list="kb-category-options"
+   976→   976→                  value={form.category}
+   977→   977→                  onChange={(e) =>
+   978→   978→                    setForm((f) => ({ ...f, category: e.target.value }))
+   979→   979→                  }
+   980→   980→                  placeholder="General"
+   981→   981→                />
+   982→   982→                <datalist id="kb-category-options">
+   983→   983→                  {allCategories.map((c) => (
+   984→   984→                    <option key={c} value={c} />
+   985→   985→                  ))}
+   986→   986→                </datalist>
+   987→   987→                <p className="text-xs text-muted-foreground">
+   988→   988→                  Type or pick an existing category.
+   989→   989→                </p>
+   990→   990→              </div>
+   991→   991→              <div className="grid gap-1.5">
+   992→   992→                <Label>Source type</Label>
+   993→   993→                <Select
+   994→   994→                  value={form.sourceType}
+   995→   995→                  onValueChange={(v) =>
+   996→   996→                    setForm((f) => ({
+   997→   997→                      ...f,
+   998→   998→                      sourceType: v as KbItem["sourceType"],
+   999→   999→                    }))
+  1000→  1000→                  }
+  1001→  1001→                >
+  1002→  1002→                  <SelectTrigger className="w-full">
+  1003→  1003→                    <SelectValue />
+  1004→  1004→                  </SelectTrigger>
+  1005→  1005→                  <SelectContent>
+  1006→  1006→                    {SOURCE_TYPE_OPTIONS.map((o) => (
+  1007→  1007→                      <SelectItem key={o.value} value={o.value}>
+  1008→  1008→                        {o.label}
+  1009→  1009→                      </SelectItem>
+  1010→  1010→                    ))}
+  1011→  1011→                  </SelectContent>
+  1012→  1012→                </Select>
+  1013→  1013→              </div>
+  1014→  1014→            </div>
+  1015→  1015→
+  1016→  1016→            <div className="grid gap-1.5">
+  1017→  1017→              <Label htmlFor="kb-content">Content</Label>
+  1018→  1018→              <Textarea
+  1019→  1019→                id="kb-content"
+  1020→  1020→                value={form.content}
+  1021→  1021→                onChange={(e) =>
+  1022→  1022→                  setForm((f) => ({ ...f, content: e.target.value }))
+  1023→  1023→                }
+  1024→  1024→                rows={6}
+  1025→  1025→                className="min-h-[140px] resize-y font-mono text-[13px] leading-relaxed"
+  1026→  1026→                placeholder="Write the article body. Markdown-style plain text works well."
+  1027→  1027→              />
+  1028→  1028→              <p className="text-xs text-muted-foreground">
+  1029→  1029→                {form.content.length} characters · be specific and factual.
+  1030→  1030→              </p>
+  1031→  1031→            </div>
+  1032→  1032→
+  1033→  1033→            <div className="grid gap-1.5">
+  1034→  1034→              <Label>Status</Label>
+  1035→  1035→              <Select
+  1036→  1036→                value={form.status}
+  1037→  1037→                onValueChange={(v) =>
+  1038→  1038→                  setForm((f) => ({ ...f, status: v as KbItem["status"] }))
+  1039→  1039→                }
+  1040→  1040→              >
+  1041→  1041→                <SelectTrigger className="w-full sm:w-[200px]">
+  1042→  1042→                  <SelectValue />
+  1043→  1043→                </SelectTrigger>
+  1044→  1044→                <SelectContent>
+  1045→  1045→                  {STATUS_OPTIONS.map((s) => (
+  1046→  1046→                    <SelectItem key={s.value} value={s.value}>
+  1047→  1047→                      {s.label}
+  1048→  1048→                    </SelectItem>
+  1049→  1049→                  ))}
+  1050→  1050→                </SelectContent>
+  1051→  1051→              </Select>
+  1052→  1052→              <p className="text-xs text-muted-foreground">
+  1053→  1053→                Only <span className="font-medium">Active</span> items are used
+  1054→  1054→                by the AI agent.
+  1055→  1055→              </p>
+  1056→  1056→            </div>
+  1057→  1057→          </div>
+  1058→  1058→
+  1059→  1059→          <DialogFooter>
+  1060→  1060→            <Button
+  1061→  1061→              variant="outline"
+  1062→  1062→              onClick={() => setDialogOpen(false)}
+  1063→  1063→              disabled={saving}
+  1064→  1064→            >
+  1065→  1065→              Cancel
+  1066→  1066→            </Button>
+  1067→  1067→            <Button onClick={handleSave} disabled={saving} className="gap-2">
+  1068→  1068→              {saving && <Loader2 className="size-4 animate-spin" />}
+  1069→  1069→              {editingId ? "Save changes" : "Create item"}
+  1070→  1070→            </Button>
+  1071→  1071→          </DialogFooter>
+  1072→  1072→        </DialogContent>
+  1073→  1073→      </Dialog>
+  1074→  1074→
+  1075→  1075→      {/* Delete confirmation */}
+  1076→  1076→      <AlertDialog
+  1077→  1077→        open={!!deleteTarget}
+  1078→  1078→        onOpenChange={(o) => !o && setDeleteTarget(null)}
+  1079→  1079→      >
+  1080→  1080→        <AlertDialogContent>
+  1081→  1081→          <AlertDialogHeader>
+  1082→  1082→            <AlertDialogTitle>Delete this knowledge item?</AlertDialogTitle>
+  1083→  1083→            <AlertDialogDescription>
+  1084→  1084→              This will permanently delete{" "}
+  1085→  1085→              <span className="font-medium text-foreground">
+  1086→  1086→                {deleteTarget?.title}
+  1087→  1087→              </span>
+  1088→  1088→              . The AI agent will no longer be able to use this article. This
+  1089→  1089→              action cannot be undone.
+  1090→  1090→            </AlertDialogDescription>
+  1091→  1091→          </AlertDialogHeader>
+  1092→  1092→          <AlertDialogFooter>
+  1093→  1093→            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+  1094→  1094→            <AlertDialogAction
+  1095→  1095→              onClick={(e) => {
+  1096→  1096→                e.preventDefault();
+  1097→  1097→                handleConfirmDelete();
+  1098→  1098→              }}
+  1099→  1099→              disabled={deleting}
+  1100→  1100→              className="gap-2 bg-destructive text-white hover:bg-destructive/90"
+  1101→  1101→            >
+  1102→  1102→              {deleting && <Loader2 className="size-4 animate-spin" />}
+  1103→  1103→              Delete item
+  1104→  1104→            </AlertDialogAction>
+  1105→  1105→          </AlertDialogFooter>
+  1106→  1106→        </AlertDialogContent>
+  1107→  1107→      </AlertDialog>
+  1108→  1108→
+  1109→  1109→      {/* Bulk import dialog */}
+  1110→  1110→      <Dialog
+  1111→  1111→        open={importDialogOpen}
+  1112→  1112→        onOpenChange={(o) => {
+  1113→  1113→          setImportDialogOpen(o);
+  1114→  1114→          if (!o) setImportText("");
+  1115→  1115→        }}
+  1116→  1116→      >
+  1117→  1117→        <DialogContent className="sm:max-w-2xl">
+  1118→  1118→          <DialogHeader>
+  1119→  1119→            <DialogTitle>Bulk import knowledge items</DialogTitle>
+  1120→  1120→            <DialogDescription>
+  1121→  1121→              Paste content in one of the supported formats to create many
+  1122→  1122→              items at once. Up to 50 items per import.
+  1123→  1123→            </DialogDescription>
+  1124→  1124→          </DialogHeader>
+  1125→  1125→
+  1126→  1126→          <div className="grid gap-4">
+  1127→  1127→            <div className="grid gap-1.5">
+  1128→  1128→              <Label>Format</Label>
+  1129→  1129→              <Tabs
+  1130→  1130→                value={importFormat}
+  1131→  1131→                onValueChange={(v) =>
+  1132→  1132→                  setImportFormat(v as ImportFormat)
+  1133→  1133→                }
+  1134→  1134→              >
+  1135→  1135→                <TabsList className="flex-wrap h-auto">
+  1136→  1136→                  <TabsTrigger value="auto">Auto-detect</TabsTrigger>
+  1137→  1137→                  <TabsTrigger value="colon">Title: content</TabsTrigger>
+  1138→  1138→                  <TabsTrigger value="blocks">Blocks</TabsTrigger>
+  1139→  1139→                  <TabsTrigger value="json">JSON array</TabsTrigger>
+  1140→  1140→                </TabsList>
+  1141→  1141→              </Tabs>
+  1142→  1142→            </div>
+  1143→  1143→
+  1144→  1144→            <div className="grid gap-1.5">
+  1145→  1145→              <Label htmlFor="kb-import-category">
+  1146→  1146→                Category (optional)
+  1147→  1147→              </Label>
+  1148→  1148→              <Input
+  1149→  1149→                id="kb-import-category"
+  1150→  1150→                list="kb-category-options"
+  1151→  1151→                value={importCategory}
+  1152→  1152→                onChange={(e) => setImportCategory(e.target.value)}
+  1153→  1153→                placeholder="Imported"
+  1154→  1154→              />
+  1155→  1155→              <p className="text-xs text-muted-foreground">
+  1156→  1156→                Applied to every imported item. JSON items can override this
+  1157→  1157→                with their own <code>category</code> field.
+  1158→  1158→              </p>
+  1159→  1159→            </div>
+  1160→  1160→
+  1161→  1161→            <div className="grid gap-1.5">
+  1162→  1162→              <Label htmlFor="kb-import-text">Content</Label>
+  1163→  1163→              <Textarea
+  1164→  1164→                id="kb-import-text"
+  1165→  1165→                value={importText}
+  1166→  1166→                onChange={(e) => setImportText(e.target.value)}
+  1167→  1167→                rows={10}
+  1168→  1168→                className="min-h-[220px] resize-y font-mono text-[13px] leading-relaxed"
+  1169→  1169→                placeholder={IMPORT_PLACEHOLDERS[importFormat]}
+  1170→  1170→              />
+  1171→  1171→              <p className="text-xs text-muted-foreground">
+  1172→  1172→                {importText.length} characters · {IMPORT_HELP[importFormat]}
+  1173→  1173→              </p>
+  1174→  1174→            </div>
+  1175→  1175→
+  1176→  1176→            <div className="rounded-lg border bg-muted/40 p-3 text-xs text-muted-foreground">
+  1177→  1177→              <span className="font-medium text-foreground">Example: </span>
+  1178→  1178→              <code className="font-mono whitespace-pre-wrap break-words">
+  1179→  1179→                {IMPORT_EXAMPLES[importFormat]}
+  1180→  1180→              </code>
+  1181→  1181→            </div>
+  1182→  1182→          </div>
+  1183→  1183→
+  1184→  1184→          <DialogFooter>
+  1185→  1185→            <Button
+  1186→  1186→              variant="outline"
+  1187→  1187→              onClick={() => setImportDialogOpen(false)}
+  1188→  1188→              disabled={importing}
+  1189→  1189→            >
+  1190→  1190→              Cancel
+  1191→  1191→            </Button>
+  1192→  1192→            <Button
+  1193→  1193→              onClick={handleImport}
+  1194→  1194→              disabled={importing || !importText.trim()}
+  1195→  1195→              className="gap-2"
+  1196→  1196→            >
+  1197→  1197→              {importing && <Loader2 className="size-4 animate-spin" />}
+  1198→  1198→              Import items
+  1199→  1199→            </Button>
+  1200→  1200→          </DialogFooter>
+  1201→  1201→        </DialogContent>
+  1202→  1202→      </Dialog>
+  1203→  1203→
+  1204→  1204→      {/* Preview dialog */}
+  1205→  1205→      <Dialog
+  1206→  1206→        open={!!previewItem}
+  1207→  1207→        onOpenChange={(o) => !o && setPreviewItem(null)}
+  1208→  1208→      >
+  1209→  1209→        <DialogContent className="sm:max-w-2xl">
+  1210→  1210→          <DialogHeader>
+  1211→  1211→            <DialogTitle className="pr-8">{previewItem?.title}</DialogTitle>
+  1212→  1212→            <DialogDescription>
+  1213→  1213→              <span className="inline-flex flex-wrap items-center gap-2 mt-1">
+  1214→  1214→                {previewItem && <CategoryBadge category={previewItem.category} />}
+  1215→  1215→                {previewItem && <SourceBadge sourceType={previewItem.sourceType} />}
+  1216→  1216→                {previewItem && <StatusBadge status={previewItem.status} />}
+  1217→  1217→              </span>
+  1218→  1218→            </DialogDescription>
+  1219→  1219→          </DialogHeader>
+  1220→  1220→          <ScrollArea className="h-[55vh] rounded-lg border">
+  1221→  1221→            <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed font-sans bg-muted/40 p-4">
+  1222→  1222→              {previewItem?.content}
+  1223→  1223→            </pre>
+  1224→  1224→          </ScrollArea>
+  1225→  1225→          <DialogFooter className="flex-row sm:justify-between gap-2">
+  1226→  1226→            <div className="text-xs text-muted-foreground">
+  1227→  1227→              Updated {previewItem && relativeTime(previewItem.updatedAt)} ·{" "}
+  1228→  1228→              {previewItem?.views ?? 0} views
+  1229→  1229→            </div>
+  1230→  1230→            <div className="flex gap-2">
+  1231→  1231→              <Button
+  1232→  1232→                variant="outline"
+  1233→  1233→                onClick={() => {
+  1234→  1234→                  if (previewItem) openEdit(previewItem);
+  1235→  1235→                  setPreviewItem(null);
+  1236→  1236→                }}
+  1237→  1237→              >
+  1238→  1238→                Edit
+  1239→  1239→              </Button>
+  1240→  1240→              <Button onClick={() => setPreviewItem(null)}>Close</Button>
+  1241→  1241→            </div>
+  1242→  1242→          </DialogFooter>
+  1243→  1243→        </DialogContent>
+  1244→  1244→      </Dialog>
+  1245→  1245→    </div>
+  1246→  1246→  );
+  1247→  1247→}
+  1248→  1248→
+  1249→  1249→function StatCard({
+  1250→  1250→  label,
+  1251→  1251→  value,
+  1252→  1252→  icon,
+  1253→  1253→  tone,
+  1254→  1254→}: {
+  1255→  1255→  label: string;
+  1256→  1256→  value: number;
+  1257→  1257→  icon: React.ReactNode;
+  1258→  1258→  tone: "primary" | "accent" | "muted";
+  1259→  1259→}) {
+  1260→  1260→  const toneClasses =
+  1261→  1261→    tone === "primary"
+  1262→  1262→      ? "bg-primary/10 text-primary"
+  1263→  1263→      : tone === "accent"
+  1264→  1264→      ? "bg-accent/20 text-accent-foreground"
+  1265→  1265→      : "bg-muted text-muted-foreground";
+  1266→  1266→  return (
+  1267→  1267→    <Card className="py-4">
+  1268→  1268→      <CardContent className="px-4 py-0">
+  1269→  1269→        <div className="flex items-center justify-between">
+  1270→  1270→          <div className="space-y-1">
+  1271→  1271→            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+  1272→  1272→              {label}
+  1273→  1273→            </div>
+  1274→  1274→            <div className="text-2xl font-bold tabular-nums">{value}</div>
+  1275→  1275→          </div>
+  1276→  1276→          <div
+  1277→  1277→            className={cn(
+  1278→  1278→              "h-9 w-9 flex items-center justify-center rounded-lg",
+  1279→  1279→              toneClasses
+  1280→  1280→            )}
+  1281→  1281→          >
+  1282→  1282→            {icon}
+  1283→  1283→          </div>
+  1284→  1284→        </div>
+  1285→  1285→      </CardContent>
+  1286→  1286→    </Card>
+  1287→  1287→  );
+  1288→  1288→}
+  1289→  1289→
+  1290→  1290→function KbCard({
+  1291→  1291→  item,
+  1292→  1292→  onEdit,
+  1293→  1293→  onToggle,
+  1294→  1294→  onDelete,
+  1295→  1295→  onPreview,
+  1296→  1296→  onFilterCategory,
+  1297→  1297→  activeCategory,
+  1298→  1298→}: {
+  1299→  1299→  item: KbItem;
+  1300→  1300→  onEdit: () => void;
+  1301→  1301→  onToggle: () => void;
+  1302→  1302→  onDelete: () => void;
+  1303→  1303→  onPreview: () => void;
+  1304→  1304→  onFilterCategory: (category: string) => void;
+  1305→  1305→  activeCategory?: string;
+  1306→  1306→}) {
+  1307→  1307→  const nextStatusLabel =
+  1308→  1308→    item.status === "active" ? "Mark as draft" : "Set active";
+  1309→  1309→
+  1310→  1310→  return (
+  1311→  1311→    <Card className="group py-0 transition-shadow hover:shadow-md hover:border-primary/30">
+  1312→  1312→      <CardContent className="px-4 py-4">
+  1313→  1313→        <div className="flex items-start gap-3">
+  1314→  1314→          <div className="flex-1 min-w-0">
+  1315→  1315→            <button
+  1316→  1316→              onClick={onPreview}
+  1317→  1317→              className="text-left group/title w-full"
+  1318→  1318→            >
+  1319→  1319→              <h3 className="font-semibold text-base leading-snug line-clamp-1 group-hover/title:text-primary transition-colors">
+  1320→  1320→                {item.title}
+  1321→  1321→              </h3>
+  1322→  1322→            </button>
+  1323→  1323→            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+  1324→  1324→              <CategoryBadge
+  1325→  1325→                category={item.category}
+  1326→  1326→                onClick={() => onFilterCategory(item.category)}
+  1327→  1327→                active={activeCategory === item.category}
+  1328→  1328→              />
+  1329→  1329→              <SourceBadge sourceType={item.sourceType} />
+  1330→  1330→              <StatusBadge status={item.status} />
+  1331→  1331→            </div>
+  1332→  1332→            <p className="mt-2 text-sm text-muted-foreground line-clamp-2">
+  1333→  1333→              {truncate(item.content, 120)}
+  1334→  1334→            </p>
+  1335→  1335→            <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
+  1336→  1336→              <span className="inline-flex items-center gap-1">
+  1337→  1337→                <Eye className="size-3" />
+  1338→  1338→                {item.views} views
+  1339→  1339→              </span>
+  1340→  1340→              <span className="text-muted-foreground/60">·</span>
+  1341→  1341→              <span>Updated {relativeTime(item.updatedAt)}</span>
+  1342→  1342→            </div>
+  1343→  1343→          </div>
+  1344→  1344→          <div className="flex items-center gap-1 shrink-0">
+  1345→  1345→            <Button
+  1346→  1346→              variant="ghost"
+  1347→  1347→              size="icon"
+  1348→  1348→              className="size-8 text-muted-foreground hover:text-foreground"
+  1349→  1349→              onClick={onPreview}
+  1350→  1350→              title="Preview"
+  1351→  1351→            >
+  1352→  1352→              <ExternalLink className="size-4" />
+  1353→  1353→            </Button>
+  1354→  1354→            <DropdownMenu>
+  1355→  1355→              <DropdownMenuTrigger asChild>
+  1356→  1356→                <Button
+  1357→  1357→                  variant="ghost"
+  1358→  1358→                  size="icon"
+  1359→  1359→                  className="size-8 text-muted-foreground hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground"
+  1360→  1360→                  title="Actions"
+  1361→  1361→                >
+  1362→  1362→                  <MoreVertical className="size-4" />
+  1363→  1363→                </Button>
+  1364→  1364→              </DropdownMenuTrigger>
+  1365→  1365→              <DropdownMenuContent align="end" className="w-44">
+  1366→  1366→                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+  1367→  1367→                <DropdownMenuItem onClick={onEdit}>
+  1368→  1368→                  <Pencil className="size-4" />
+  1369→  1369→                  Edit
+  1370→  1370→                </DropdownMenuItem>
+  1371→  1371→                <DropdownMenuItem onClick={onPreview}>
+  1372→  1372→                  <Eye className="size-4" />
+  1373→  1373→                  Preview
+  1374→  1374→                </DropdownMenuItem>
+  1375→  1375→                <DropdownMenuItem onClick={onToggle}>
+  1376→  1376→                  <Power className="size-4" />
+  1377→  1377→                  {nextStatusLabel}
+  1378→  1378→                </DropdownMenuItem>
+  1379→  1379→                <DropdownMenuSeparator />
+  1380→  1380→                <DropdownMenuItem
+  1381→  1381→                  onClick={onDelete}
+  1382→  1382→                  variant="destructive"
+  1383→  1383→                >
+  1384→  1384→                  <Trash2 className="size-4" />
+  1385→  1385→                  Delete
+  1386→  1386→                </DropdownMenuItem>
+  1387→  1387→              </DropdownMenuContent>
+  1388→  1388→            </DropdownMenu>
+  1389→  1389→          </div>
+  1390→  1390→        </div>
+  1391→  1391→      </CardContent>
+  1392→  1392→    </Card>
+  1393→  1393→  );
+  1394→  1394→}
+  1395→  1395→
+  1396→  1396→function EmptyState({
+  1397→  1397→  onCreate,
+  1398→  1398→  hasFilters,
+  1399→  1399→}: {
+  1400→  1400→  onCreate: () => void;
+  1401→  1401→  hasFilters: boolean;
+  1402→  1402→}) {
+  1403→  1403→  if (hasFilters) {
+  1404→  1404→    return (
+  1405→  1405→      <Card className="border-dashed">
+  1406→  1406→        <CardContent className="py-12 flex flex-col items-center text-center">
+  1407→  1407→          <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-3">
+  1408→  1408→            <Search className="size-5 text-muted-foreground" />
+  1409→  1409→          </div>
+  1410→  1410→          <h3 className="font-medium">No matching items</h3>
+  1411→  1411→          <p className="text-sm text-muted-foreground mt-1 max-w-md">
+  1412→  1412→            Try adjusting your search or filters to find what you're looking
+  1413→  1413→            for.
+  1414→  1414→          </p>
+  1415→  1415→        </CardContent>
+  1416→  1416→      </Card>
+  1417→  1417→    );
+  1418→  1418→  }
+  1419→  1419→  return (
+  1420→  1420→    <Card className="border-dashed">
+  1421→  1421→      <CardContent className="py-12 flex flex-col items-center text-center">
+  1422→  1422→        <div className="h-14 w-14 rounded-2xl brand-gradient flex items-center justify-center mb-4 text-white shadow-sm">
+  1423→  1423→          <BookOpen className="size-7" />
+  1424→  1424→        </div>
+  1425→  1425→        <h3 className="font-semibold text-lg">Your knowledge base is empty</h3>
+  1426→  1426→        <p className="text-sm text-muted-foreground mt-1 max-w-md">
+  1427→  1427→          Add your first article, FAQ, or document. The AI agent uses these to
+  1428→  1428→          answer visitor questions accurately.
+  1429→  1429→        </p>
+  1430→  1430→        <Button onClick={onCreate} className="mt-4 gap-2">
+  1431→  1431→          <Plus className="size-4" />
+  1432→  1432→          Create your first item
+  1433→  1433→        </Button>
+  1434→  1434→      </CardContent>
+  1435→  1435→    </Card>
+  1436→  1436→  );
+  1437→  1437→}
+  1438→  1438→
+  1439→  1439→export default KnowledgeView;
+  1440→  1440→
