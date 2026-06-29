@@ -28,6 +28,20 @@ import {
   Tag,
   ExternalLink,
   UserCircle2,
+  StickyNote,
+  CheckSquare,
+  Activity as ActivityIcon,
+  DollarSign,
+  Building2,
+  CalendarDays,
+  Plus,
+  Clock,
+  Check,
+  History,
+  ListChecks,
+  PenSquare,
+  ArrowRight,
+  RotateCcw,
 } from "lucide-react";
 
 import {
@@ -78,6 +92,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
+import { Progress } from "@/components/ui/progress";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -99,7 +118,14 @@ interface UserProp {
   businessName: string;
 }
 
-type LeadStatus = "new" | "contacted" | "qualified" | "won" | "lost";
+type LeadStatus =
+  | "new"
+  | "contacted"
+  | "qualified"
+  | "proposal_sent"
+  | "negotiation"
+  | "won"
+  | "lost";
 type LeadQuality = "low" | "medium" | "high";
 
 interface Lead {
@@ -129,6 +155,38 @@ interface LeadDetail extends Lead {
     nextAction: string | null;
     leadQuality: string | null;
   } | null;
+  dealValue: number;
+  leadScore: number;
+  company: string | null;
+  expectedCloseDate: string | null;
+  notes: LeadNote[];
+  tasks: LeadTask[];
+  activities: LeadActivity[];
+}
+
+interface LeadNote {
+  id: string;
+  authorName: string;
+  content: string;
+  createdAt: string;
+}
+
+interface LeadTask {
+  id: string;
+  title: string;
+  description: string | null;
+  dueDate: string | null;
+  completed: boolean;
+  completedAt: string | null;
+  createdAt: string;
+}
+
+interface LeadActivity {
+  id: string;
+  type: string;
+  description: string;
+  actorName: string | null;
+  createdAt: string;
 }
 
 interface LeadStats {
@@ -142,8 +200,24 @@ interface LeadStats {
   thisWeek: number;
 }
 
-const STATUSES: LeadStatus[] = ["new", "contacted", "qualified", "won", "lost"];
+const STATUSES: LeadStatus[] = [
+  "new",
+  "contacted",
+  "qualified",
+  "proposal_sent",
+  "negotiation",
+  "won",
+  "lost",
+];
 const QUALITIES: LeadQuality[] = ["low", "medium", "high"];
+
+/** Title-case a LeadStatus, e.g. "proposal_sent" → "Proposal Sent". */
+function formatStatus(s: LeadStatus): string {
+  return s
+    .split("_")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
 
 // ─── badge styling ───────────────────────────────────────────────
 function qualityBadgeClass(q: LeadQuality) {
@@ -166,6 +240,10 @@ function statusBadgeClass(s: LeadStatus) {
       return "bg-muted text-muted-foreground border-border";
     case "qualified":
       return "bg-accent/40 text-accent-foreground border-accent/50 font-medium";
+    case "proposal_sent":
+      return "bg-primary/15 text-primary border-primary/30 font-medium";
+    case "negotiation":
+      return "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30 font-medium";
     case "won":
       return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20";
     case "lost":
@@ -191,7 +269,7 @@ function StatusBadge({ status }: { status: LeadStatus }) {
   return (
     <Badge
       variant="outline"
-      className={cn("capitalize gap-1", statusBadgeClass(status))}
+      className={cn("gap-1", statusBadgeClass(status))}
     >
       {status === "new" && (
         <span className="relative flex size-1.5">
@@ -199,7 +277,7 @@ function StatusBadge({ status }: { status: LeadStatus }) {
           <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
         </span>
       )}
-      {status}
+      {formatStatus(status)}
     </Badge>
   );
 }
@@ -410,27 +488,50 @@ function StatCard({
   );
 }
 
+// ─── CRM patch payload (shared by parent + dialog) ───────────────
+type LeadPatch = {
+  status?: LeadStatus;
+  quality?: LeadQuality;
+  dealValue?: number;
+  leadScore?: number;
+  company?: string | null;
+  expectedCloseDate?: string | null;
+  service?: string | null;
+};
+
 // ─── Detail Dialog ───────────────────────────────────────────────
 function LeadDetailDialog({
   lead,
   open,
   onOpenChange,
   onSave,
+  onAddNote,
+  onAddTask,
+  onToggleTask,
+  onDeleteTask,
   onDeleted,
   saving,
 }: {
   lead: LeadDetail | null;
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  onSave: (id: string, patch: { status?: LeadStatus; quality?: LeadQuality }) => Promise<boolean>;
+  onSave: (id: string, patch: LeadPatch) => Promise<boolean>;
+  onAddNote: (id: string, content: string) => Promise<boolean>;
+  onAddTask: (id: string, title: string, dueDate: string | null) => Promise<boolean>;
+  onToggleTask: (id: string, taskId: string, completed: boolean) => Promise<boolean>;
+  onDeleteTask: (id: string, taskId: string) => Promise<boolean>;
   onDeleted: (id: string) => void;
   saving: boolean;
 }) {
   const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const [activeTab, setActiveTab] = React.useState("details");
 
-  // Reset confirm state when dialog closes
+  // Reset transient state when dialog closes
   React.useEffect(() => {
-    if (!open) setConfirmDelete(false);
+    if (!open) {
+      setConfirmDelete(false);
+      setActiveTab("details");
+    }
   }, [open]);
 
   if (!lead) return null;
@@ -439,7 +540,7 @@ function LeadDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto scroll-thin">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto scroll-thin">
         <DialogHeader>
           <div className="flex items-start gap-3 pr-6">
             <Avatar className="size-11 shrink-0">
@@ -450,6 +551,11 @@ function LeadDetailDialog({
             <div className="min-w-0 flex-1">
               <DialogTitle className="truncate flex items-center gap-2">
                 <span className="truncate">{lead.name}</span>
+                {lead.company && (
+                  <span className="text-xs font-normal text-muted-foreground hidden sm:inline">
+                    · {lead.company}
+                  </span>
+                )}
                 {isNew && (
                   <span className="relative flex size-2 shrink-0">
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
@@ -464,13 +570,37 @@ function LeadDetailDialog({
           </div>
         </DialogHeader>
 
-        <Tabs defaultValue="details" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="w-full">
-            <TabsTrigger value="details" className="flex-1">
-              Details
+            <TabsTrigger value="details" className="flex-1 gap-1.5">
+              <CircleDot size={13} />
+              <span className="hidden sm:inline">Details</span>
             </TabsTrigger>
-            <TabsTrigger value="conversation" className="flex-1">
-              Conversation
+            <TabsTrigger value="notes" className="flex-1 gap-1.5">
+              <StickyNote size={13} />
+              <span className="hidden sm:inline">Notes</span>
+              {lead.notes.length > 0 && (
+                <Badge variant="secondary" className="ml-0.5 px-1.5 py-0 text-[10px] h-4 min-w-4 justify-center">
+                  {lead.notes.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="tasks" className="flex-1 gap-1.5">
+              <CheckSquare size={13} />
+              <span className="hidden sm:inline">Tasks</span>
+              {lead.tasks.length > 0 && (
+                <Badge variant="secondary" className="ml-0.5 px-1.5 py-0 text-[10px] h-4 min-w-4 justify-center">
+                  {lead.tasks.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="activity" className="flex-1 gap-1.5">
+              <ActivityIcon size={13} />
+              <span className="hidden sm:inline">Activity</span>
+            </TabsTrigger>
+            <TabsTrigger value="conversation" className="flex-1 gap-1.5">
+              <MessageCircle size={13} />
+              <span className="hidden sm:inline">Chat</span>
             </TabsTrigger>
           </TabsList>
 
@@ -513,6 +643,79 @@ function LeadDetailDialog({
                 </p>
               </div>
             )}
+
+            {/* CRM fields (editable, PATCH on blur) */}
+            <div className="rounded-lg border bg-muted/20 p-3 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                  <DollarSign size={13} className="text-primary" />
+                  CRM
+                </div>
+                <span className="text-[11px] text-muted-foreground">
+                  Edits save automatically
+                </span>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <CrmFieldEditor
+                  label="Deal Value"
+                  icon={DollarSign}
+                  value={lead.dealValue ?? 0}
+                  type="number"
+                  min={0}
+                  prefix="$"
+                  placeholder="0"
+                  onSave={(v) =>
+                    onSave(lead.id, { dealValue: typeof v === "number" ? v : 0 })
+                  }
+                  disabled={saving}
+                />
+                <CrmFieldEditor
+                  label="Lead Score"
+                  icon={Target}
+                  value={lead.leadScore ?? 0}
+                  type="number"
+                  min={0}
+                  max={100}
+                  suffix="/ 100"
+                  showProgress
+                  onSave={(v) =>
+                    onSave(lead.id, {
+                      leadScore: typeof v === "number" ? v : 0,
+                    })
+                  }
+                  disabled={saving}
+                />
+                <CrmFieldEditor
+                  label="Company"
+                  icon={Building2}
+                  value={lead.company ?? ""}
+                  type="text"
+                  placeholder="—"
+                  onSave={(v) =>
+                    onSave(lead.id, { company: (v as string) || null })
+                  }
+                  disabled={saving}
+                />
+                <CrmFieldEditor
+                  label="Expected Close Date"
+                  icon={CalendarDays}
+                  value={
+                    lead.expectedCloseDate
+                      ? lead.expectedCloseDate.slice(0, 10)
+                      : ""
+                  }
+                  type="date"
+                  onSave={(v) =>
+                    onSave(lead.id, {
+                      expectedCloseDate: v
+                        ? new Date(`${v}T12:00:00`).toISOString()
+                        : null,
+                    })
+                  }
+                  disabled={saving}
+                />
+              </div>
+            </div>
 
             {/* Quick reply actions */}
             <div className="rounded-lg border border-primary/20 bg-primary/[0.03] p-3 space-y-2">
@@ -569,9 +772,9 @@ function LeadDetailDialog({
             {/* Status & quality controls */}
             <div className="grid sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">
+                <Label className="text-xs font-medium text-muted-foreground">
                   Status
-                </label>
+                </Label>
                 <Select
                   value={lead.status}
                   onValueChange={(v) =>
@@ -584,17 +787,17 @@ function LeadDetailDialog({
                   </SelectTrigger>
                   <SelectContent>
                     {STATUSES.map((s) => (
-                      <SelectItem key={s} value={s} className="capitalize">
-                        {s}
+                      <SelectItem key={s} value={s}>
+                        {formatStatus(s)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">
+                <Label className="text-xs font-medium text-muted-foreground">
                   Quality
-                </label>
+                </Label>
                 <Select
                   value={lead.quality}
                   onValueChange={(v) =>
@@ -627,6 +830,27 @@ function LeadDetailDialog({
                 Updated {fullDate(lead.updatedAt)}
               </span>
             </div>
+          </TabsContent>
+
+          {/* ─── Notes tab ─── */}
+          <TabsContent value="notes" className="mt-4">
+            <NotesTab lead={lead} onAddNote={onAddNote} saving={saving} />
+          </TabsContent>
+
+          {/* ─── Tasks tab ─── */}
+          <TabsContent value="tasks" className="mt-4">
+            <TasksTab
+              lead={lead}
+              onAddTask={onAddTask}
+              onToggleTask={onToggleTask}
+              onDeleteTask={onDeleteTask}
+              saving={saving}
+            />
+          </TabsContent>
+
+          {/* ─── Activity tab ─── */}
+          <TabsContent value="activity" className="mt-4">
+            <ActivityTab activities={lead.activities} />
           </TabsContent>
 
           {/* ─── Conversation tab ─── */}
@@ -754,6 +978,517 @@ function LeadDetailDialog({
   );
 }
 
+// ─── CRM field editor (inline editable, PATCH on blur) ───────────
+function CrmFieldEditor({
+  label,
+  icon: Icon,
+  value,
+  onSave,
+  type = "text",
+  prefix,
+  suffix,
+  min,
+  max,
+  placeholder,
+  showProgress,
+  disabled,
+}: {
+  label: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  value: string | number | null;
+  onSave: (v: string | number | null) => Promise<boolean>;
+  type?: "text" | "number" | "date";
+  prefix?: string;
+  suffix?: string;
+  min?: number;
+  max?: number;
+  placeholder?: string;
+  showProgress?: boolean;
+  disabled?: boolean;
+}) {
+  const displayValue =
+    type === "number"
+      ? value !== undefined && value !== null && value !== ""
+        ? String(value)
+        : ""
+      : (value as string) || "";
+
+  const [localValue, setLocalValue] = React.useState<string>(displayValue);
+  const [status, setStatus] = React.useState<"idle" | "saving" | "saved">("idle");
+  const savedTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(() => {
+    setLocalValue(displayValue);
+  }, [displayValue]);
+
+  React.useEffect(() => {
+    return () => {
+      if (savedTimer.current) clearTimeout(savedTimer.current);
+    };
+  }, []);
+
+  async function commit() {
+    if (localValue === displayValue) return;
+    let v: string | number | null = localValue;
+    if (type === "number") {
+      const n = Number(localValue);
+      v = isNaN(n) ? 0 : n;
+      if (min !== undefined) v = Math.max(min, v as number);
+      if (max !== undefined) v = Math.min(max, v as number);
+    } else if (type === "date") {
+      v = localValue || null;
+    } else {
+      v = localValue || null;
+    }
+    setStatus("saving");
+    const ok = await onSave(v);
+    if (ok) {
+      setStatus("saved");
+      if (savedTimer.current) clearTimeout(savedTimer.current);
+      savedTimer.current = setTimeout(() => setStatus("idle"), 1500);
+    } else {
+      setLocalValue(displayValue); // revert on failure
+      setStatus("idle");
+    }
+  }
+
+  const progressValue =
+    type === "number" && showProgress
+      ? Math.max(0, Math.min(100, Number(localValue) || 0))
+      : 0;
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <Label className="text-xs text-muted-foreground gap-1.5 font-medium">
+          <Icon size={12} />
+          {label}
+        </Label>
+        {status === "saving" && (
+          <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+            <Loader2 size={10} className="animate-spin" />
+            Saving…
+          </span>
+        )}
+        {status === "saved" && (
+          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+            <Check size={10} />
+            Saved
+          </span>
+        )}
+      </div>
+      <div className="relative">
+        {prefix && (
+          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">
+            {prefix}
+          </span>
+        )}
+        <Input
+          type={type}
+          value={localValue}
+          onChange={(e) => setLocalValue(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.currentTarget.blur();
+            }
+          }}
+          min={min}
+          max={max}
+          placeholder={placeholder}
+          disabled={disabled}
+          className={cn("h-9", prefix && "pl-7", suffix && "pr-14")}
+        />
+        {suffix && (
+          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
+            {suffix}
+          </span>
+        )}
+      </div>
+      {showProgress && type === "number" && (
+        <Progress value={progressValue} className="h-1.5" />
+      )}
+    </div>
+  );
+}
+
+// ─── Notes tab ───────────────────────────────────────────────────
+function NotesTab({
+  lead,
+  onAddNote,
+  saving,
+}: {
+  lead: LeadDetail;
+  onAddNote: (id: string, content: string) => Promise<boolean>;
+  saving: boolean;
+}) {
+  const [content, setContent] = React.useState("");
+  const [submitting, setSubmitting] = React.useState(false);
+
+  async function submit() {
+    const trimmed = content.trim();
+    if (!trimmed) return;
+    setSubmitting(true);
+    const ok = await onAddNote(lead.id, trimmed);
+    setSubmitting(false);
+    if (ok) setContent("");
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+        <Label className="text-xs gap-1.5 text-foreground font-medium">
+          <PenSquare size={12} className="text-primary" />
+          Add a note
+        </Label>
+        <Textarea
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          placeholder="Type an internal note about this lead…"
+          rows={3}
+          maxLength={5000}
+          disabled={submitting || saving}
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+              e.preventDefault();
+              submit();
+            }
+          }}
+        />
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] text-muted-foreground">
+            {content.length}/5000 · ⌘/Ctrl+Enter to save
+          </span>
+          <Button
+            size="sm"
+            onClick={submit}
+            disabled={!content.trim() || submitting || saving}
+            className="gap-1.5"
+          >
+            {submitting ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : (
+              <Plus size={13} />
+            )}
+            Add note
+          </Button>
+        </div>
+      </div>
+
+      <Separator />
+
+      <div className="space-y-2">
+        {lead.notes.length === 0 ? (
+          <div className="rounded-lg border border-dashed py-8 text-center">
+            <StickyNote className="mx-auto text-muted-foreground/60" size={20} />
+            <p className="text-sm text-muted-foreground mt-2">No notes yet</p>
+            <p className="text-xs text-muted-foreground/70 mt-1">
+              Add internal context, history, or strategy notes for this lead.
+            </p>
+          </div>
+        ) : (
+          lead.notes.map((note) => (
+            <div key={note.id} className="rounded-lg border bg-card p-3">
+              <div className="flex items-start gap-2.5">
+                <Avatar className="size-7 shrink-0">
+                  <AvatarFallback className="text-[10px] font-semibold bg-accent/40 text-accent-foreground">
+                    {initials(note.authorName) || "?"}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium truncate">
+                      {note.authorName}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground shrink-0">
+                      {relativeTime(note.createdAt)}
+                    </span>
+                  </div>
+                  <p className="text-sm whitespace-pre-wrap break-words mt-1 text-foreground/90">
+                    {note.content}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Tasks tab ───────────────────────────────────────────────────
+function TasksTab({
+  lead,
+  onAddTask,
+  onToggleTask,
+  onDeleteTask,
+  saving,
+}: {
+  lead: LeadDetail;
+  onAddTask: (id: string, title: string, dueDate: string | null) => Promise<boolean>;
+  onToggleTask: (id: string, taskId: string, completed: boolean) => Promise<boolean>;
+  onDeleteTask: (id: string, taskId: string) => Promise<boolean>;
+  saving: boolean;
+}) {
+  const [title, setTitle] = React.useState("");
+  const [dueDate, setDueDate] = React.useState("");
+  const [submitting, setSubmitting] = React.useState(false);
+
+  async function submit() {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    setSubmitting(true);
+    const ok = await onAddTask(lead.id, trimmed, dueDate || null);
+    setSubmitting(false);
+    if (ok) {
+      setTitle("");
+      setDueDate("");
+    }
+  }
+
+  const completedCount = lead.tasks.filter((t) => t.completed).length;
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+        <Label className="text-xs gap-1.5 text-foreground font-medium">
+          <Plus size={12} className="text-primary" />
+          Create a task
+        </Label>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g. Send proposal, follow-up call…"
+            disabled={submitting || saving}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            className="flex-1 h-9"
+          />
+          <Input
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            disabled={submitting || saving}
+            className="sm:w-[160px] h-9"
+            aria-label="Due date"
+          />
+          <Button
+            size="sm"
+            onClick={submit}
+            disabled={!title.trim() || submitting || saving}
+            className="gap-1.5 sm:h-9"
+          >
+            {submitting ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : (
+              <Plus size={13} />
+            )}
+            Add
+          </Button>
+        </div>
+      </div>
+
+      <Separator />
+
+      {lead.tasks.length > 0 && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <ListChecks size={12} />
+            {lead.tasks.length} {lead.tasks.length === 1 ? "task" : "tasks"}
+          </span>
+          <span>
+            {completedCount} / {lead.tasks.length} completed
+          </span>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {lead.tasks.length === 0 ? (
+          <div className="rounded-lg border border-dashed py-8 text-center">
+            <CheckSquare className="mx-auto text-muted-foreground/60" size={20} />
+            <p className="text-sm text-muted-foreground mt-2">No tasks yet</p>
+            <p className="text-xs text-muted-foreground/70 mt-1">
+              Create follow-up tasks, reminders, or action items for this lead.
+            </p>
+          </div>
+        ) : (
+          lead.tasks.map((task) => {
+            const overdue =
+              !task.completed &&
+              !!task.dueDate &&
+              new Date(task.dueDate).getTime() < Date.now();
+            return (
+              <div
+                key={task.id}
+                className={cn(
+                  "rounded-lg border bg-card p-3 flex items-start gap-2.5",
+                  overdue && "border-destructive/40 bg-destructive/[0.03]"
+                )}
+              >
+                <Checkbox
+                  checked={task.completed}
+                  onCheckedChange={(v) =>
+                    onToggleTask(lead.id, task.id, !!v)
+                  }
+                  disabled={saving}
+                  className="mt-0.5"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <span
+                      className={cn(
+                        "text-sm font-medium break-words",
+                        task.completed && "line-through text-muted-foreground"
+                      )}
+                    >
+                      {task.title}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-6 shrink-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => onDeleteTask(lead.id, task.id)}
+                      disabled={saving}
+                      aria-label="Delete task"
+                    >
+                      <Trash2 size={13} />
+                    </Button>
+                  </div>
+                  {task.description && (
+                    <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-words">
+                      {task.description}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-3 mt-1.5 text-[11px] text-muted-foreground">
+                    {task.dueDate && (
+                      <span
+                        className={cn(
+                          "flex items-center gap-1",
+                          overdue && "text-destructive font-medium"
+                        )}
+                      >
+                        <CalendarClock size={11} />
+                        Due {relativeTime(task.dueDate)}
+                      </span>
+                    )}
+                    {task.completed && task.completedAt && (
+                      <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                        <CheckCircle2 size={11} />
+                        Done {relativeTime(task.completedAt)}
+                      </span>
+                    )}
+                    <span className="flex items-center gap-1">
+                      <Clock size={11} />
+                      Added {relativeTime(task.createdAt)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Activity tab (vertical timeline) ────────────────────────────
+function activityStyle(type: string): {
+  Icon: React.ComponentType<{ size?: number; className?: string }>;
+  color: string;
+} {
+  switch (type) {
+    case "status_change":
+      return { Icon: ArrowRight, color: "border-primary/30 bg-primary/10 text-primary" };
+    case "note_added":
+      return {
+        Icon: StickyNote,
+        color: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+      };
+    case "task_created":
+      return {
+        Icon: Plus,
+        color: "border-accent/40 bg-accent/20 text-accent-foreground",
+      };
+    case "task_completed":
+      return {
+        Icon: CheckCircle2,
+        color: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+      };
+    case "task_reopened":
+      return {
+        Icon: RotateCcw,
+        color: "border-muted-foreground/30 bg-muted text-muted-foreground",
+      };
+    default:
+      return {
+        Icon: ActivityIcon,
+        color: "border-muted-foreground/30 bg-muted text-muted-foreground",
+      };
+  }
+}
+
+function ActivityTab({ activities }: { activities: LeadActivity[] }) {
+  if (activities.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed py-8 text-center">
+        <History className="mx-auto text-muted-foreground/60" size={20} />
+        <p className="text-sm text-muted-foreground mt-2">No activity yet</p>
+        <p className="text-xs text-muted-foreground/70 mt-1">
+          Status changes, notes, and task updates will appear here in chronological order.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative pl-1">
+      {/* Vertical line */}
+      <div className="absolute left-[15px] top-3 bottom-3 w-px bg-border" aria-hidden />
+      <ol className="space-y-3.5">
+        {activities.map((a) => {
+          const { Icon, color } = activityStyle(a.type);
+          return (
+            <li key={a.id} className="relative flex items-start gap-3">
+              <div
+                className={cn(
+                  "relative z-10 size-8 rounded-full flex items-center justify-center shrink-0 border bg-card",
+                  color
+                )}
+              >
+                <Icon size={14} />
+              </div>
+              <div className="min-w-0 flex-1 pt-1">
+                <p className="text-sm text-foreground/90 break-words">
+                  {a.description}
+                </p>
+                <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground">
+                  {a.actorName && (
+                    <span className="flex items-center gap-1">
+                      <UserCircle2 size={10} />
+                      {a.actorName}
+                    </span>
+                  )}
+                  <span className="flex items-center gap-1">
+                    <Clock size={10} />
+                    {relativeTime(a.createdAt)}
+                  </span>
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
 function InfoRow({
   icon: Icon,
   label,
@@ -851,6 +1586,18 @@ function LeadRowActions({
           disabled={lead.status === "qualified"}
         >
           <Target size={14} /> Mark qualified
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => onStatusChange(lead, "proposal_sent")}
+          disabled={lead.status === "proposal_sent"}
+        >
+          <ArrowRight size={14} className="text-primary" /> Mark proposal sent
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => onStatusChange(lead, "negotiation")}
+          disabled={lead.status === "negotiation"}
+        >
+          <DollarSign size={14} className="text-amber-600 dark:text-amber-400" /> Mark negotiation
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => onStatusChange(lead, "won")}
@@ -988,11 +1735,18 @@ export function LeadsView({ user }: { user: UserProp }) {
     fetchStats();
   }, [fetchStats]);
 
-  // ─── Open detail dialog (fetch full lead w/ session) ───────────
+  // ─── Open detail dialog (fetch full lead w/ session + CRM data) ─
   async function openDetail(lead: Lead) {
     setSelectedLead({
       ...lead,
       session: null,
+      dealValue: 0,
+      leadScore: 0,
+      company: null,
+      expectedCloseDate: null,
+      notes: [],
+      tasks: [],
+      activities: [],
     });
     setDetailOpen(true);
     setDetailLoading(true);
@@ -1008,12 +1762,40 @@ export function LeadsView({ user }: { user: UserProp }) {
     }
   }
 
-  // ─── Save (PATCH) ──────────────────────────────────────────────
-  async function updateLead(
-    id: string,
-    patch: { status?: LeadStatus; quality?: LeadQuality }
-  ): Promise<boolean> {
+  // ─── Save (PATCH) — supports status, quality, and CRM fields ────
+  async function updateLead(id: string, patch: LeadPatch): Promise<boolean> {
     setSaving(true);
+
+    // Snapshot for revert on failure
+    const prevLead = selectedLead?.id === id ? selectedLead : null;
+    const prevStatus = prevLead?.status;
+
+    // Optimistic: update selectedLead visible fields immediately
+    if (prevLead) {
+      setSelectedLead((prev) =>
+        prev && prev.id === id
+          ? {
+              ...prev,
+              ...(patch.status ? { status: patch.status } : {}),
+              ...(patch.quality ? { quality: patch.quality } : {}),
+              ...(patch.dealValue !== undefined ? { dealValue: patch.dealValue } : {}),
+              ...(patch.leadScore !== undefined ? { leadScore: patch.leadScore } : {}),
+              ...(patch.company !== undefined ? { company: patch.company } : {}),
+              ...(patch.expectedCloseDate !== undefined
+                ? { expectedCloseDate: patch.expectedCloseDate }
+                : {}),
+              ...(patch.service !== undefined ? { service: patch.service } : {}),
+            }
+          : prev
+      );
+    }
+    // Optimistic: update leads list visible status
+    if (patch.status) {
+      setLeads((prev) =>
+        prev.map((l) => (l.id === id ? { ...l, status: patch.status! } : l))
+      );
+    }
+
     try {
       const res = await fetch(`/api/leads/${id}`, {
         method: "PATCH",
@@ -1029,19 +1811,261 @@ export function LeadsView({ user }: { user: UserProp }) {
       setLeads((prev) =>
         prev.map((l) => (l.id === id ? { ...l, ...updated } : l))
       );
+      // Synthesize an activity entry when status changed (server logs it too)
+      const statusChanged =
+        !!patch.status && !!prevStatus && patch.status !== prevStatus;
+      const optimisticActivity: LeadActivity | null = statusChanged
+        ? {
+            id: `tmp-status-${Date.now()}`,
+            type: "status_change",
+            description: `Status changed from "${prevStatus}" to "${patch.status}"`,
+            actorName: user.name,
+            createdAt: new Date().toISOString(),
+          }
+        : null;
       if (selectedLead?.id === id) {
         setSelectedLead((prev) =>
-          prev ? { ...prev, ...updated, session: prev.session } : prev
+          prev
+            ? {
+                ...prev,
+                ...updated,
+                session: prev.session,
+                notes: prev.notes,
+                tasks: prev.tasks,
+                activities: optimisticActivity
+                  ? [optimisticActivity, ...prev.activities]
+                  : prev.activities,
+              }
+            : prev
         );
       }
       toast.success("Lead updated");
       fetchStats();
       return true;
     } catch (e: any) {
+      // Revert optimistic updates
+      if (prevLead) {
+        setSelectedLead((prev) =>
+          prev && prev.id === id
+            ? {
+                ...prev,
+                ...(patch.status && prevStatus ? { status: prevStatus } : {}),
+                ...(patch.quality ? { quality: prevLead.quality } : {}),
+                ...(patch.dealValue !== undefined ? { dealValue: prevLead.dealValue } : {}),
+                ...(patch.leadScore !== undefined ? { leadScore: prevLead.leadScore } : {}),
+                ...(patch.company !== undefined ? { company: prevLead.company } : {}),
+                ...(patch.expectedCloseDate !== undefined
+                  ? { expectedCloseDate: prevLead.expectedCloseDate }
+                  : {}),
+                ...(patch.service !== undefined ? { service: prevLead.service } : {}),
+              }
+            : prev
+        );
+      }
+      if (patch.status && prevStatus) {
+        setLeads((prev) =>
+          prev.map((l) => (l.id === id ? { ...l, status: prevStatus } : l))
+        );
+      }
       toast.error(e.message || "Update failed");
       return false;
     } finally {
       setSaving(false);
+    }
+  }
+
+  // ─── Add a note (POST /api/leads/[id]/notes) ────────────────────
+  async function addNote(id: string, content: string): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/leads/${id}/notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to add note");
+      }
+      const data = await res.json();
+      const note: LeadNote = data.note;
+      const nowIso = new Date().toISOString();
+      setSelectedLead((prev) =>
+        prev && prev.id === id
+          ? {
+              ...prev,
+              notes: [note, ...prev.notes],
+              activities: [
+                {
+                  id: `tmp-note-${nowIso}`,
+                  type: "note_added",
+                  description: `Note added by ${user.name}`,
+                  actorName: user.name,
+                  createdAt: nowIso,
+                },
+                ...prev.activities,
+              ],
+            }
+          : prev
+      );
+      toast.success("Note added");
+      fetchLeads(); // background refresh to keep list in sync
+      return true;
+    } catch (e: any) {
+      toast.error(e.message || "Failed to add note");
+      return false;
+    }
+  }
+
+  // ─── Create a task (POST /api/leads/[id]/tasks) ─────────────────
+  async function addTask(
+    id: string,
+    title: string,
+    dueDate: string | null
+  ): Promise<boolean> {
+    try {
+      const body: { title: string; dueDate?: string } = { title };
+      if (dueDate) body.dueDate = new Date(`${dueDate}T12:00:00`).toISOString();
+      const res = await fetch(`/api/leads/${id}/tasks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to create task");
+      }
+      const data = await res.json();
+      const task: LeadTask = data.task;
+      const nowIso = new Date().toISOString();
+      setSelectedLead((prev) =>
+        prev && prev.id === id
+          ? {
+              ...prev,
+              tasks: [task, ...prev.tasks],
+              activities: [
+                {
+                  id: `tmp-task-${nowIso}`,
+                  type: "task_created",
+                  description: `Task "${task.title}" created by ${user.name}`,
+                  actorName: user.name,
+                  createdAt: nowIso,
+                },
+                ...prev.activities,
+              ],
+            }
+          : prev
+      );
+      toast.success("Task created");
+      fetchLeads();
+      return true;
+    } catch (e: any) {
+      toast.error(e.message || "Failed to create task");
+      return false;
+    }
+  }
+
+  // ─── Toggle task completion (PATCH /api/leads/[id]/tasks/[taskId]) ─
+  async function toggleTask(
+    id: string,
+    taskId: string,
+    completed: boolean
+  ): Promise<boolean> {
+    const prevTasks = selectedLead?.id === id ? selectedLead.tasks : null;
+    const task = prevTasks?.find((t) => t.id === taskId);
+    const nowIso = new Date().toISOString();
+
+    // Optimistic update
+    setSelectedLead((prev) =>
+      prev && prev.id === id
+        ? {
+            ...prev,
+            tasks: prev.tasks.map((t) =>
+              t.id === taskId
+                ? {
+                    ...t,
+                    completed,
+                    completedAt: completed ? nowIso : null,
+                  }
+                : t
+            ),
+          }
+        : prev
+    );
+
+    try {
+      const res = await fetch(`/api/leads/${id}/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to update task");
+      }
+      // Push synthesized activity
+      if (task) {
+        setSelectedLead((prev) =>
+          prev && prev.id === id
+            ? {
+                ...prev,
+                activities: [
+                  {
+                    id: `tmp-toggle-${nowIso}`,
+                    type: completed ? "task_completed" : "task_reopened",
+                    description: `Task "${task.title}" ${completed ? "completed" : "reopened"} by ${user.name}`,
+                    actorName: user.name,
+                    createdAt: nowIso,
+                  },
+                  ...prev.activities,
+                ],
+              }
+            : prev
+        );
+      }
+      return true;
+    } catch (e: any) {
+      // Revert optimistic update
+      if (prevTasks) {
+        setSelectedLead((prev) =>
+          prev && prev.id === id ? { ...prev, tasks: prevTasks } : prev
+        );
+      }
+      toast.error(e.message || "Failed to update task");
+      return false;
+    }
+  }
+
+  // ─── Delete a task (DELETE /api/leads/[id]/tasks/[taskId]) ──────
+  async function deleteTask(id: string, taskId: string): Promise<boolean> {
+    const prevTasks = selectedLead?.id === id ? selectedLead.tasks : null;
+    // Optimistic removal
+    setSelectedLead((prev) =>
+      prev && prev.id === id
+        ? {
+            ...prev,
+            tasks: prev.tasks.filter((t) => t.id !== taskId),
+          }
+        : prev
+    );
+    try {
+      const res = await fetch(`/api/leads/${id}/tasks/${taskId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to delete task");
+      }
+      toast.success("Task deleted");
+      return true;
+    } catch (e: any) {
+      // Revert
+      if (prevTasks) {
+        setSelectedLead((prev) =>
+          prev && prev.id === id ? { ...prev, tasks: prevTasks } : prev
+        );
+      }
+      toast.error(e.message || "Failed to delete task");
+      return false;
     }
   }
 
@@ -1190,8 +2214,8 @@ export function LeadsView({ user }: { user: UserProp }) {
               <SelectContent>
                 <SelectItem value="all">All statuses</SelectItem>
                 {STATUSES.map((s) => (
-                  <SelectItem key={s} value={s} className="capitalize">
-                    {s}
+                  <SelectItem key={s} value={s}>
+                    {formatStatus(s)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1299,7 +2323,7 @@ export function LeadsView({ user }: { user: UserProp }) {
               </p>
             </div>
           </div>
-          <PipelineBoard businessId={user.businessId} onLeadClick={openDetail} />
+          <PipelineBoard businessId={user.businessId} onLeadClick={(lead) => openDetail(lead as Lead)} />
         </Card>
       ) : (
       /* List / table */
@@ -1519,6 +2543,10 @@ export function LeadsView({ user }: { user: UserProp }) {
         open={detailOpen}
         onOpenChange={setDetailOpen}
         onSave={updateLead}
+        onAddNote={addNote}
+        onAddTask={addTask}
+        onToggleTask={toggleTask}
+        onDeleteTask={deleteTask}
         onDeleted={handleDelete}
         saving={saving || detailLoading}
       />

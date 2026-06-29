@@ -13,7 +13,7 @@ export function GET(req: NextRequest) {
     const quality = searchParams.get("quality") || undefined;
     const q = searchParams.get("q")?.trim() || undefined;
 
-    const validStatuses = ["new", "contacted", "qualified", "won", "lost"];
+    const validStatuses = ["new", "contacted", "qualified", "proposal_sent", "negotiation", "won", "lost"];
     const validQualities = ["low", "medium", "high"];
 
     const where: any = { businessId: user.businessId };
@@ -50,6 +50,9 @@ export function GET(req: NextRequest) {
         status: l.status,
         source: l.source,
         sessionId: l.sessionId,
+        dealValue: l.dealValue,
+        leadScore: l.leadScore,
+        company: l.company,
         visitorEmail: l.session?.visitorEmail ?? null,
         createdAt: l.createdAt.toISOString(),
         updatedAt: l.updatedAt.toISOString(),

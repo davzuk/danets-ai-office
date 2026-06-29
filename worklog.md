@@ -1030,3 +1030,120 @@ Single-file change: `src/components/dashboard/views/knowledge-view.tsx`. Backend
 
 ## Stage Summary
 Admins can now click "Test Search" on the Knowledge Base view, type or pick a sample visitor query, and instantly see which active KB articles the AI's TF-IDF retrieval would surface — ranked, color-coded by category, with a relevance bar — before going live. Closes the "Consider adding a KB test-search UI" item from the CRON-7 next-steps list.
+
+---
+Task ID: P1-CRM
+Agent: subagent
+Task: Enhance the lead detail dialog in `leads-view.tsx` with full CRM capabilities — editable CRM fields (deal value, lead score, company, expected close date), Notes tab, Tasks tab, Activity timeline tab, and two new pipeline stages (proposal_sent, negotiation).
+
+## Scope
+Single-file change: `src/components/dashboard/views/leads-view.tsx`. Backend endpoints (`GET /api/leads/[id]`, `POST /api/leads/[id]/notes`, `POST /api/leads/[id]/tasks`, `PATCH|DELETE /api/leads/[id]/tasks/[taskId]`, extended `PATCH /api/leads/[id]`) were already created by the backend agent and consumed as-is.
+
+## Work Log
+
+### 1. Type system & constants
+- **`LeadStatus`** widened to include `proposal_sent` and `negotiation` (inserted between `qualified` and `won`).
+- **`STATUSES`** array updated to include the two new stages in pipeline order.
+- **`LeadDetail`** interface extended with `dealValue: number`, `leadScore: number`, `company: string | null`, `expectedCloseDate: string | null`, plus `notes: LeadNote[]`, `tasks: LeadTask[]`, `activities: LeadActivity[]`.
+- Added **`LeadNote`**, **`LeadTask`**, **`LeadActivity`** interfaces mirroring the API response shapes.
+- Added shared **`LeadPatch`** type (status, quality, dealValue, leadScore, company, expectedCloseDate, service) used by both `LeadDetailDialog.onSave` and the parent `updateLead`.
+- Added **`formatStatus(s)`** helper that title-cases status ids (`proposal_sent` → `Proposal Sent`).
+
+### 2. Badge styling for new statuses
+- `statusBadgeClass` gained cases for `proposal_sent` (primary tint) and `negotiation` (amber tint).
+- `StatusBadge` now renders `formatStatus(status)` instead of the raw id (removed `capitalize` since formatStatus handles casing).
+
+### 3. LeadDetailDialog rewrite
+- Dialog widened from `sm:max-w-2xl` → **`sm:max-w-3xl`** to accommodate new content.
+- Tabs expanded from 2 (Details, Conversation) → **5**: Details, Notes, Tasks, Activity, Chat. Tab triggers gained leading lucide icons (CircleDot, StickyNote, CheckSquare, Activity, MessageCircle) and Notes/Tasks triggers show count badges.
+- Dialog title now shows the lead's company (when set) inline next to the name.
+- Controlled tab state (`activeTab`) that resets to "details" when the dialog closes.
+- **Details tab** gained a new **CRM section** (bordered, muted bg) with a 2-col grid of `CrmFieldEditor` instances:
+  - Deal Value (number, `$` prefix, min 0)
+  - Lead Score (number 0–100, `/ 100` suffix, live `Progress` bar)
+  - Company (text)
+  - Expected Close Date (date input; ISO↔yyyy-mm-dd conversion in the onSave wrapper)
+- Existing Details-tab content (contact info, message, quick-reply WhatsApp/Email/Call, status & quality selects, meta) preserved. Status `<SelectItem>` now uses `formatStatus(s)` instead of `capitalize {s}`.
+- Status & Quality `<label>` elements upgraded to shadcn `Label` for consistency.
+- **Conversation tab** preserved verbatim (linked chat session summary, visitor info, suggested next action, or empty state).
+
+### 4. New sub-components (defined after LeadDetailDialog)
+
+- **`CrmFieldEditor`**: reusable inline-editable field. Holds a local string state synced from the prop `value` via `useEffect`. Commits on blur or Enter via `onSave(v)`. Shows a "Saving…" spinner while the PATCH is in flight and a green "Saved ✓" indicator for 1.5s after success. On failure, reverts to the original value. Supports `type="text" | "number" | "date"`, optional `prefix`/`suffix`/`min`/`max`/`placeholder`, and an optional `showProgress` bar (used by Lead Score). Number inputs are clamped to `[min, max]` before sending. The saved-indicator timeout is cleaned up on unmount.
+- **`NotesTab`**: textarea (maxLength 5000) with ⌘/Ctrl+Enter shortcut + "Add note" button. Lists existing notes as cards with author avatar (initials), author name, relative time, and whitespace-preserving content. Empty state with StickyNote icon.
+- **`TasksTab`**: create-task form (title input + date input + Add button, Enter to submit). Lists tasks with a `Checkbox` to toggle completion (PATCH), strikethrough + muted style when completed, a trash button to delete, and metadata row showing due date (red + "Due {relativeTime}" if overdue), completion timestamp (emerald), and creation time. Header shows `completed / total` count. Overdue tasks get a destructive-tinted border + bg.
+- **`activityStyle(type)`** + **`ActivityTab`**: vertical timeline with a left border line and circular icon nodes. Maps activity types to icons + colors: `status_change`→ArrowRight/primary, `note_added`→StickyNote/amber, `task_created`→Plus/accent, `task_completed`→CheckCircle2/emerald, `task_reopened`→RotateCcw/muted, default→Activity/muted. Each entry shows description, actor name (with UserCircle2 icon), and relative time. Empty state with History icon.
+
+### 5. Parent (`LeadsView`) handler additions
+- **`updateLead(id, patch: LeadPatch)`** rewritten with **optimistic updates**: snapshots `selectedLead` + `prevStatus`, immediately applies patch fields to `selectedLead` and (for status) the `leads` list, then PATCHes. On success, merges the server response and **synthesizes a `status_change` activity** entry (prepended to `selectedLead.activities`) when the status actually changed — mirroring the server-side activity log without a refetch. On failure, reverts all optimistic mutations. Still calls `fetchStats()` after success.
+- **`addNote(id, content)`**: POSTs to `/api/leads/[id]/notes`, prepends the returned note to `selectedLead.notes`, synthesizes a `note_added` activity, toasts success, and fires `fetchLeads()` in the background.
+- **`addTask(id, title, dueDate)`**: POSTs to `/api/leads/[id]/tasks` (converts `yyyy-mm-dd` → ISO datetime), prepends the returned task, synthesizes a `task_created` activity, toasts, background `fetchLeads()`.
+- **`toggleTask(id, taskId, completed)`**: **optimistically** flips the task's `completed` + `completedAt` in `selectedLead.tasks`, PATCHes `/api/leads/[id]/tasks/[taskId]`, then synthesizes a `task_completed`/`task_reopened` activity. Reverts on failure.
+- **`deleteTask(id, taskId)`**: **optimistically** removes the task from `selectedLead.tasks`, DELETEs, toasts success. Reverts on failure.
+- **`openDetail(lead)`** placeholder now seeds default CRM fields (`dealValue: 0`, `leadScore: 0`, `company: null`, `expectedCloseDate: null`, empty `notes`/`tasks`/`activities` arrays) so the dialog renders cleanly during the brief fetch window before the full lead data arrives.
+
+### 6. Status dropdown expansion
+- Dialog Details-tab status `<Select>` now iterates the full 7-status `STATUSES` array with `formatStatus` labels (Proposal Sent, Negotiation rendered title-case).
+- Toolbar status filter `<Select>` updated to use `formatStatus(s)` (removed stale `capitalize` class).
+- Row-actions "Update status" submenu gained two new items between "Mark qualified" and "Mark won": **Mark proposal sent** (ArrowRight icon, primary tint) and **Mark negotiation** (DollarSign icon, amber tint).
+
+### 7. LeadDetailDialog wiring
+- `<LeadDetailDialog>` usage in `LeadsView` JSX now passes `onAddNote`, `onAddTask`, `onToggleTask`, `onDeleteTask` props alongside the existing `onSave`, `onDeleted`, `saving`.
+
+## Verification
+- **TypeScript** (`bunx tsc --noEmit`): 0 errors in `leads-view.tsx`. Also fixed a pre-existing TS2322 error on the `PipelineBoard onLeadClick` wiring (narrower `PipelineLead` type vs wider `Lead`) by casting at the call site: `onLeadClick={(lead) => openDetail(lead as Lead)}`. Remaining tsc errors are all in unrelated `examples/` and `skills/` directories (pre-existing).
+- **ESLint** (`bunx eslint src/components/dashboard/views/leads-view.tsx`): clean (0 errors, 0 warnings).
+- All existing functionality preserved: quick-reply WhatsApp/Email/Call (dialog + row submenu), status & quality dropdowns, delete (dialog + row), conversation tab, pipeline board card click, CSV export, search/filter/refresh, list + pipeline view toggle.
+
+## Constraints honored
+- Modified ONLY `src/components/dashboard/views/leads-view.tsx`.
+- Used existing shadcn/ui components: `Tabs`, `Input`, `Textarea`, `Button`, `Checkbox`, `Badge`, `Separator`, `Progress`, `Label`, `Select`, `Dialog`, `AlertDialog`, `Avatar`, `Table`, `DropdownMenu`.
+- `sonner` toasts for all success/error feedback.
+- Brand color classes throughout (`bg-primary`, `bg-primary/10`, `text-primary`, `border-primary/30`, `bg-accent/40`, `text-accent-foreground`, `bg-destructive/10`, `text-destructive`, emerald for won/completed, amber for negotiation/overdue).
+- lucide-react icons for all iconography (added StickyNote, CheckSquare, Activity, DollarSign, Building2, CalendarDays, Plus, Clock, Check, History, ListChecks, PenSquare, ArrowRight, RotateCcw).
+- Dialog widened to `sm:max-w-3xl` to fit the new CRM section + 5 tabs.
+
+## Stage Summary
+The lead detail dialog is now a full CRM workspace: sales reps can edit deal value / lead score / company / expected close date inline (auto-saving with a subtle "Saved" indicator), jot internal notes, create and check off follow-up tasks (with overdue highlighting), and see a chronological activity timeline of every status change, note, and task update — all without leaving the dialog. The two new pipeline stages (Proposal Sent, Negotiation) are selectable from the dialog status dropdown, the toolbar filter, and the row-actions submenu, with title-case labels and distinct badge colors. All mutations update `selectedLead` optimistically and refresh the leads list in the background so the table/pipeline stays in sync.
+
+---
+Task ID: PHASE-1
+Agent: main
+Task: CRM & Lead Pipeline expansion — Phase 1 of advanced modules roadmap.
+
+## Current Project Status
+MVP was stable and feature-rich. This is Phase 1 of a 6-phase plan to add 14 advanced modules. Phase 1 expands the existing lead management into a full CRM with notes, tasks, activities, deal values, lead scores, and 7 pipeline stages.
+
+## Work Log
+
+### Schema Changes (prisma/schema.prisma)
+- **Expanded Lead model**: Added `dealValue` (Float), `leadScore` (Int 0-100), `expectedCloseDate` (DateTime?), `assignedTo` (String?), `company` (String?). Expanded status enum to 7 stages: new | contacted | qualified | proposal_sent | negotiation | won | lost. Expanded source enum: chatbot | website_form | manual | whatsapp | referral | social_media.
+- **New model: LeadNote** — id, leadId, businessId, authorId, authorName, content, createdAt.
+- **New model: LeadTask** — id, leadId, businessId, title, description, dueDate, completed, completedAt, assigneeId, createdAt, updatedAt.
+- **New model: LeadActivity** — id, leadId, businessId, type (status_change|note_added|task_created|task_completed|task_reopened|call|email|whatsapp), description, metadata, actorId, actorName, createdAt.
+- Ran `bun run db:push` (success).
+
+### API Routes Created/Modified
+- **Modified** `GET /api/leads/[id]` — now includes notes[], tasks[], activities[], dealValue, leadScore, company, expectedCloseDate.
+- **Modified** `PATCH /api/leads/[id]` — accepts dealValue, leadScore, expectedCloseDate, company, service; logs status_change activity.
+- **Modified** `GET /api/leads` — returns dealValue, leadScore, company in list; expanded valid statuses to 7.
+- **Modified** `GET /api/leads/stats` — returns pipelineValue (sum of deal values in qualified+ stages); expanded status breakdown to 7 stages.
+- **Created** `GET/POST /api/leads/[id]/notes` — list + create notes (logs note_added activity).
+- **Created** `GET/POST /api/leads/[id]/tasks` — list + create tasks (logs task_created activity).
+- **Created** `PATCH/DELETE /api/leads/[id]/tasks/[taskId]` — toggle completion (logs task_completed/reopened activity) + delete.
+- **Created** `GET /api/leads/[id]/activities` — activity timeline (100 most recent).
+
+### UI Changes
+- **Lead detail dialog** (subagent P1-CRM): Expanded from 2 tabs to 5 (Details, Notes, Tasks, Activity, Chat). Details tab now has inline-editable CRM fields (Deal Value, Lead Score with progress bar, Company, Expected Close Date) with auto-save. Notes tab has textarea + note cards. Tasks tab has create form + checkbox list with overdue highlighting. Activity tab has vertical timeline with type-specific icons. Dialog widened to sm:max-w-3xl. Status dropdown shows all 7 stages title-cased.
+- **Pipeline board**: Updated from 5 to 7 columns (added Proposal Sent=violet, Negotiation=orange). Column headers now show total deal value. Lead cards show deal value badge. Lead interface expanded with dealValue + company fields.
+
+## Verification
+- Lint: clean (0 errors).
+- API tests: Note created ✓, task created ✓, deal value/score/company updated ✓, activity timeline logs all actions ✓.
+- Pipeline: 7 stages render, deal values ($5,000) show on cards and column totals ✓.
+- Dev server stable.
+
+## Stage Summary
+- Phase 1 complete: Full CRM with 3 new models, 7 API routes, expanded lead detail dialog (5 tabs), 7-stage pipeline with deal values.
+- All existing functionality preserved (quick-reply, CSV export, search/filter, command palette, etc.).
+- Ready for Phase 2 (AI Support Ticket Assistant) on user's instruction.

@@ -170,25 +170,90 @@ model ChatMessage {
 }
 
 model Lead {
-  id          String   @id @default(cuid())
-  businessId  String
-  sessionId   String?  @unique
-  name        String
-  email       String?
-  phone       String?
-  service     String?
-  message     String?
-  quality     String   @default("medium") // low | medium | high
-  status      String   @default("new") // new | contacted | qualified | won | lost
-  source      String   @default("chatbot")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                String   @id @default(cuid())
+  businessId        String
+  sessionId         String?  @unique
+  name              String
+  email             String?
+  phone             String?
+  service           String?
+  message           String?
+  quality           String   @default("medium") // low | medium | high
+  status            String   @default("new") // new | contacted | qualified | proposal_sent | negotiation | won | lost
+  source            String   @default("chatbot") // chatbot | website_form | manual | whatsapp | referral | social_media
+  // CRM fields
+  dealValue         Float    @default(0)
+  leadScore         Int      @default(0) // 0-100
+  expectedCloseDate DateTime?
+  assignedTo        String?  // BusinessUser id
+  company           String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  business Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  session  ChatSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  business  Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  session   ChatSession?   @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  notes     LeadNote[]
+  tasks     LeadTask[]
+  activities LeadActivity[]
 
   @@index([businessId])
   @@index([status])
+  @@index([assignedTo])
+}
+
+// ─── CRM: Lead Notes, Tasks, Activities ───────────────────────────
+
+model LeadNote {
+  id        String   @id @default(cuid())
+  leadId    String
+  businessId String
+  authorId  String?  // BusinessUser id
+  authorName String
+  content   String
+  createdAt DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+  @@index([businessId])
+}
+
+model LeadTask {
+  id          String   @id @default(cuid())
+  leadId      String
+  businessId  String
+  title       String
+  description String?
+  dueDate     DateTime?
+  completed   Boolean  @default(false)
+  completedAt DateTime?
+  assigneeId  String?  // BusinessUser id
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+  @@index([businessId])
+  @@index([completed])
+}
+
+model LeadActivity {
+  id          String   @id @default(cuid())
+  leadId      String
+  businessId  String
+  type        String   // status_change | note_added | task_created | task_completed | lead_created | lead_updated | call | email | whatsapp
+  description String
+  metadata    String?  // JSON string for extra context
+  actorId     String?  // BusinessUser id (null for system)
+  actorName   String?
+  createdAt   DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+  @@index([businessId])
+  @@index([type])
 }
 
 // ─── Usage & Documents ─────────────────────────────────────────────

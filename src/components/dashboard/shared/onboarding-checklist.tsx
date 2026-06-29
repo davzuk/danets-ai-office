@@ -56,24 +56,36 @@ export function OnboardingChecklist({
   onNavigate: (v: ViewId) => void;
 }) {
   const [data, setData] = useState<OnboardingData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return localStorage.getItem("danets_onboarding_dismissed") === "true";
+    } catch {
+      return false;
+    }
+  });
+  const [loading, setLoading] = useState(() => {
+    try {
+      return localStorage.getItem("danets_onboarding_dismissed") !== "true";
+    } catch {
+      return true;
+    }
+  });
 
   useEffect(() => {
-    // Check if dismissed in localStorage
-    try {
-      if (localStorage.getItem("danets_onboarding_dismissed") === "true") {
-        setDismissed(true);
-        setLoading(false);
-        return;
-      }
-    } catch {}
-
+    if (dismissed) return;
+    let active = true;
     fetch("/api/onboarding", { cache: "no-store" })
       .then((r) => r.json())
-      .then((d) => setData(d))
-      .finally(() => setLoading(false));
-  }, [businessId]);
+      .then((d) => {
+        if (active) setData(d);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [businessId, dismissed]);
 
   function dismiss() {
     setDismissed(true);

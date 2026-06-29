@@ -18,6 +18,7 @@ export function GET() {
     qualityGroups,
     statusGroups,
     weekCount,
+    dealValueAgg,
   ] = await Promise.all([
     db.lead.count({ where: { businessId } }),
     db.lead.count({ where: { businessId, status: "new" } }),
@@ -36,10 +37,14 @@ export function GET() {
     db.lead.count({
       where: { businessId, createdAt: { gte: sevenDaysAgo } },
     }),
+    db.lead.aggregate({
+      where: { businessId, status: { in: ["qualified", "proposal_sent", "negotiation", "won"] } },
+      _sum: { dealValue: true },
+    }),
   ]);
 
   const knownQualities = ["low", "medium", "high"];
-  const knownStatuses = ["new", "contacted", "qualified", "won", "lost"];
+  const knownStatuses = ["new", "contacted", "qualified", "proposal_sent", "negotiation", "won", "lost"];
 
   const byQuality = knownQualities.map((quality) => {
     const g = qualityGroups.find((x) => x.quality === quality);
@@ -68,6 +73,7 @@ export function GET() {
     high: highCount,
     won: wonCount,
     conversionRate: total > 0 ? Math.round((wonCount / total) * 100) : 0,
+    pipelineValue: dealValueAgg._sum.dealValue || 0,
     byQuality,
     byStatus,
     thisWeek: weekCount,

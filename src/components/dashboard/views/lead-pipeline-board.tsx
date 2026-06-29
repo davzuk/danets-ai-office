@@ -23,6 +23,8 @@ interface Lead {
   quality: string;
   status: string;
   source: string;
+  dealValue?: number;
+  company?: string | null;
   createdAt: string;
 }
 
@@ -36,6 +38,8 @@ const COLUMNS: {
   { id: "new", label: "New", color: "text-primary", bg: "bg-primary/5", dot: "bg-primary" },
   { id: "contacted", label: "Contacted", color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/5", dot: "bg-amber-500" },
   { id: "qualified", label: "Qualified", color: "text-accent-foreground", bg: "bg-accent/5", dot: "bg-accent" },
+  { id: "proposal_sent", label: "Proposal Sent", color: "text-violet-600 dark:text-violet-400", bg: "bg-violet-500/5", dot: "bg-violet-500" },
+  { id: "negotiation", label: "Negotiation", color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-500/5", dot: "bg-orange-500" },
   { id: "won", label: "Won", color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/5", dot: "bg-emerald-500" },
   { id: "lost", label: "Lost", color: "text-destructive", bg: "bg-destructive/5", dot: "bg-destructive" },
 ];
@@ -146,6 +150,14 @@ export function PipelineBoard({ businessId, onLeadClick }: PipelineBoardProps) {
                     {colLeads.length}
                   </span>
                 </div>
+                {(() => {
+                  const total = colLeads.reduce((sum, l) => sum + (l.dealValue || 0), 0);
+                  return total > 0 ? (
+                    <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                      ${total.toLocaleString()}
+                    </span>
+                  ) : null;
+                })()}
               </div>
 
               {/* Cards */}
@@ -186,7 +198,7 @@ export function PipelineBoard({ businessId, onLeadClick }: PipelineBoardProps) {
                       </div>
                     </div>
 
-                    {/* Quality badge */}
+                    {/* Quality badge + deal value */}
                     <div className="flex items-center gap-1.5 mt-2 ml-5">
                       <Badge
                         variant="outline"
@@ -201,6 +213,11 @@ export function PipelineBoard({ businessId, onLeadClick }: PipelineBoardProps) {
                       >
                         {lead.quality}
                       </Badge>
+                      {lead.dealValue && lead.dealValue > 0 && (
+                        <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 ml-auto tabular-nums">
+                          ${lead.dealValue.toLocaleString()}
+                        </span>
+                      )}
                     </div>
 
                     {/* Contact icons */}
