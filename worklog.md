@@ -1376,3 +1376,248 @@ Added `createNotification()` calls to:
 - Phase 4 complete: Full notification system (3 models, 6 API routes, upgraded bell with real records) + audit log system (1 model, logActivity helper, 4 integration points, audit logs view with timeline).
 - All existing functionality preserved.
 - Ready for Phase 5 (AI Document Assistant + WhatsApp Prep) on user's instruction.
+
+---
+Task ID: P5-WA
+Agent: subagent
+Task: Build the WhatsApp Automation view — manage message templates, configure integration settings, and generate AI follow-up drafts.
+
+File created:
+- `src/components/dashboard/views/whatsapp-view.tsx` — full "use client" dashboard view exporting `WhatsAppView({ user }: { user: { userId, businessId, name, email, role, businessName } })`. ~1100 lines, type-safe, ESLint-clean.
+
+## Work Log
+
+### Layout
+- Two-column responsive grid on desktop (`lg:grid-cols-3` with left `lg:col-span-2`, right `lg:col-span-1`).
+- Left column: AI Follow-up Generator (top, prominent), Message Templates (below).
+- Right column: WhatsApp Integration settings card (sticky on `lg+`).
+- Page header: branded title with WhatsApp-green icon chip, business-name subtitle, "Manual review required" badge.
+- Footer: dashed notice reminding operators that no auto-sending occurs.
+
+### Section 1 — AI Follow-up Generator
+- Prominent `Card` with `Sparkles` icon in primary-tinted header (gradient `from-primary/10`).
+- Form fields:
+  - Context (`Select`: New Lead / Missed Chat / Quotation / Payment Reminder / Appointment / Ticket Update) — each option shows a hint subtitle.
+  - Recipient name (optional input).
+  - Service (optional input).
+  - Recipient phone (optional, `tel` input with `Phone` icon — used to build the wa.me link; falls back to a placeholder).
+  - Custom note (optional `Textarea`, 500-char counter).
+- "Generate Draft" button → `POST /api/whatsapp/followup` with `{ context, recipientName?, service?, company: businessName, customNote? }`. Spinner during request; error toast on failure; success toast on completion.
+- Result panel (animated fade-up, primary-tinted border):
+  - Editable `Textarea` pre-filled with the AI draft.
+  - "Copy" button → `navigator.clipboard.writeText` + toast + transient check icon.
+  - "Open WhatsApp" button — WhatsApp brand green (`#25D366`), opens `https://wa.me/<digits>?text=<encoded>` in a new tab. Uses `normalizePhoneForWa()` (digits-only, 8–15 chars) and `buildWaLink()` helpers. Falls back to `wa.me/1XXXXXXXXXXX` placeholder if no phone.
+  - Inline note: "Review and edit before sending — AI drafts are not auto-sent."
+  - Token count chip (mono font) shown on the right.
+  - Amber warning if phone is missing/invalid.
+- "Regenerate" button appears when a draft exists.
+
+### Section 2 — Message Templates
+- Card header with `MessageCircle` accent icon, count badges (total + active), and "Refresh" ghost button.
+- "New Template" button (top-right of header) opens the create dialog.
+- List of template cards (rounded-lg, hover-tinted). Each card:
+  - Type-colored icon chip (icon per type: MessageCircle/MessageSquareText/FileText/Receipt/CalendarClock/LifeBuoy).
+  - Clickable body opens edit dialog.
+  - Truncated 2-line content preview (`line-clamp-2`).
+  - Color-coded type badge with colored dot (per spec: new_lead_followup=primary, missed_chat=amber, quotation_followup=violet, payment_reminder=rose, appointment_confirmation=emerald, ticket_update=cyan, custom=muted).
+  - Active/inactive `Switch` with optimistic PATCH (reverts on failure) + toast.
+  - Pencil edit button.
+- Empty state: dashed border, friendly message, "Create template" CTA.
+- Loading state: 3 skeleton rows.
+
+#### Template Dialog (New / Edit)
+- `Dialog` (`sm:max-w-lg`) with title + description (mentions `{name}`/`{service}`/`{company}` placeholders).
+- Name input (2–100 chars), Type `Select` (locked when editing — type is immutable post-create per API PATCH schema).
+- Content `Textarea` with placeholder hint showing all three variables, 2000-char counter.
+- Active `Switch` with explanatory caption (inside a bordered box).
+- Footer: Delete button (edit mode only, destructive styling) | Cancel | Save (with spinner).
+- Save → POST (new) or PATCH (edit) → toast + `onSaved` callback updates list state.
+- Delete → opens `AlertDialog` confirmation (destructive action) → DELETE → toast + state update.
+
+### Section 3 — Integration Settings
+- Sticky `Card` on desktop with `Settings` header icon.
+- Status badge at top: `active` (emerald, pulsing dot) / `inactive` (muted) / `testing` (handled via the same component).
+- "Last tested" timestamp (relative format like "5m ago") shown if `lastTestedAt` exists.
+- Conditional info banners:
+  - Manual Link mode → primary-tinted info banner explaining wa.me click-to-chat (no API needed).
+  - Any non-manual provider → amber banner: "Direct WhatsApp API integration requires a WhatsApp Business account… Configuration is stored securely — actual message sending will be enabled in a future update."
+- Fields:
+  - Provider `Select` (Manual Link / Meta Cloud API / Twilio / Termii / Other).
+  - Phone Number (tel input with `Phone` icon).
+  - Phone Number ID — only shown when `provider === "meta_cloud_api"` (animated fade-up).
+  - API Key — password input with `KeyRound` icon, shown for all non-manual providers. Placeholder shows "•••••••• (enter new key to replace)" when `hasApiKey` is true; otherwise "Paste your API key". Masked preview (e.g. `abcd••••••••wxyz`) displayed below when set. The `apiKey` is only sent in the PUT payload if the user typed a new value — empty string = leave existing key as-is.
+  - Webhook URL — only shown for non-manual providers (with `Webhook` icon).
+  - Notes (Textarea, 2000-char, internal use).
+- Footer: "Reset" (ghost, reloads from server) + "Save Settings" (primary, calls `PUT /api/whatsapp/integration` with spinner). Toast on success.
+- Security note box (primary-tinted): "API keys are stored server-side only and are never exposed to the frontend. The masked preview shows only the first and last 4 characters." with `ShieldCheck` icon.
+
+### Helpers
+- `formatRelativeTime(iso)` — "just now" / "5m ago" / "3h ago" / "2d ago" / locale date.
+- `truncate(s, n)` — for previews.
+- `normalizePhoneForWa(raw)` — strips non-digits, validates length 8–15.
+- `buildWaLink(phone, message)` — `https://wa.me/<phone>?text=<encoded>`, with placeholder fallback.
+
+## Conventions Honoured
+- Created ONLY `src/components/dashboard/views/whatsapp-view.tsx`. Did not touch `page.tsx`, `app-shell.tsx`, or any API route.
+- Export signature matches spec exactly.
+- All fetches relative (`/api/whatsapp/*`).
+- Multi-tenant scoping enforced server-side by existing `withSession` + `user.businessId` filters — the view trusts the response.
+- shadcn/ui components used: `Card` / `CardContent` / `CardHeader` / `CardTitle` / `CardDescription`, `Button`, `Input`, `Textarea`, `Label`, `Badge`, `Switch`, `Separator`, `Skeleton`, `Alert` / `AlertTitle` / `AlertDescription`, `Select` (full family), `Dialog` (full family), `AlertDialog` (full family). (Spec listed `Tabs` but the design didn't need it — omitted to keep the UI focused.)
+- `sonner` toasts for all success/error feedback.
+- Brand color classes throughout (`bg-primary`, `text-primary`, `border-primary/20`, `bg-accent/30`, `text-accent-foreground`). Template type badges use the spec's exact color mapping (primary / amber / violet / rose / emerald / cyan / muted) — no raw indigo/blue.
+- WhatsApp brand green `#25D366` used for the "Open WhatsApp" button (and the page-title icon chip tint), per spec.
+- lucide-react icons: `MessageCircle`, `Sparkles`, `Plus`, `Copy`, `ExternalLink`, `Settings`, `Send`, `Loader2`, `RefreshCw`, `Trash2`, `Save`, `Pencil`, `Info`, `ShieldCheck`, `Clock`, `KeyRound`, `Webhook`, `Phone`, `AlertCircle`, `Check`, `FileText`, `MessageSquareText`, `CalendarClock`, `Receipt`, `LifeBuoy`. Plus a tiny inline `Zap` SVG for the token-count chip.
+- AI never auto-sends: drafts render in an editable textarea; the Open WhatsApp button opens a click-to-chat link in a new tab; users must explicitly press send in WhatsApp. Reinforced by inline notes + a footer notice.
+- API key is never displayed in plaintext — password input + masked preview + only-sent-on-change semantics.
+
+## Verification
+- `bunx tsc --noEmit` — 0 errors in `src/components/dashboard/views/whatsapp-view.tsx`. (Only pre-existing errors remain in `examples/websocket/*` and `skills/*`.)
+- `bunx eslint src/components/dashboard/views/whatsapp-view.tsx` — clean (0 errors, 0 warnings).
+
+## Stage Summary
+WhatsApp Automation view is complete and type-safe. It surfaces three workflows in a clean two-column layout: (1) an AI follow-up draft generator wired to `/api/whatsapp/followup` with copy + click-to-chat actions, (2) a full CRUD template manager wired to `/api/whatsapp/templates*` with optimistic active-toggle and a delete-confirm dialog, and (3) a sticky integration settings card wired to `/api/whatsapp/integration` with provider-aware fields, masked API key preview, status badge, and a security note. All AI output is editable and explicitly requires manual sending. Ready to be mounted in the app-shell nav + `page.tsx` router by the integrator.
+
+---
+Task ID: P5-DOCS
+Agent: subagent
+Task: Build the AI Document Assistant view — upload/create documents, ask AI questions based on document content (RAG), generate summaries.
+
+File created:
+- `src/components/dashboard/views/documents-view.tsx` — full "use client" dashboard view exporting `DocumentsView({ user }: { user: { userId, businessId, name, email, role, businessName } })`.
+
+Backend consumed (already created by main agent — untouched):
+- `GET /api/documents` (supports `?q=`, `?category=`) — list with `chunkCount`, `questionCount`.
+- `POST /api/documents` — create with auto-chunking.
+- `GET /api/documents/[id]` — detail with `chunks[]` and `questions[]`.
+- `PATCH /api/documents/[id]` — update title/category/status.
+- `DELETE /api/documents/[id]` — delete.
+- `POST /api/documents/[id]/ask` — RAG Q&A returning `{ answer, chunksUsed, chunkPreview?, questionId, tokens? }`.
+- `POST /api/documents/[id]/summary` — `{ summary, tokens }`.
+
+Work Log:
+- Header: title "AI Document Assistant" with subtitle "Upload documents and ask AI questions based on their content." plus icon-tinted header block (`bg-primary/10 text-primary`). Refresh icon + "New Document" button.
+- Toolbar (in a `Card`): debounced search Input (300ms) with `X` clear button, category `Select` populated from the loaded list's categories (`All categories` + unique categories). Conditional "Reset filters" link when any filter is active with live match count.
+- Document list (`max-h-[70vh] overflow-y-auto scroll-thin pr-1 -mr-1`): card-based. Each card shows clickable title (opens detail), category badge (`primary`-tinted outline), `SourceBadge` (text/pdf/docx/txt), `StatusBadge` (active=lemon-green accent, processing=secondary, archived=destructive), optional `fileName` badge, summary preview (`line-clamp-2`, only when present), and meta row with chunk count (`Layers` icon), question count (`MessageSquare` icon), and `relativeTime(updatedAt)`. Hover lift + primary-tinted border. Per-row Open + Delete icon buttons.
+- Loading state: 4 skeleton cards mimicking the document card layout.
+- Empty states: filtered ("No matching documents" with search icon + copy) vs truly empty (brand-gradient icon block + "Create your first document" CTA).
+- New Document Dialog (`sm:max-w-2xl`): Title* Input (autoFocus), Category* Input with `<datalist>` of suggested categories (Legal, Sales, Support, Technical, Marketing, General), Content* Textarea (rows=8, min-h-[180px], monospace, live char counter), Source Type Select (Text/PDF/DOCX/TXT, default Text). Amber info box explaining "For PDF/DOCX files, paste the extracted text here. Direct file upload extraction coming soon." Cancel/Create buttons with spinner on Create. On success → toast + dialog closes + silent list refresh + opens the new document's detail dialog by id.
+- Document Detail Dialog (`sm:max-w-3xl max-h-[90vh] flex flex-col`):
+  - Header: editable title — click the `DialogTitle` (with hover-revealed `Pencil` icon) to switch to an inline Input with Save/Cancel. Enter saves, Escape cancels. PATCH on save with optimistic local update + `onUpdated` callback to refresh the list. Validation: min 2 chars. Below title: category badge, source badge, status badge, optional fileName badge + formatted file size.
+  - Tabs: Content | AI Q&A | Summary. Each tab trigger includes its lucide icon. AI Q&A tab trigger shows a count chip when there are existing questions.
+  - Top-right action row: Archive/Restore button (PATCH status), Delete button (opens nested AlertDialog — destructive variant).
+  - **Content tab**: meta row (chunk count chip + character count + "Updated <time-ago>") followed by `ScrollArea` (h-[55vh]) showing full content with `whitespace-pre-wrap` in a `pre` block.
+  - **AI Q&A tab**:
+    - Primary-tinted info banner: "AI answers are based ONLY on this document's content. It will not use outside knowledge."
+    - Question form: large Textarea (rows=2, Enter submits, Shift+Enter inserts newline) + "Ask" button with `Send` icon. Spinner replaces icon while asking.
+    - Three example-question chips below the input ("What is this document about?", "Summarize the key points.", "What are the main dates mentioned?") — clicking sets the textarea value.
+    - Separator, then scrollable Q&A history area (`flex-1 min-h-0 overflow-y-auto scroll-thin`).
+    - New answers **prepend** to the list (optimistic placeholder row with "Searching document…" spinner replaces once the API responds).
+    - Each Q&A card (`QaCard`): Question block with "Q" avatar (primary-tinted) + question text + relative time. Answer block:
+      - While loading: spinner + "Searching document…" text.
+      - Fallback answer (detected via `chunksUsed === 0` OR exact match to the backend's `FALLBACK_MARKER`): amber info card with `Info` icon.
+      - Normal answer: highlighted muted card with "A" avatar (accent-tinted), answer text (`whitespace-pre-wrap`), meta row showing "Based on N sections" (`Layers` icon) and token count, plus a Copy button (`Copy` icon → sonner toast "Answer copied").
+      - Collapsible "Show source sections" / "Hide sections" toggle (radix `Collapsible`) listing each chunk preview as a bordered mini-card labelled "Section N". Auto-expanded for the freshest answer.
+    - Empty Q&A state: brand-tinted icon block + "Ask a question about this document to get started." with helper text.
+  - **Summary tab**:
+    - If summary exists: highlighted `primary`-tinted card with "AI-Generated Summary" header (`Sparkles` icon) + Copy icon + scrollable summary text. Footer row: "Last generated <time-ago>" + "Regenerate" outline button (`RefreshCw` icon, spinner while loading).
+    - If no summary: centered empty state with brand-gradient icon block + "No summary yet" + "Generate an AI summary to quickly understand this document." + "Generate Summary" primary button (`Sparkles` icon, spinner while loading).
+    - Success toast includes token count: "Summary generated · N tokens used".
+    - When regenerating over an existing summary, an inline "Regenerating…" status row appears below.
+- Reset logic: when `detailId` becomes null (dialog closed), all internal state (doc, title draft, questions, active tab, expanded chunks, question input) is reset. When a different doc is opened, state is also reset and the new doc is fetched fresh.
+- Robustness: defensive `?.` chaining for all optional API fields (`tokens`, `chunkPreview`, `questionId`); treats `chunksUsed === 0` as the AI fallback path; placeholder rows are reconciled via id-mapping once the real response arrives.
+- Brand colors only — `bg-primary`, `bg-accent`, `text-accent-foreground`, `brand-gradient`. Status colors use Tailwind tokens (`destructive`, `secondary`, `amber-*` for the fallback info card). No raw indigo/blue.
+- All fetches use relative paths (`/api/documents`, `/api/documents/[id]`, `/api/documents/[id]/ask`, `/api/documents/[id]/summary`).
+- Multi-tenant safety is enforced server-side via `withSession` / `user.businessId` — the view trusts the responses.
+- `sonner` toasts for every mutation (create, delete, title update, status toggle, ask error, summary success/error) and for fetch errors. Copy-to-clipboard via `navigator.clipboard`.
+
+shadcn/ui components used: `Card`, `CardContent`, `Button`, `Input`, `Textarea`, `Label`, `Select`, `SelectContent`, `SelectItem`, `SelectTrigger`, `SelectValue`, `Badge`, `Dialog`, `DialogContent`, `DialogDescription`, `DialogFooter`, `DialogHeader`, `DialogTitle`, `AlertDialog` (+ action/cancel/content/description/footer/header/title), `Tabs`, `TabsList`, `TabsTrigger`, `TabsContent`, `Collapsible`, `CollapsibleTrigger`, `CollapsibleContent`, `Separator`, `Skeleton`, `ScrollArea`. (Collapsible is in the spec's "collapsible preview" requirement; ScrollArea used for the content body in the detail dialog.)
+
+Lucide icons used: `FileText`, `Plus`, `Search`, `Sparkles`, `Send`, `Copy`, `FileUp`, `MessageSquare`, `Loader2`, `RefreshCw`, `Trash2`, `Pencil`, `ChevronDown`, `ChevronRight`, `Layers`, `HelpCircle`, `CheckCircle2`, `Info`, `X`, `FileType2`.
+
+Constraints honoured:
+- Created ONLY `src/components/dashboard/views/documents-view.tsx`. Did not modify `page.tsx`, `app-shell.tsx`, `ViewId`, or any existing API route.
+- Export signature matches spec exactly.
+- Detail dialog uses `sm:max-w-3xl` per spec.
+- Empty states cover: no documents (CTA to create first), no questions yet ("Ask a question about this document to get started."), no summary ("Generate an AI summary to quickly understand this document.").
+- Note about PDF/DOCX paste-extracted-text is rendered as an amber info box inside the create dialog.
+
+Verification:
+- `bunx tsc --noEmit` — no errors in `src/components/dashboard/views/documents-view.tsx`. (Pre-existing unrelated errors in `examples/websocket/*` and `skills/*` remain.)
+- `bunx eslint src/components/dashboard/views/documents-view.tsx` — clean (0 errors / 0 warnings).
+
+Stage Summary:
+- AI Document Assistant view complete and type-safe. Renders the document list, create dialog, and a 3-tab detail dialog (Content / AI Q&A / Summary) backed by the existing RAG `/ask` and `/summary` endpoints. Inline title editing via PATCH, archive/restore + delete actions, copy-to-clipboard on answers and summaries, collapsible chunk previews per answer, and a robust optimistic placeholder pattern for in-flight questions. Ready to be wired into the app shell nav (`ViewId` extension + `page.tsx` router) — left to the integrator to avoid touching shared files outside this task's scope.
+
+---
+Task ID: PHASE-5
+Agent: main
+Task: AI Document Assistant + WhatsApp Automation Preparation — Phase 5 of advanced modules roadmap.
+
+## Current Project Status
+Phases 1, 2, 4 complete (CRM, Support Tickets, Notifications + Audit Logs). This phase adds AI-powered document Q&A (RAG) and WhatsApp automation preparation (templates, integration settings, AI follow-up drafts).
+
+## Work Log
+
+### Schema Changes (prisma/schema.prisma)
+- **New model: Document** — id, businessId, title, category, sourceType (text|pdf|docx|txt), content, fileName, fileSize, summary, status, timestamps.
+- **New model: DocumentChunk** — id, documentId, content, chunkIndex. Used for RAG retrieval.
+- **New model: DocumentAiQuestion** — id, documentId, businessId, question, answer, tokensUsed, createdAt. Stores Q&A history.
+- **New model: WhatsAppTemplate** — id, businessId, name, type (7 types), content (with {name}/{service}/{company} placeholders), isActive.
+- **New model: WhatsAppIntegration** — id, businessId, provider (manual|meta_cloud_api|twilio|termii|other), phoneNumber, phoneNumberId, apiKey (server-side only), webhookUrl, status, lastTestedAt, notes.
+- Added back-relations on Business.
+- Ran `bun run db:push` (success).
+
+### API Routes Created (10 new endpoints)
+
+**Documents:**
+- `GET/POST /api/documents` — list (with search/category filter) + create (auto-splits content into ~500-char overlapping chunks for RAG).
+- `GET/PATCH/DELETE /api/documents/[id]` — detail (with chunks + questions) + update + delete.
+- `POST /api/documents/[id]/ask` — AI Q&A using RAG: retrieves top-3 chunks via TF-IDF, builds grounded prompt, calls AI. AI answers ONLY from document content. Fallback: "I could not find enough information in the selected document to answer that confidently."
+- `POST /api/documents/[id]/summary` — generates AI summary (3-5 sentences), saves to document.
+
+**WhatsApp:**
+- `GET/POST /api/whatsapp/templates` — list + create.
+- `PATCH/DELETE /api/whatsapp/templates/[id]` — update + delete.
+- `GET/PUT /api/whatsapp/integration` — get (apiKey MASKED) + update settings. Logs integration_changed activity.
+- `POST /api/whatsapp/followup` — generates AI follow-up draft based on context (new_lead, missed_chat, quotation, payment, appointment, ticket). Returns editable draft + token count. Never auto-sends.
+
+### UI Views Created (2 new views)
+
+**Documents view** (`documents-view.tsx`, subagent P5-DOCS):
+- Document list with search + category filter, chunk/question counts.
+- New Document dialog (title, category, content textarea, source type).
+- Detail dialog (sm:max-w-3xl) with 3 tabs: Content (full text), AI Q&A (question input + answer with chunk previews + token count + copy), Summary (generate/regenerate).
+- Verified: Asked "What is the price of the Business plan?" → AI answered "$79/month" based on 3 retrieved chunks.
+
+**WhatsApp view** (`whatsapp-view.tsx`, subagent P5-WA):
+- Two-column layout: AI Follow-up Generator + Templates (left), Integration Settings (right).
+- AI Follow-up Generator: context select, recipient info, generate draft → editable textarea with Copy + Open WhatsApp (wa.me link) buttons.
+- Message Templates: list with type-colored badges, active toggle, create/edit/delete dialog.
+- Integration Settings: provider select (5 options), phone number, API key (masked), webhook URL, notes. Security note about server-side storage.
+- Verified: Renders cleanly with all sections (VLM confirmed).
+
+### Nav Integration
+- Added "Document Assistant" (FileText icon, tools group) and "WhatsApp" (MessageCircle icon, tools group) to app-shell + page.tsx + command palette.
+
+### Seed Data
+- 3 sample documents (SLA, Pricing Guide, Onboarding Guide) with chunks.
+- 6 WhatsApp templates (new lead follow-up, missed chat, quotation, payment, appointment, ticket update).
+
+## Verification
+- Lint: clean (0 errors).
+- Document API: 3 documents with chunks ✓, AI Q&A returns accurate answer from document content ✓, RAG retrieves 3 relevant chunks ✓.
+- WhatsApp API: 6 templates ✓, integration settings (masked API key) ✓.
+- UI: Documents view renders with list + detail dialog + AI Q&A working ✓. WhatsApp view renders with generator + templates + settings ✓ (VLM confirmed both clean).
+- Dev server stable.
+
+## AI Safety Rules Applied
+1. Document AI answers ONLY from document content — fallback message if not found.
+2. WhatsApp AI drafts are for manual review — never auto-sent.
+3. API keys stored server-side, masked in frontend (first 4 + last 4 chars only).
+4. All AI usage logged via logUsage().
+5. Activity logged for document uploads and integration changes.
+
+## Stage Summary
+- Phase 5 complete: AI Document Assistant (RAG-based Q&A, summaries, 3 models, 4 API routes) + WhatsApp Automation (templates, integration settings, AI follow-up drafts, 2 models, 6 API routes).
+- All existing functionality preserved.
+- Ready for Phase 6 (Workflow Builder + Subscription/Billing + Super Admin + Integrations + Analytics upgrade) on user's instruction.

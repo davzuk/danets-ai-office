@@ -39,6 +39,9 @@ model Business {
   supportTickets     SupportTicket[]
   notifications      Notification[]
   activityLogs       ActivityLog[]
+  documents          Document[]
+  whatsappTemplates  WhatsAppTemplate[]
+  whatsappIntegration WhatsAppIntegration[]
 }
 
 model BusinessUser {
@@ -467,5 +470,93 @@ model NotificationPreference {
 
   @@unique([businessId, userId, type])
   @@index([businessId, userId])
+}
+
+// ─── AI Document Assistant ────────────────────────────────────────
+
+model Document {
+  id          String   @id @default(cuid())
+  businessId  String
+  title       String
+  category    String   @default("General")
+  sourceType  String   @default("text") // text | pdf | docx | txt
+  content     String   // full text content (for text-based docs) or extracted text
+  fileName    String?  // original file name if uploaded
+  fileSize    Int?     // bytes
+  summary     String?  // AI-generated summary
+  status      String   @default("active") // active | processing | archived
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  chunks   DocumentChunk[]
+  questions DocumentAiQuestion[]
+
+  @@index([businessId])
+  @@index([status])
+}
+
+model DocumentChunk {
+  id          String   @id @default(cuid())
+  documentId  String
+  content     String
+  chunkIndex  Int
+  createdAt   DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+}
+
+model DocumentAiQuestion {
+  id          String   @id @default(cuid())
+  documentId  String
+  businessId  String
+  question    String
+  answer      String?
+  tokensUsed  Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([businessId])
+}
+
+// ─── WhatsApp Automation ──────────────────────────────────────────
+
+model WhatsAppTemplate {
+  id          String   @id @default(cuid())
+  businessId  String
+  name        String
+  type        String   // new_lead_followup | missed_chat | quotation_followup | payment_reminder | appointment_confirmation | ticket_update | custom
+  content     String   // template text with {name}, {service}, {company} placeholders
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([type])
+}
+
+model WhatsAppIntegration {
+  id          String   @id @default(cuid())
+  businessId  String
+  provider    String   @default("manual") // manual | meta_cloud_api | twilio | termii | other
+  phoneNumber String?
+  phoneNumberId String? // Meta Cloud API phone number ID
+  apiKey      String?  // stored server-side only, never exposed to frontend
+  webhookUrl  String?
+  status      String   @default("inactive") // active | inactive | testing
+  lastTestedAt DateTime?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
 }
 

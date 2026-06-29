@@ -18,6 +18,7 @@ import {
   Search,
   Ticket,
   History,
+  MessageCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DanetsLogo } from "@/components/dashboard/shared/danets-logo";
@@ -35,6 +36,8 @@ export type ViewId =
   | "leads"
   | "quotes"
   | "tickets"
+  | "documents"
+  | "whatsapp"
   | "usage"
   | "embed"
   | "settings"
@@ -54,6 +57,8 @@ const NAV: NavItem[] = [
   { id: "leads", label: "Leads", icon: Users, group: "main", desc: "Captured leads" },
   { id: "tickets", label: "Support Tickets", icon: Ticket, group: "main", desc: "Customer support" },
   { id: "quotes", label: "Quotes & Proposals", icon: FileText, group: "tools", desc: "AI proposal generator" },
+  { id: "documents", label: "Document Assistant", icon: FileText, group: "tools", desc: "AI document Q&A" },
+  { id: "whatsapp", label: "WhatsApp", icon: MessageCircle, group: "tools", desc: "Templates & automation" },
   { id: "usage", label: "AI Usage", icon: BarChart3, group: "tools", desc: "Token & cost logs" },
   { id: "agent", label: "AI Agent", icon: Bot, group: "tools", desc: "Bot configuration" },
   { id: "knowledge", label: "Knowledge Base", icon: BookOpen, group: "tools", desc: "KB articles" },
