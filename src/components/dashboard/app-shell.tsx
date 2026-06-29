@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DanetsLogo } from "@/components/dashboard/shared/danets-logo";
+import { ThemeToggle } from "@/components/dashboard/shared/theme-toggle";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -160,6 +161,7 @@ export function AppShell({
               <span className="h-2 w-2 rounded-full bg-accent animate-pulse" />
               Agent online
             </div>
+            <ThemeToggle />
             <div className="text-right hidden sm:block">
               <div className="text-xs font-medium leading-tight">{user.name}</div>
               <div className="text-[11px] text-muted-foreground leading-tight">

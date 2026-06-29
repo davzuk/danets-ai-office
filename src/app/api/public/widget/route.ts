@@ -28,6 +28,7 @@ export async function GET(req: NextRequest) {
       whatsappNumber: true,
       email: true,
       brandColor: true,
+      quickReplies: true,
       leadCaptureEnabled: true,
     },
   });
@@ -41,7 +42,7 @@ export async function GET(req: NextRequest) {
     { publicKey: business.publicKey, businessName: business.name, agent },
     {
       headers: {
-        "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
+        "Cache-Control": "public, max-age=300",
       },
     }
   );

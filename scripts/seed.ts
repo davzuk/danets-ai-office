@@ -68,6 +68,12 @@ async function seed() {
         whatsappNumber: business.whatsapp || "",
         email: business.email || "",
         brandColor: "#1d4ed8",
+        quickReplies: JSON.stringify([
+          "What services do you offer?",
+          "What are your pricing plans?",
+          "How can I contact your team?",
+          "Do you offer cybersecurity services?",
+        ]),
         status: "active",
       },
     });

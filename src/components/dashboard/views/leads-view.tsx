@@ -18,6 +18,7 @@ import {
   Filter,
   X,
   RefreshCw,
+  Download,
   CheckCircle2,
   CircleDot,
   Target,
@@ -1017,6 +1018,27 @@ export function LeadsView({ user }: { user: UserProp }) {
               </Button>
             )}
 
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const params = new URLSearchParams();
+                if (statusFilter) params.set("status", statusFilter);
+                if (qualityFilter) params.set("quality", qualityFilter);
+                const qs = params.toString();
+                window.open(
+                  `/api/leads/export${qs ? "?" + qs : ""}`,
+                  "_blank"
+                );
+                toast.success("Exporting leads as CSV…");
+              }}
+              disabled={leads.length === 0}
+              className="gap-1.5"
+              title="Export filtered leads as CSV"
+            >
+              <Download size={15} />
+              <span className="hidden sm:inline">Export CSV</span>
+            </Button>
             <Button
               variant="outline"
               size="icon"

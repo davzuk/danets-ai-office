@@ -321,3 +321,105 @@ Work Log:
 Stage Summary:
 - MVP COMPLETE. All 10 modules functional. Public widget works end-to-end with AI grounding, lead capture, handover. Multi-tenant security enforced. Rate limiting on public endpoints. AI keys server-side only. Usage logging with token/cost tracking.
 - Deliverables: see user-facing summary.
+
+---
+
+### Task ID: F1 — Quick Replies editor in Agent view
+**Agent:** subagent
+**File modified:** `src/components/dashboard/views/agent-view.tsx` (only).
+
+**Goal:** Add a Quick Replies editor to the AI Agent configuration view. Quick replies are suggested question chips shown to website visitors in the chat widget right after the welcome message. Backend (`AiAgent.quickReplies` JSON column, `/api/agent` PUT accepts `quickReplies: string[]` max 8, `/api/public/widget` exposes it, `/widget.js` renders up to 6 clickable chips) was already in place — this task is frontend-only.
+
+**Changes made:**
+1. **Imports** — added `Plus`, `X`, `MessageCircle` from `lucide-react`.
+2. **Type updates**
+   - `AiAgent.quickReplies: string` (JSON-encoded string from DB).
+   - `AgentForm.quickReplies: string[]`.
+   - `DEFAULT_AGENT.quickReplies = []`.
+3. **Parser helper** — added `parseQuickReplies(raw): string[]` (try/catch JSON.parse, filters to strings, returns `[]` on any failure). Used in both `loadAgent` and the save response handler to normalize the DB JSON string into a clean array.
+4. **Load (GET)** — `normalized.quickReplies = parseQuickReplies(a.quickReplies)` added to the mapping in `loadAgent`.
+5. **Submit (PUT)** — payload now includes `quickReplies: form.quickReplies.map(q => q.trim()).filter(Boolean)` (drops empty strings before sending).
+6. **Dirty check** — added `"quickReplies"` to the `keys` array in the `isDirty` useMemo. Also upgraded the comparator to do element-wise array comparison (length + index equality) so editing an item marks the form dirty and reverting it exactly clears the dirty state.
+7. **Validation** — `validate()` now flags `quickReplies` if length > 8 or any item exceeds 120 chars (defensive; UI also enforces via `maxLength={120}` and disabled Add button at 8).
+8. **Helper functions** inside the component: `addQuickReply`, `removeQuickReply(idx)`, `updateQuickReply(idx, value)`.
+9. **UI — Quick Replies card** (new, placed in the Identity tab right after the existing "Bot identity" card):
+   - Title `MessageCircle` + "Quick Replies", description: "Suggested questions shown to visitors as clickable chips after the welcome message. Max 8."
+   - Empty-state copy.
+   - Per-row: editable `Input` (maxLength 120), live `q.length/120` counter (turns destructive over 120), outline icon `Button` with `X` to remove.
+   - "Add question" `Button` (outline, `Plus` icon), disabled at 8 items, with an `{n}/8 used` indicator on the right.
+   - Inline error banner when `errors.quickReplies` is set.
+   - Live "Preview" panel below the editor: pill-shaped chips (`rounded-full border`, brand-color border + text, transparent background) for each non-empty reply.
+10. **Bot identity preview card** (top of page) — when `previewReplies.length > 0`, chips (sliced to 6 to match `/widget.js` behavior) are rendered below the welcome message bubble so admins see the real visitor-facing layout.
+11. **Identity tab "Live chat bubble preview"** — also enhanced to show chips below the bubble when configured (same 6-chip slice), keeping the two previews in sync.
+12. **`previewReplies` useMemo** — added at component level: `form.quickReplies.map(q => q.trim()).filter(Boolean)`, memoized on `form.quickReplies`.
+
+**Styling notes:** Brand-color pill chips use `border-color` + `color` inline style (matches widget) with `bg-background` for crisp contrast on any brand color. Add/Remove buttons use shadcn outline variant; counter text uses `tabular-nums` and `text-[10px]` to match the existing microcopy density. Lemon-green accent (`text-accent-foreground`) used on the card title icon, consistent with the rest of the view.
+
+**Constraints honored:**
+- Only `src/components/dashboard/views/agent-view.tsx` modified.
+- No API/backend changes (already ready per task brief).
+- Relative fetch paths preserved (`/api/agent`).
+- `sonner` toasts preserved for all status messages.
+- Brand color classes (`bg-primary`, `text-accent-foreground`, `bg-accent`) reused.
+- All existing functionality preserved — no fields/flows removed.
+
+**Verification:**
+- `npx tsc --noEmit` → 0 errors in `src/` (remaining pre-existing errors are in `examples/` and `skills/` only).
+- `npx eslint src/components/dashboard/views/agent-view.tsx` → clean, 0 errors.
+
+**Next actions (optional, not in scope):**
+- Manual QA: log in as `admin@danetstecpro.com` / `danets123`, open Agent view → Identity tab, add 2–3 quick replies, save, then load `/widget-demo` for a business publicKey and confirm chips render after the welcome bubble (widget slices to 6).
+- Consider surfacing a small hint in the editor that the widget currently displays the first 6 of up to 8 configured replies.
+
+---
+Task ID: CRON-1
+Agent: main (webDevReview cron round 1)
+Task: QA assessment, bug fixes, new features (dark mode, quick replies, CSV export), styling polish.
+
+## Current Project Status
+MVP was complete and stable from prior rounds. All 10 modules functional. This round focused on QA verification, closing the dark-mode gap, and adding high-value features.
+
+## Work Log
+
+### QA Findings (agent-browser + VLM)
+- Logged in as admin@danetstecpro.com — all 9 dashboard views render correctly.
+- Widget demo page: chat works, AI grounded in KB, lead capture + handover work.
+- VLM analysis of all 9 view screenshots: no visual bugs, alignment/spacing/contrast all good.
+- Found gap: dark mode CSS existed but NO ThemeProvider was wired in layout → users couldn't access dark mode. `sonner.tsx` imports `next-themes` but provider was missing.
+- Found bug: `/api/public/widget` crashed dev server (Turbopack) due to `s-maxage` edge-cache header in dev — replaced with `max-age` only.
+
+### Fixes
+1. **Dark mode wired up**: Created `src/components/theme-provider.tsx` (next-themes), wrapped app in layout.tsx with `<ThemeProvider attribute="class" defaultTheme="light" enableSystem>`. Created `src/components/dashboard/shared/theme-toggle.tsx` (animated sun/moon icon button). Added toggle to app-shell topbar next to "Agent online" badge.
+2. **Dark mode contrast**: bumped `--muted-foreground` in dark theme from `oklch(0.7 ...)` to `oklch(0.78 ...)` for better secondary-text readability (VLM suggestion).
+3. **Widget endpoint crash**: removed `s-maxage=300, stale-while-revalidate=600` (caused Turbopack dev crash) → `max-age=300` only.
+
+### New Features
+1. **Quick Replies** (suggested question chips in widget):
+   - Added `quickReplies` field (JSON string array) to `AiAgent` model in Prisma schema. Ran `db:push`.
+   - Updated `/api/agent` PUT to accept `quickReplies: string[]` (max 8, zod-validated).
+   - Updated `/api/public/widget` to expose `quickReplies`.
+   - Updated `/widget.js`: added `showQuickReplies()` function rendering pill-shaped chips after welcome message; clicking a chip sends that question. Added `.dn-quick` CSS (blue pills with hover transform).
+   - Updated `scripts/seed.ts` with 4 default quick replies; ran migration to backfill existing agents.
+   - **Subagent (Task F1)** added full Quick Replies editor to `agent-view.tsx`: editable inputs with remove buttons, "Add question" button (disabled at 8), live chip preview, char counter, dirty-state tracking, validation. Also renders chips in bot-identity preview card.
+2. **Lead CSV Export**:
+   - Created `/api/leads/export` GET route (auth-required, multi-tenant, supports status/quality filters, returns CSV with BOM for Excel UTF-8 detection).
+   - Added "Export CSV" button (Download icon) to Leads view toolbar, opens filtered export in new tab with toast.
+3. **Widget branding**: Added "Powered by Danets AI" footer link in widget input area.
+
+### Verification
+- Dark mode: toggled in browser → `html.dark` class applied, VLM confirms good contrast, sidebar/cards/charts all render correctly in dark.
+- Quick replies: widget demo shows 4 chips after welcome message; clicking a chip sends the question and gets AI response. Agent view editor shows inputs + preview + 4/8 counter.
+- CSV export: endpoint returns valid CSV with headers + all leads; button triggers download + toast.
+- Lint: clean (0 errors). Dev server stable.
+
+## Stage Summary
+- 3 new features shipped (dark mode, quick replies, CSV export), 2 bugs fixed (ThemeProvider missing, widget endpoint crash).
+- All features browser-verified via agent-browser + VLM.
+- Dev server required restart to pick up Prisma schema change (stale globalThis singleton). Created `start-dev.sh` persistent launcher.
+
+## Unresolved / Next Steps
+- **PDF export** for proposals (still "coming soon" placeholder).
+- **Embeddings-based KB retrieval** (currently keyword scoring).
+- **Conversation analytics** on overview (top questions, deflection rate) — proposed but not yet built.
+- **Webhook/email notifications** on new leads.
+- Dev server persistence across cron rounds: the `start-dev.sh` launcher works but if the process dies, the next cron round should check and restart it.

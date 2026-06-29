@@ -84,6 +84,7 @@ model AiAgent {
   whatsappNumber  String?
   email           String?
   brandColor      String   @default("#1d4ed8")
+  quickReplies    String   @default("[]") // JSON array of suggested question strings
   status          String   @default("active") // active | inactive
   leadCaptureEnabled Boolean @default(true)
   createdAt       DateTime @default(now())

@@ -1,0 +1,997 @@
+     1→"use client";
+     2→
+     3→import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+     4→import { toast } from "sonner";
+     5→import {
+     6→  Bot,
+     7→  Loader2,
+     8→  Save,
+     9→  Send,
+    10→  Sparkles,
+    11→  ShieldAlert,
+    12→  Palette,
+    13→  MessageSquareText,
+    14→  Phone,
+    15→  Mail,
+    16→  Building2,
+    17→  RefreshCw,
+    18→  CircleCheck,
+    19→  CircleDashed,
+    20→  Hash,
+    21→} from "lucide-react";
+    22→
+    23→import { Button } from "@/components/ui/button";
+    24→import { Input } from "@/components/ui/input";
+    25→import { Textarea } from "@/components/ui/textarea";
+    26→import { Label } from "@/components/ui/label";
+    27→import { Switch } from "@/components/ui/switch";
+    28→import { Badge } from "@/components/ui/badge";
+    29→import { Separator } from "@/components/ui/separator";
+    30→import {
+    31→  Card,
+    32→  CardContent,
+    33→  CardDescription,
+    34→  CardHeader,
+    35→  CardTitle,
+    36→} from "@/components/ui/card";
+    37→import {
+    38→  Select,
+    39→  SelectContent,
+    40→  SelectItem,
+    41→  SelectTrigger,
+    42→  SelectValue,
+    43→} from "@/components/ui/select";
+    44→import {
+    45→  Tabs,
+    46→  TabsContent,
+    47→  TabsList,
+    48→  TabsTrigger,
+    49→} from "@/components/ui/tabs";
+    50→
+    51→interface AgentUser {
+    52→  userId: string;
+    53→  businessId: string;
+    54→  name: string;
+    55→  email: string;
+    56→  role: string;
+    57→  businessName: string;
+    58→}
+    59→
+    60→interface AiAgent {
+    61→  id: string;
+    62→  botName: string;
+    63→  businessName: string | null;
+    64→  industry: string | null;
+    65→  welcomeMessage: string;
+    66→  fallbackMessage: string;
+    67→  handoverMessage: string;
+    68→  tone: "professional" | "friendly" | "formal";
+    69→  contactPhone: string | null;
+    70→  whatsappNumber: string | null;
+    71→  email: string | null;
+    72→  brandColor: string;
+    73→  status: "active" | "inactive";
+    74→  leadCaptureEnabled: boolean;
+    75→}
+    76→
+    77→type AgentForm = {
+    78→  botName: string;
+    79→  businessName: string;
+    80→  industry: string;
+    81→  welcomeMessage: string;
+    82→  fallbackMessage: string;
+    83→  handoverMessage: string;
+    84→  tone: "professional" | "friendly" | "formal";
+    85→  contactPhone: string;
+    86→  whatsappNumber: string;
+    87→  email: string;
+    88→  brandColor: string;
+    89→  status: "active" | "inactive";
+    90→  leadCaptureEnabled: boolean;
+    91→};
+    92→
+    93→const DEFAULT_AGENT: AgentForm = {
+    94→  botName: "Assistant",
+    95→  businessName: "",
+    96→  industry: "",
+    97→  welcomeMessage: "Hi! How can I help you today?",
+    98→  fallbackMessage:
+    99→    "I'm not fully sure about that. Please contact our team for confirmation.",
+   100→  handoverMessage:
+   101→    "Let me connect you with our team for further assistance.",
+   102→  tone: "professional",
+   103→  contactPhone: "",
+   104→  whatsappNumber: "",
+   105→  email: "",
+   106→  brandColor: "#1d4ed8",
+   107→  status: "active",
+   108→  leadCaptureEnabled: true,
+   109→};
+   110→
+   111→const TONE_OPTIONS: {
+   112→  value: AgentForm["tone"];
+   113→  label: string;
+   114→  description: string;
+   115→}[] = [
+   116→  {
+   117→    value: "professional",
+   118→    label: "Professional",
+   119→    description: "Clear, knowledgeable, business-like tone.",
+   120→  },
+   121→  {
+   122→    value: "friendly",
+   123→    label: "Friendly",
+   124→    description: "Warm and conversational, approachable.",
+   125→  },
+   126→  {
+   127→    value: "formal",
+   128→    label: "Formal",
+   129→    description: "Polite, structured, complete sentences.",
+   130→  },
+   131→];
+   132→
+   133→const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+   134→const HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+   135→
+   136→// Compute readable text color (black/white) for a given hex background
+   137→function readableTextOn(hex: string): string {
+   138→  if (!HEX_RE.test(hex)) return "#ffffff";
+   139→  let h = hex.replace("#", "");
+   140→  if (h.length === 3) {
+   141→    h = h
+   142→      .split("")
+   143→      .map((c) => c + c)
+   144→      .join("");
+   145→  }
+   146→  const r = parseInt(h.slice(0, 2), 16);
+   147→  const g = parseInt(h.slice(2, 4), 16);
+   148→  const b = parseInt(h.slice(4, 6), 16);
+   149→  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+   150→  return luminance > 0.6 ? "#0b1220" : "#ffffff";
+   151→}
+   152→
+   153→export function AgentView({ user }: { user: AgentUser }) {
+   154→  const [loading, setLoading] = useState(true);
+   155→  const [saving, setSaving] = useState(false);
+   156→  const [form, setForm] = useState<AgentForm>(DEFAULT_AGENT);
+   157→  const [original, setOriginal] = useState<AgentForm>(DEFAULT_AGENT);
+   158→  const [errors, setErrors] = useState<Record<string, string>>({});
+   159→  const testScrollRef = useRef<HTMLDivElement | null>(null);
+   160→
+   161→  // Test panel state
+   162→  const [testMessage, setTestMessage] = useState("");
+   163→  const [testing, setTesting] = useState(false);
+   164→  const [testHistory, setTestHistory] = useState<
+   165→    { role: "user" | "assistant"; content: string; kbCount?: number }[]
+   166→  >([]);
+   167→
+   168→  const loadAgent = useCallback(async () => {
+   169→    setLoading(true);
+   170→    try {
+   171→      const res = await fetch("/api/agent", { method: "GET" });
+   172→      const data = await res.json();
+   173→      if (!res.ok) throw new Error(data.error || "Failed to load agent");
+   174→      const a = data.agent as AiAgent;
+   175→      const normalized: AgentForm = {
+   176→        ...DEFAULT_AGENT,
+   177→        ...a,
+   178→        businessName: a.businessName ?? "",
+   179→        industry: a.industry ?? "",
+   180→        contactPhone: a.contactPhone ?? "",
+   181→        whatsappNumber: a.whatsappNumber ?? "",
+   182→        email: a.email ?? "",
+   183→      };
+   184→      setForm(normalized);
+   185→      setOriginal(normalized);
+   186→    } catch (e: any) {
+   187→      toast.error(e.message || "Could not load agent configuration.");
+   188→    } finally {
+   189→      setLoading(false);
+   190→    }
+   191→  }, []);
+   192→
+   193→  useEffect(() => {
+   194→    loadAgent();
+   195→  }, [loadAgent]);
+   196→
+   197→  // Dirty-state detection (deep equality on normalized strings)
+   198→  const isDirty = useMemo(() => {
+   199→    const keys: (keyof AgentForm)[] = [
+   200→      "botName",
+   201→      "businessName",
+   202→      "industry",
+   203→      "welcomeMessage",
+   204→      "fallbackMessage",
+   205→      "handoverMessage",
+   206→      "tone",
+   207→      "contactPhone",
+   208→      "whatsappNumber",
+   209→      "email",
+   210→      "brandColor",
+   211→      "status",
+   212→      "leadCaptureEnabled",
+   213→    ];
+   214→    return keys.some((k) => form[k] !== original[k]);
+   215→  }, [form, original]);
+   216→
+   217→  function setField<K extends keyof AgentForm>(key: K, value: AgentForm[K]) {
+   218→    setForm((p) => ({ ...p, [key]: value }));
+   219→    if (errors[key]) {
+   220→      setErrors((p) => {
+   221→        const next = { ...p };
+   222→        delete next[key];
+   223→        return next;
+   224→      });
+   225→    }
+   226→  }
+   227→
+   228→  function validate(): boolean {
+   229→    const e: Record<string, string> = {};
+   230→    if (!form.botName.trim()) e.botName = "Bot name is required.";
+   231→    if (!form.welcomeMessage.trim()) e.welcomeMessage = "Welcome message is required.";
+   232→    if (!form.fallbackMessage.trim()) e.fallbackMessage = "Fallback message is required.";
+   233→    if (!form.handoverMessage.trim()) e.handoverMessage = "Handover message is required.";
+   234→    if (form.email && !EMAIL_RE.test(form.email)) e.email = "Invalid email format.";
+   235→    if (!HEX_RE.test(form.brandColor)) e.brandColor = "Use a hex color like #1d4ed8.";
+   236→    setErrors(e);
+   237→    return Object.keys(e).length === 0;
+   238→  }
+   239→
+   240→  async function save() {
+   241→    if (!validate()) {
+   242→      toast.error("Please fix the highlighted fields before saving.");
+   243→      return;
+   244→    }
+   245→    setSaving(true);
+   246→    try {
+   247→      const payload = {
+   248→        botName: form.botName.trim(),
+   249→        businessName: form.businessName.trim() || null,
+   250→        industry: form.industry.trim() || null,
+   251→        welcomeMessage: form.welcomeMessage.trim(),
+   252→        fallbackMessage: form.fallbackMessage.trim(),
+   253→        handoverMessage: form.handoverMessage.trim(),
+   254→        tone: form.tone,
+   255→        contactPhone: form.contactPhone.trim() || null,
+   256→        whatsappNumber: form.whatsappNumber.trim() || null,
+   257→        email: form.email.trim() || null,
+   258→        brandColor: form.brandColor,
+   259→        status: form.status,
+   260→        leadCaptureEnabled: form.leadCaptureEnabled,
+   261→      };
+   262→      const res = await fetch("/api/agent", {
+   263→        method: "PUT",
+   264→        headers: { "Content-Type": "application/json" },
+   265→        body: JSON.stringify(payload),
+   266→      });
+   267→      const data = await res.json();
+   268→      if (!res.ok) throw new Error(data.error || "Failed to save agent.");
+   269→      const a = data.agent as AiAgent;
+   270→      const normalized: AgentForm = {
+   271→        ...DEFAULT_AGENT,
+   272→        ...a,
+   273→        businessName: a.businessName ?? "",
+   274→        industry: a.industry ?? "",
+   275→        contactPhone: a.contactPhone ?? "",
+   276→        whatsappNumber: a.whatsappNumber ?? "",
+   277→        email: a.email ?? "",
+   278→      };
+   279→      setForm(normalized);
+   280→      setOriginal(normalized);
+   281→      toast.success("AI Agent configuration saved.");
+   282→    } catch (e: any) {
+   283→      toast.error(e.message || "Could not save changes.");
+   284→    } finally {
+   285→      setSaving(false);
+   286→    }
+   287→  }
+   288→
+   289→  async function sendTest() {
+   290→    const msg = testMessage.trim();
+   291→    if (!msg || testing) return;
+   292→    setTesting(true);
+   293→    setTestHistory((h) => [...h, { role: "user", content: msg }]);
+   294→    setTestMessage("");
+   295→    try {
+   296→      const res = await fetch("/api/agent/test", {
+   297→        method: "POST",
+   298→        headers: { "Content-Type": "application/json" },
+   299→        body: JSON.stringify({ message: msg }),
+   300→      });
+   301→      const data = await res.json();
+   302→      if (!res.ok) throw new Error(data.error || "Test failed.");
+   303→      setTestHistory((h) => [
+   304→        ...h,
+   305→        {
+   306→          role: "assistant",
+   307→          content: data.reply,
+   308→          kbCount: data.kbContextCount,
+   309→        },
+   310→      ]);
+   311→    } catch (e: any) {
+   312→      setTestHistory((h) => [
+   313→        ...h,
+   314→        {
+   315→          role: "assistant",
+   316→          content: `⚠️ ${e.message || "Test failed."}`,
+   317→        },
+   318→      ]);
+   319→    } finally {
+   320→      setTesting(false);
+   321→      setTimeout(() => {
+   322→        testScrollRef.current?.scrollTo({
+   323→          top: testScrollRef.current.scrollHeight,
+   324→          behavior: "smooth",
+   325→        });
+   326→      }, 50);
+   327→    }
+   328→  }
+   329→
+   330→  const brandTextColor = readableTextOn(form.brandColor);
+   331→  const avatarInitial = (form.botName || "A").charAt(0).toUpperCase();
+   332→
+   333→  if (loading) {
+   334→    return (
+   335→      <div className="flex items-center justify-center py-20">
+   336→        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+   337→      </div>
+   338→    );
+   339→  }
+   340→
+   341→  return (
+   342→    <div className="space-y-5">
+   343→      {/* Header */}
+   344→      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+   345→        <div>
+   346→          <div className="flex items-center gap-2">
+   347→            <Bot className="h-6 w-6 text-primary" />
+   348→            <h1 className="text-2xl font-bold tracking-tight">
+   349→              AI Agent Configuration
+   350→            </h1>
+   351→            {isDirty ? (
+   352→              <Badge
+   353→                variant="outline"
+   354→                className="border-accent text-accent-foreground bg-accent/20"
+   355→              >
+   356→                <CircleDashed className="h-3 w-3" />
+   357→                Unsaved changes
+   358→              </Badge>
+   359→            ) : (
+   360→              <Badge variant="secondary" className="gap-1">
+   361→                <CircleCheck className="h-3 w-3 text-accent-foreground" />
+   362→                In sync
+   363→              </Badge>
+   364→            )}
+   365→          </div>
+   366→          <p className="text-sm text-muted-foreground mt-1">
+   367→            Configure how your AI chatbot looks, sounds, and responds to
+   368→            visitors. Test it live before going public.
+   369→          </p>
+   370→        </div>
+   371→        <div className="flex items-center gap-2 shrink-0">
+   372→          <Button
+   373→            variant="outline"
+   374→            size="sm"
+   375→            onClick={loadAgent}
+   376→            disabled={saving}
+   377→          >
+   378→            <RefreshCw className="h-4 w-4" />
+   379→            Reload
+   380→          </Button>
+   381→          <Button
+   382→            onClick={save}
+   383→            disabled={!isDirty || saving}
+   384→            size="sm"
+   385→            className="bg-primary hover:bg-primary/90"
+   386→          >
+   387→            {saving ? (
+   388→              <Loader2 className="h-4 w-4 animate-spin" />
+   389→            ) : (
+   390→              <Save className="h-4 w-4" />
+   391→            )}
+   392→            Save changes
+   393→          </Button>
+   394→        </div>
+   395→      </div>
+   396→
+   397→      <div className="grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-5">
+   398→        {/* ── LEFT: config form ─────────────────────────────────────── */}
+   399→        <div className="space-y-5">
+   400→          {/* Bot identity preview */}
+   401→          <Card className="overflow-hidden border-l-4" style={{ borderLeftColor: form.brandColor }}>
+   402→            <CardHeader className="pb-3">
+   403→              <CardTitle className="text-base flex items-center gap-2">
+   404→                <Sparkles className="h-4 w-4 text-accent-foreground" />
+   405→                Bot identity preview
+   406→              </CardTitle>
+   407→              <CardDescription>
+   408→                This is how visitors will see your bot in the chat widget.
+   409→              </CardDescription>
+   410→            </CardHeader>
+   411→            <CardContent>
+   412→              <div className="flex items-start gap-3">
+   413→                <div
+   414→                  className="h-11 w-11 rounded-full flex items-center justify-center font-bold text-lg shrink-0"
+   415→                  style={{
+   416→                    backgroundColor: form.brandColor,
+   417→                    color: brandTextColor,
+   418→                  }}
+   419→                >
+   420→                  {avatarInitial}
+   421→                </div>
+   422→                <div className="space-y-2 min-w-0 flex-1">
+   423→                  <div className="flex items-center gap-2 flex-wrap">
+   424→                    <span className="font-medium text-sm">
+   425→                      {form.botName || "Assistant"}
+   426→                    </span>
+   427→                    {form.status === "active" ? (
+   428→                      <Badge className="bg-accent text-accent-foreground hover:bg-accent">
+   429→                        <span className="h-1.5 w-1.5 rounded-full bg-accent-foreground/70 animate-pulse" />
+   430→                        Online
+   431→                      </Badge>
+   432→                    ) : (
+   433→                      <Badge variant="secondary">Offline</Badge>
+   434→                    )}
+   435→                  </div>
+   436→                  <div
+   437→                    className="inline-block rounded-2xl rounded-tl-sm px-3 py-2 text-sm max-w-full"
+   438→                    style={{
+   439→                      backgroundColor: form.brandColor,
+   440→                      color: brandTextColor,
+   441→                    }}
+   442→                  >
+   443→                    {form.welcomeMessage || "Hi! How can I help you today?"}
+   444→                  </div>
+   445→                  {form.businessName && (
+   446→                    <div className="text-xs text-muted-foreground">
+   447→                      from {form.businessName}
+   448→                    </div>
+   449→                  )}
+   450→                </div>
+   451→              </div>
+   452→            </CardContent>
+   453→          </Card>
+   454→
+   455→          {/* Tabs: identity / messaging / contact */}
+   456→          <Tabs defaultValue="identity">
+   457→            <TabsList className="w-full justify-start overflow-x-auto">
+   458→              <TabsTrigger value="identity">
+   459→                <Bot className="h-4 w-4" />
+   460→                Identity
+   461→              </TabsTrigger>
+   462→              <TabsTrigger value="messaging">
+   463→                <MessageSquareText className="h-4 w-4" />
+   464→                Messaging
+   465→              </TabsTrigger>
+   466→              <TabsTrigger value="contact">
+   467→                <Phone className="h-4 w-4" />
+   468→                Contact &amp; Status
+   469→              </TabsTrigger>
+   470→            </TabsList>
+   471→
+   472→            {/* Identity tab */}
+   473→            <TabsContent value="identity" className="mt-4">
+   474→              <Card>
+   475→                <CardHeader>
+   476→                  <CardTitle className="text-base">Bot identity</CardTitle>
+   477→                  <CardDescription>
+   478→                    Basic branding and personality.
+   479→                  </CardDescription>
+   480→                </CardHeader>
+   481→                <CardContent className="space-y-4">
+   482→                  <div className="grid sm:grid-cols-2 gap-4">
+   483→                    <Field
+   484→                      label="Bot name"
+   485→                      icon={<Bot className="h-4 w-4" />}
+   486→                      required
+   487→                      error={errors.botName}
+   488→                    >
+   489→                      <Input
+   490→                        value={form.botName}
+   491→                        onChange={(e) => setField("botName", e.target.value)}
+   492→                        placeholder="Assistant"
+   493→                        maxLength={60}
+   494→                      />
+   495→                    </Field>
+   496→                    <Field
+   497→                      label="Business name"
+   498→                      icon={<Building2 className="h-4 w-4" />}
+   499→                    >
+   500→                      <Input
+   501→                        value={form.businessName}
+   502→                        onChange={(e) =>
+   503→                          setField("businessName", e.target.value)
+   504→                        }
+   505→                        placeholder={user.businessName}
+   506→                        maxLength={120}
+   507→                      />
+   508→                    </Field>
+   509→                    <Field
+   510→                      label="Industry"
+   511→                      icon={<Building2 className="h-4 w-4" />}
+   512→                    >
+   513→                      <Input
+   514→                        value={form.industry}
+   515→                        onChange={(e) => setField("industry", e.target.value)}
+   516→                        placeholder="e.g. Retail, SaaS, Healthcare"
+   517→                        maxLength={80}
+   518→                      />
+   519→                    </Field>
+   520→                    <Field
+   521→                      label="Tone of voice"
+   522→                      icon={<MessageSquareText className="h-4 w-4" />}
+   523→                    >
+   524→                      <Select
+   525→                        value={form.tone}
+   526→                        onValueChange={(v) =>
+   527→                          setField("tone", v as AgentForm["tone"])
+   528→                        }
+   529→                      >
+   530→                        <SelectTrigger className="w-full">
+   531→                          <SelectValue />
+   532→                        </SelectTrigger>
+   533→                        <SelectContent>
+   534→                          {TONE_OPTIONS.map((t) => (
+   535→                            <SelectItem key={t.value} value={t.value}>
+   536→                              <div className="flex flex-col">
+   537→                                <span className="font-medium">{t.label}</span>
+   538→                                <span className="text-xs text-muted-foreground">
+   539→                                  {t.description}
+   540→                                </span>
+   541→                              </div>
+   542→                            </SelectItem>
+   543→                          ))}
+   544→                        </SelectContent>
+   545→                      </Select>
+   546→                    </Field>
+   547→                  </div>
+   548→
+   549→                  <Separator />
+   550→
+   551→                  <Field
+   552→                    label="Brand color"
+   553→                    icon={<Palette className="h-4 w-4" />}
+   554→                    error={errors.brandColor}
+   555→                    hint="Used for the chat bubble, avatar and widget accents."
+   556→                  >
+   557→                    <div className="flex items-center gap-3">
+   558→                      <div
+   559→                        className="h-10 w-10 rounded-md border shadow-sm shrink-0"
+   560→                        style={{ backgroundColor: form.brandColor }}
+   561→                      />
+   562→                      <Input
+   563→                        type="color"
+   564→                        value={form.brandColor}
+   565→                        onChange={(e) =>
+   566→                          setField("brandColor", e.target.value)
+   567→                        }
+   568→                        className="h-10 w-14 p-1 cursor-pointer"
+   569→                      />
+   570→                      <Input
+   571→                        value={form.brandColor}
+   572→                        onChange={(e) =>
+   573→                          setField("brandColor", e.target.value)
+   574→                        }
+   575→                        placeholder="#1d4ed8"
+   576→                        className="max-w-[160px]"
+   577→                      />
+   578→                    </div>
+   579→                  </Field>
+   580→
+   581→                  {/* Live preview chat bubble */}
+   582→                  <div className="rounded-lg border bg-muted/30 p-3">
+   583→                    <div className="text-xs font-medium text-muted-foreground mb-2">
+   584→                      Live chat bubble preview
+   585→                    </div>
+   586→                    <div className="flex items-start gap-2">
+   587→                      <div
+   588→                        className="h-8 w-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
+   589→                        style={{
+   590→                          backgroundColor: form.brandColor,
+   591→                          color: brandTextColor,
+   592→                        }}
+   593→                      >
+   594→                        {avatarInitial}
+   595→                      </div>
+   596→                      <div
+   597→                        className="rounded-2xl rounded-tl-sm px-3 py-2 text-sm max-w-[80%]"
+   598→                        style={{
+   599→                          backgroundColor: form.brandColor,
+   600→                          color: brandTextColor,
+   601→                        }}
+   602→                      >
+   603→                        {form.welcomeMessage || "Hi! How can I help you today?"}
+   604→                      </div>
+   605→                    </div>
+   606→                  </div>
+   607→                </CardContent>
+   608→              </Card>
+   609→            </TabsContent>
+   610→
+   611→            {/* Messaging tab */}
+   612→            <TabsContent value="messaging" className="mt-4">
+   613→              <Card>
+   614→                <CardHeader>
+   615→                  <CardTitle className="text-base">Messaging</CardTitle>
+   616→                  <CardDescription>
+   617→                    Key messages your bot uses during conversations.
+   618→                  </CardDescription>
+   619→                </CardHeader>
+   620→                <CardContent className="space-y-4">
+   621→                  <Field
+   622→                    label="Welcome message"
+   623→                    icon={<MessageSquareText className="h-4 w-4" />}
+   624→                    required
+   625→                    error={errors.welcomeMessage}
+   626→                    hint="Shown when a visitor opens the chat."
+   627→                  >
+   628→                    <Textarea
+   629→                      value={form.welcomeMessage}
+   630→                      onChange={(e) =>
+   631→                        setField("welcomeMessage", e.target.value)
+   632→                      }
+   633→                      rows={2}
+   634→                      maxLength={500}
+   635→                    />
+   636→                  </Field>
+   637→                  <Field
+   638→                    label="Fallback message"
+   639→                    icon={<ShieldAlert className="h-4 w-4" />}
+   640→                    required
+   641→                    error={errors.fallbackMessage}
+   642→                    hint="Used when the bot can't answer confidently."
+   643→                  >
+   644→                    <Textarea
+   645→                      value={form.fallbackMessage}
+   646→                      onChange={(e) =>
+   647→                        setField("fallbackMessage", e.target.value)
+   648→                      }
+   649→                      rows={3}
+   650→                      maxLength={500}
+   651→                    />
+   652→                  </Field>
+   653→                  <Field
+   654→                    label="Handover message"
+   655→                    icon={<MessageSquareText className="h-4 w-4" />}
+   656→                    required
+   657→                    error={errors.handoverMessage}
+   658→                    hint="Shown when escalating to a human teammate."
+   659→                  >
+   660→                    <Textarea
+   661→                      value={form.handoverMessage}
+   662→                      onChange={(e) =>
+   663→                        setField("handoverMessage", e.target.value)
+   664→                      }
+   665→                      rows={2}
+   666→                      maxLength={500}
+   667→                    />
+   668→                  </Field>
+   669→                </CardContent>
+   670→              </Card>
+   671→            </TabsContent>
+   672→
+   673→            {/* Contact & Status tab */}
+   674→            <TabsContent value="contact" className="mt-4">
+   675→              <Card>
+   676→                <CardHeader>
+   677→                  <CardTitle className="text-base">
+   678→                    Contact details &amp; status
+   679→                  </CardTitle>
+   680→                  <CardDescription>
+   681→                    The bot can share these when escalating. All optional.
+   682→                  </CardDescription>
+   683→                </CardHeader>
+   684→                <CardContent className="space-y-4">
+   685→                  <div className="grid sm:grid-cols-2 gap-4">
+   686→                    <Field
+   687→                      label="Contact phone"
+   688→                      icon={<Phone className="h-4 w-4" />}
+   689→                    >
+   690→                      <Input
+   691→                        value={form.contactPhone}
+   692→                        onChange={(e) =>
+   693→                          setField("contactPhone", e.target.value)
+   694→                        }
+   695→                        placeholder="+1 555 000 0000"
+   696→                        maxLength={40}
+   697→                      />
+   698→                    </Field>
+   699→                    <Field
+   700→                      label="WhatsApp number"
+   701→                      icon={<Phone className="h-4 w-4" />}
+   702→                    >
+   703→                      <Input
+   704→                        value={form.whatsappNumber}
+   705→                        onChange={(e) =>
+   706→                          setField("whatsappNumber", e.target.value)
+   707→                        }
+   708→                        placeholder="+1 555 000 0000"
+   709→                        maxLength={40}
+   710→                      />
+   711→                    </Field>
+   712→                    <Field
+   713→                      label="Email"
+   714→                      icon={<Mail className="h-4 w-4" />}
+   715→                      error={errors.email}
+   716→                    >
+   717→                      <Input
+   718→                        type="email"
+   719→                        value={form.email}
+   720→                        onChange={(e) => setField("email", e.target.value)}
+   721→                        placeholder="support@yourbusiness.com"
+   722→                        maxLength={120}
+   723→                      />
+   724→                    </Field>
+   725→                  </div>
+   726→
+   727→                  <Separator />
+   728→
+   729→                  {/* Status switch */}
+   730→                  <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
+   731→                    <div className="space-y-0.5">
+   732→                      <div className="text-sm font-medium">
+   733→                        {form.status === "active"
+   734→                          ? "Agent active"
+   735→                          : "Agent inactive"}
+   736→                      </div>
+   737→                      <p className="text-xs text-muted-foreground">
+   738→                        When active, the chat widget accepts new conversations.
+   739→                        Inactive bots stay hidden from visitors.
+   740→                      </p>
+   741→                    </div>
+   742→                    <Switch
+   743→                      checked={form.status === "active"}
+   744→                      onCheckedChange={(v) =>
+   745→                        setField("status", v ? "active" : "inactive")
+   746→                      }
+   747→                    />
+   748→                  </div>
+   749→
+   750→                  {/* Lead capture switch */}
+   751→                  <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
+   752→                    <div className="space-y-0.5">
+   753→                      <div className="text-sm font-medium flex items-center gap-2">
+   754→                        <Hash className="h-4 w-4 text-accent-foreground" />
+   755→                        Lead capture
+   756→                        {form.leadCaptureEnabled && (
+   757→                          <Badge className="bg-accent text-accent-foreground hover:bg-accent">
+   758→                            On
+   759→                          </Badge>
+   760→                        )}
+   761→                      </div>
+   762→                      <p className="text-xs text-muted-foreground">
+   763→                        Collect visitor name, email and phone into your Leads
+   764→                        inbox.
+   765→                      </p>
+   766→                    </div>
+   767→                    <Switch
+   768→                      checked={form.leadCaptureEnabled}
+   769→                      onCheckedChange={(v) =>
+   770→                        setField("leadCaptureEnabled", v)
+   771→                      }
+   772→                    />
+   773→                  </div>
+   774→                </CardContent>
+   775→              </Card>
+   776→            </TabsContent>
+   777→          </Tabs>
+   778→
+   779→          {/* Sticky save bar (mobile-friendly fallback) */}
+   780→          <div className="sticky bottom-0 z-10 -mx-1 px-1">
+   781→            <div className="flex items-center justify-between gap-3 rounded-lg border bg-background/95 backdrop-blur p-3 shadow-sm">
+   782→              <div className="text-xs text-muted-foreground">
+   783→                {isDirty
+   784→                  ? "You have unsaved changes."
+   785→                  : "All changes saved."}
+   786→              </div>
+   787→              <Button
+   788→                onClick={save}
+   789→                disabled={!isDirty || saving}
+   790→                size="sm"
+   791→                className="bg-primary hover:bg-primary/90"
+   792→              >
+   793→                {saving ? (
+   794→                  <Loader2 className="h-4 w-4 animate-spin" />
+   795→                ) : (
+   796→                  <Save className="h-4 w-4" />
+   797→                )}
+   798→                Save changes
+   799→              </Button>
+   800→            </div>
+   801→          </div>
+   802→        </div>
+   803→
+   804→        {/* ── RIGHT: test panel ─────────────────────────────────────── */}
+   805→        <div className="xl:sticky xl:top-20 self-start">
+   806→          <Card className="flex flex-col h-[640px]">
+   807→            <CardHeader className="pb-3 border-b">
+   808→              <div className="flex items-center justify-between gap-2">
+   809→                <div>
+   810→                  <CardTitle className="text-base flex items-center gap-2">
+   811→                    <Send className="h-4 w-4 text-accent-foreground" />
+   812→                    Test your bot
+   813→                  </CardTitle>
+   814→                  <CardDescription className="text-xs">
+   815→                    Send a message to preview live AI replies.
+   816→                  </CardDescription>
+   817→                </div>
+   818→                {form.status === "active" ? (
+   819→                  <Badge className="bg-accent text-accent-foreground hover:bg-accent">
+   820→                    Online
+   821→                  </Badge>
+   822→                ) : (
+   823→                  <Badge variant="secondary">Inactive</Badge>
+   824→                )}
+   825→              </div>
+   826→            </CardHeader>
+   827→
+   828→            <CardContent className="flex-1 flex flex-col p-0 min-h-0">
+   829→              {/* Test conversation area */}
+   830→              <div
+   831→                ref={testScrollRef}
+   832→                className="flex-1 overflow-y-auto p-4 space-y-3 scroll-thin min-h-0"
+   833→              >
+   834→                {testHistory.length === 0 && (
+   835→                  <div className="h-full flex flex-col items-center justify-center text-center py-10">
+   836→                    <div
+   837→                      className="h-14 w-14 rounded-full flex items-center justify-center font-bold text-xl mb-3"
+   838→                      style={{
+   839→                        backgroundColor: form.brandColor,
+   840→                        color: brandTextColor,
+   841→                      }}
+   842→                    >
+   843→                      {avatarInitial}
+   844→                    </div>
+   845→                    <p className="text-sm font-medium">
+   846→                      {form.botName || "Assistant"}
+   847→                    </p>
+   848→                    <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+   849→                      Try a question your customers might ask — pricing,
+   850→                      services, hours, etc.
+   851→                    </p>
+   852→                  </div>
+   853→                )}
+   854→
+   855→                {testHistory.map((m, i) => (
+   856→                  <div
+   857→                    key={i}
+   858→                    className={`flex ${
+   859→                      m.role === "user" ? "justify-end" : "justify-start"
+   860→                    }`}
+   861→                  >
+   862→                    <div className="flex items-end gap-2 max-w-[85%]">
+   863→                      {m.role === "assistant" && (
+   864→                        <div
+   865→                          className="h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+   866→                          style={{
+   867→                            backgroundColor: form.brandColor,
+   868→                            color: brandTextColor,
+   869→                          }}
+   870→                        >
+   871→                          {avatarInitial}
+   872→                        </div>
+   873→                      )}
+   874→                      <div>
+   875→                        <div
+   876→                          className={`rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap break-words ${
+   877→                            m.role === "user"
+   878→                              ? "bg-primary text-primary-foreground rounded-br-sm"
+   879→                              : "bg-muted text-foreground rounded-bl-sm"
+   880→                          }`}
+   881→                        >
+   882→                          {m.content}
+   883→                        </div>
+   884→                        {m.role === "assistant" &&
+   885→                          typeof m.kbCount === "number" && (
+   886→                            <div className="text-[10px] text-muted-foreground mt-1 px-1 flex items-center gap-1">
+   887→                              <Sparkles className="h-3 w-3" />
+   888→                              {m.kbCount > 0
+   889→                                ? `${m.kbCount} KB article${
+   890→                                    m.kbCount === 1 ? "" : "s"
+   891→                                  } used`
+   892→                                : "No KB context"}
+   893→                            </div>
+   894→                          )}
+   895→                      </div>
+   896→                    </div>
+   897→                  </div>
+   898→                ))}
+   899→
+   900→                {testing && (
+   901→                  <div className="flex justify-start">
+   902→                    <div className="flex items-end gap-2">
+   903→                      <div
+   904→                        className="h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+   905→                        style={{
+   906→                          backgroundColor: form.brandColor,
+   907→                          color: brandTextColor,
+   908→                        }}
+   909→                      >
+   910→                        {avatarInitial}
+   911→                      </div>
+   912→                      <div className="rounded-2xl rounded-bl-sm bg-muted px-3 py-2.5 flex items-center gap-1.5">
+   913→                        <span className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:-0.3s]" />
+   914→                        <span className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:-0.15s]" />
+   915→                        <span className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-bounce" />
+   916→                      </div>
+   917→                    </div>
+   918→                  </div>
+   919→                )}
+   920→              </div>
+   921→
+   922→              {/* Test input */}
+   923→              <div className="border-t p-3 space-y-2">
+   924→                <div className="flex items-end gap-2">
+   925→                  <Textarea
+   926→                    value={testMessage}
+   927→                    onChange={(e) => setTestMessage(e.target.value)}
+   928→                    onKeyDown={(e) => {
+   929→                      if (e.key === "Enter" && !e.shiftKey) {
+   930→                        e.preventDefault();
+   931→                        sendTest();
+   932→                      }
+   933→                    }}
+   934→                    placeholder="Type a test message…"
+   935→                    rows={2}
+   936→                    className="resize-none text-sm min-h-[44px] max-h-32"
+   937→                    disabled={testing}
+   938→                  />
+   939→                  <Button
+   940→                    onClick={sendTest}
+   941→                    disabled={testing || !testMessage.trim()}
+   942→                    size="icon"
+   943→                    className="h-10 w-10 bg-primary hover:bg-primary/90 shrink-0"
+   944→                    title="Send test message"
+   945→                  >
+   946→                    {testing ? (
+   947→                      <Loader2 className="h-4 w-4 animate-spin" />
+   948→                    ) : (
+   949→                      <Send className="h-4 w-4" />
+   950→                    )}
+   951→                  </Button>
+   952→                </div>
+   953→                <p className="text-[10px] text-muted-foreground text-center">
+   954→                  Rate-limited · 20 tests / minute · Enter to send, Shift+Enter
+   955→                  for newline
+   956→                </p>
+   957→              </div>
+   958→            </CardContent>
+   959→          </Card>
+   960→        </div>
+   961→      </div>
+   962→    </div>
+   963→  );
+   964→}
+   965→
+   966→function Field({
+   967→  label,
+   968→  icon,
+   969→  children,
+   970→  required,
+   971→  hint,
+   972→  error,
+   973→}: {
+   974→  label: string;
+   975→  icon?: React.ReactNode;
+   976→  children: React.ReactNode;
+   977→  required?: boolean;
+   978→  hint?: string;
+   979→  error?: string;
+   980→}) {
+   981→  return (
+   982→    <div className="space-y-1.5">
+   983→      <Label className="text-xs font-medium flex items-center gap-1.5">
+   984→        {icon && <span className="text-muted-foreground">{icon}</span>}
+   985→        {label}
+   986→        {required && <span className="text-destructive">*</span>}
+   987→      </Label>
+   988→      {children}
+   989→      {error ? (
+   990→        <p className="text-xs text-destructive">{error}</p>
+   991→      ) : hint ? (
+   992→        <p className="text-xs text-muted-foreground">{hint}</p>
+   993→      ) : null}
+   994→    </div>
+   995→  );
+   996→}
+   997→

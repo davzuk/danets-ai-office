@@ -68,6 +68,11 @@ export async function GET(req: NextRequest) {
   .dn-form input,.dn-form textarea{border:1px solid #d8dadf;border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;outline:none;}
   .dn-form input:focus,.dn-form textarea:focus{border-color:#1d4ed8;}
   .dn-form button{background:#1d4ed8;color:#fff;border:none;border-radius:8px;padding:9px;font-weight:600;font-size:13px;cursor:pointer;}
+  .dn-quick{display:flex;flex-wrap:wrap;gap:6px;padding:2px 0;}
+  .dn-quick button{background:#eef2ff;color:#1d4ed8;border:1px solid #c7d2fe;border-radius:999px;padding:6px 12px;font-size:12.5px;font-weight:500;cursor:pointer;transition:all .15s;font-family:inherit;}
+  .dn-quick button:hover{background:#1d4ed8;color:#fff;border-color:#1d4ed8;transform:translateY(-1px);}
+  .dn-powered{text-align:center;padding:6px 0 2px;font-size:10px;color:#9aa0a6;}
+  .dn-powered a{color:#1d4ed8;text-decoration:none;font-weight:600;}
   @media (max-width:520px){
     .dn-win{width:100vw;height:100vh;max-height:100vh;border-radius:0;bottom:0;right:0;}
     .dn-btn{bottom:16px;right:16px;}
@@ -96,6 +101,7 @@ export async function GET(req: NextRequest) {
       <textarea rows="1" placeholder="Type a message..." aria-label="Message"></textarea>
       <button class="dn-send" aria-label="Send"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
     </div>
+    <div class="dn-powered">Powered by <a href="https://danetstecpro.com" target="_blank" rel="noopener">Danets AI</a></div>
   \`;
   document.body.appendChild(win);
 
@@ -108,7 +114,7 @@ export async function GET(req: NextRequest) {
 
   btn.onclick = () => toggle(true);
   closeBtn.onclick = () => toggle(false);
-  function toggle(o){ open = o; win.classList.toggle('open', o); btn.style.display = o ? 'none' : 'flex'; if(o && messages.length===0 && cfg) addBot(cfg.agent.welcomeMessage); if(o) ta.focus(); }
+  function toggle(o){ open = o; win.classList.toggle('open', o); btn.style.display = o ? 'none' : 'flex'; if(o && messages.length===0 && cfg){ addBot(cfg.agent.welcomeMessage); showQuickReplies(); } if(o) ta.focus(); }
 
   ta.addEventListener('input', () => {
     ta.style.height = 'auto';
@@ -119,6 +125,22 @@ export async function GET(req: NextRequest) {
 
   function addBot(text){ addMsg(text, 'bot'); }
   function addUser(text){ addMsg(text, 'user'); }
+  function showQuickReplies(){
+    if(!cfg || !cfg.agent.quickReplies) return;
+    let replies = [];
+    try { replies = JSON.parse(cfg.agent.quickReplies || '[]'); } catch(_) { return; }
+    if(!Array.isArray(replies) || replies.length === 0) return;
+    const existing = document.getElementById('dn-quick');
+    if(existing) existing.remove();
+    const wrap = el('div','dn-quick'); wrap.id='dn-quick';
+    replies.slice(0,6).forEach((q) => {
+      const b = el('button'); b.type='button'; b.textContent = q;
+      b.onclick = () => { wrap.remove(); ta.value = q; send(); };
+      wrap.appendChild(b);
+    });
+    body.appendChild(wrap);
+    body.scrollTop = body.scrollHeight;
+  }
   function addMsg(text, cls){
     const m = el('div','dn-msg ' + cls);
     m.innerHTML = esc(text).replace(/\\n/g,'<br>');

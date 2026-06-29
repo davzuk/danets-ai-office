@@ -18,6 +18,9 @@ import {
   CircleCheck,
   CircleDashed,
   Hash,
+  Plus,
+  X,
+  MessageCircle,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -72,6 +75,7 @@ interface AiAgent {
   brandColor: string;
   status: "active" | "inactive";
   leadCaptureEnabled: boolean;
+  quickReplies: string; // JSON-encoded string[] from DB
 }
 
 type AgentForm = {
@@ -88,6 +92,7 @@ type AgentForm = {
   brandColor: string;
   status: "active" | "inactive";
   leadCaptureEnabled: boolean;
+  quickReplies: string[];
 };
 
 const DEFAULT_AGENT: AgentForm = {
@@ -106,7 +111,20 @@ const DEFAULT_AGENT: AgentForm = {
   brandColor: "#1d4ed8",
   status: "active",
   leadCaptureEnabled: true,
+  quickReplies: [],
 };
+
+// Parse the JSON-encoded quickReplies string from the DB into a clean string[].
+function parseQuickReplies(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((x): x is string => typeof x === "string");
+  } catch {
+    return [];
+  }
+}
 
 const TONE_OPTIONS: {
   value: AgentForm["tone"];
@@ -180,6 +198,7 @@ export function AgentView({ user }: { user: AgentUser }) {
         contactPhone: a.contactPhone ?? "",
         whatsappNumber: a.whatsappNumber ?? "",
         email: a.email ?? "",
+        quickReplies: parseQuickReplies(a.quickReplies),
       };
       setForm(normalized);
       setOriginal(normalized);
@@ -210,8 +229,17 @@ export function AgentView({ user }: { user: AgentUser }) {
       "brandColor",
       "status",
       "leadCaptureEnabled",
+      "quickReplies",
     ];
-    return keys.some((k) => form[k] !== original[k]);
+    return keys.some((k) => {
+      const fv = form[k];
+      const ov = original[k];
+      if (Array.isArray(fv) && Array.isArray(ov)) {
+        if (fv.length !== ov.length) return true;
+        return fv.some((v, i) => v !== ov[i]);
+      }
+      return fv !== ov;
+    });
   }, [form, original]);
 
   function setField<K extends keyof AgentForm>(key: K, value: AgentForm[K]) {
@@ -233,8 +261,29 @@ export function AgentView({ user }: { user: AgentUser }) {
     if (!form.handoverMessage.trim()) e.handoverMessage = "Handover message is required.";
     if (form.email && !EMAIL_RE.test(form.email)) e.email = "Invalid email format.";
     if (!HEX_RE.test(form.brandColor)) e.brandColor = "Use a hex color like #1d4ed8.";
+    // Quick replies: max 8 items, each max 120 chars. Empty strings are filtered on save.
+    if (form.quickReplies.length > 8) e.quickReplies = "Maximum 8 quick replies.";
+    if (form.quickReplies.some((q) => q.length > 120))
+      e.quickReplies = "Each quick reply must be 120 characters or fewer.";
     setErrors(e);
     return Object.keys(e).length === 0;
+  }
+
+  function addQuickReply() {
+    if (form.quickReplies.length >= 8) return;
+    setField("quickReplies", [...form.quickReplies, ""]);
+  }
+  function removeQuickReply(idx: number) {
+    setField(
+      "quickReplies",
+      form.quickReplies.filter((_, i) => i !== idx),
+    );
+  }
+  function updateQuickReply(idx: number, value: string) {
+    setField(
+      "quickReplies",
+      form.quickReplies.map((q, i) => (i === idx ? value : q)),
+    );
   }
 
   async function save() {
@@ -258,6 +307,7 @@ export function AgentView({ user }: { user: AgentUser }) {
         brandColor: form.brandColor,
         status: form.status,
         leadCaptureEnabled: form.leadCaptureEnabled,
+        quickReplies: form.quickReplies.map((q) => q.trim()).filter(Boolean),
       };
       const res = await fetch("/api/agent", {
         method: "PUT",
@@ -275,6 +325,7 @@ export function AgentView({ user }: { user: AgentUser }) {
         contactPhone: a.contactPhone ?? "",
         whatsappNumber: a.whatsappNumber ?? "",
         email: a.email ?? "",
+        quickReplies: parseQuickReplies(a.quickReplies),
       };
       setForm(normalized);
       setOriginal(normalized);
@@ -329,6 +380,11 @@ export function AgentView({ user }: { user: AgentUser }) {
 
   const brandTextColor = readableTextOn(form.brandColor);
   const avatarInitial = (form.botName || "A").charAt(0).toUpperCase();
+  // Non-empty, trimmed quick replies for live previews.
+  const previewReplies = useMemo(
+    () => form.quickReplies.map((q) => q.trim()).filter(Boolean),
+    [form.quickReplies],
+  );
 
   if (loading) {
     return (
@@ -442,6 +498,22 @@ export function AgentView({ user }: { user: AgentUser }) {
                   >
                     {form.welcomeMessage || "Hi! How can I help you today?"}
                   </div>
+                  {previewReplies.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {previewReplies.slice(0, 6).map((q, i) => (
+                        <span
+                          key={i}
+                          className="inline-flex items-center rounded-full border bg-background px-2.5 py-0.5 text-xs font-medium"
+                          style={{
+                            borderColor: form.brandColor,
+                            color: form.brandColor,
+                          }}
+                        >
+                          {q}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   {form.businessName && (
                     <div className="text-xs text-muted-foreground">
                       from {form.businessName}
@@ -593,16 +665,145 @@ export function AgentView({ user }: { user: AgentUser }) {
                       >
                         {avatarInitial}
                       </div>
-                      <div
-                        className="rounded-2xl rounded-tl-sm px-3 py-2 text-sm max-w-[80%]"
-                        style={{
-                          backgroundColor: form.brandColor,
-                          color: brandTextColor,
-                        }}
-                      >
-                        {form.welcomeMessage || "Hi! How can I help you today?"}
+                      <div className="space-y-2 min-w-0">
+                        <div
+                          className="rounded-2xl rounded-tl-sm px-3 py-2 text-sm max-w-[80%]"
+                          style={{
+                            backgroundColor: form.brandColor,
+                            color: brandTextColor,
+                          }}
+                        >
+                          {form.welcomeMessage || "Hi! How can I help you today?"}
+                        </div>
+                        {previewReplies.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {previewReplies.slice(0, 6).map((q, i) => (
+                              <span
+                                key={i}
+                                className="inline-flex items-center rounded-full border bg-background px-2.5 py-0.5 text-xs font-medium"
+                                style={{
+                                  borderColor: form.brandColor,
+                                  color: form.brandColor,
+                                }}
+                              >
+                                {q}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Quick Replies editor */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <MessageCircle className="h-4 w-4 text-accent-foreground" />
+                    Quick Replies
+                  </CardTitle>
+                  <CardDescription>
+                    Suggested questions shown to visitors as clickable chips
+                    after the welcome message. Max 8.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {errors.quickReplies && (
+                    <p className="text-xs text-destructive">
+                      {errors.quickReplies}
+                    </p>
+                  )}
+
+                  {form.quickReplies.length === 0 ? (
+                    <p className="text-xs text-muted-foreground italic">
+                      No quick replies yet. Add a few common questions visitors
+                      might ask.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {form.quickReplies.map((q, idx) => {
+                        const over = q.length > 120;
+                        return (
+                          <div key={idx} className="flex items-center gap-2">
+                            <Input
+                              value={q}
+                              onChange={(e) =>
+                                updateQuickReply(idx, e.target.value)
+                              }
+                              placeholder={'e.g. “What are your opening hours?”'}
+                              maxLength={120}
+                              className="flex-1"
+                            />
+                            <span
+                              className={`text-[10px] tabular-nums w-10 text-right shrink-0 ${
+                                over
+                                  ? "text-destructive"
+                                  : "text-muted-foreground"
+                              }`}
+                            >
+                              {q.length}/120
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              onClick={() => removeQuickReply(idx)}
+                              className="h-9 w-9 shrink-0"
+                              aria-label="Remove quick reply"
+                              title="Remove"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={addQuickReply}
+                      disabled={form.quickReplies.length >= 8}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add question
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      {form.quickReplies.length}/8 used
+                    </span>
+                  </div>
+
+                  {/* Live preview of chips */}
+                  <div className="rounded-lg border bg-muted/30 p-3">
+                    <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
+                      <Sparkles className="h-3 w-3" />
+                      Preview
+                    </div>
+                    {previewReplies.length === 0 ? (
+                      <p className="text-xs text-muted-foreground italic">
+                        Chips will appear here as you add questions.
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {previewReplies.map((q, i) => (
+                          <span
+                            key={i}
+                            className="inline-flex items-center rounded-full border bg-background px-3 py-1 text-xs font-medium"
+                            style={{
+                              borderColor: form.brandColor,
+                              color: form.brandColor,
+                            }}
+                          >
+                            {q}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>

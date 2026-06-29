@@ -50,6 +50,7 @@ const updateSchema = z.object({
   brandColor: z
     .string()
     .regex(HEX_COLOR, "Brand color must be a hex color, e.g. #1d4ed8"),
+  quickReplies: z.array(z.string().min(1).max(120)).max(8).optional(),
   status: z.enum(["active", "inactive"]),
   leadCaptureEnabled: z.boolean(),
 });
@@ -82,6 +83,7 @@ export function PUT(req: NextRequest) {
       whatsappNumber: data.whatsappNumber?.trim() || null,
       email: data.email && data.email !== "" ? data.email.trim() : null,
       brandColor: data.brandColor,
+      quickReplies: JSON.stringify((data.quickReplies || []).filter((q) => q.trim()).slice(0, 8)),
       status: data.status,
       leadCaptureEnabled: data.leadCaptureEnabled,
     };
