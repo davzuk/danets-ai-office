@@ -902,3 +902,57 @@ MVP stable and feature-rich from prior rounds (10 modules + dark mode + quick re
 - Usage limits/alerts based on subscription plan.
 - Consider adding drag-and-drop on touch devices (current HTML5 DnD is desktop-only).
 - Could add lead card click to open detail dialog from pipeline view.
+
+---
+Task ID: CRON-7
+Agent: main (webDevReview cron round 7)
+Task: QA assessment, lead pipeline click-to-detail, KB TF-IDF search, sidebar styling polish.
+
+## Current Project Status
+MVP stable and feature-rich from prior rounds (10 modules + dark mode + quick replies + CSV export + notification bell + PDF export + KB bulk import + analytics + lead quick-reply + team management + transcript export + command palette + KB category colors + pipeline board + animated transitions). This round focused on completing the pipeline board UX, improving AI answer quality via better KB retrieval, and sidebar polish.
+
+## Work Log
+
+### QA Findings
+- Logged in, tested all views + pipeline board — stable, no errors.
+- Widget chat works with accurate KB-grounded answers.
+- No bugs found — app is stable.
+
+### New Features / Improvements
+1. **Lead Pipeline Card Click → Detail Dialog**:
+   - Wired the PipelineBoard's `onLeadClick` prop to the leads view's `openDetail()` function.
+   - Clicking a lead card in the Kanban board now opens the full lead detail dialog (with tabs, quick-reply actions, status/quality controls).
+   - Verified: clicked "John Test" card → detail dialog opened with email, phone, service info.
+
+2. **KB TF-IDF Semantic Search** (major AI quality improvement):
+   - Replaced the simple keyword+substring matching in `retrieveKnowledge()` with a proper **TF-IDF (Term Frequency–Inverse Document Frequency)** scoring algorithm.
+   - **Stopword removal**: Filters out 60+ common English stopwords (the, a, is, and, etc.) so queries focus on meaningful terms.
+   - **Tokenization**: Splits text into terms, removes punctuation, keeps terms > 2 chars.
+   - **IDF weighting**: Rarer terms (e.g. "cybersecurity") score higher than common terms (e.g. "services"), so specific queries match the right articles.
+   - **Title boost**: Title matches weighted 3x + 2x bonus for exact title token matches.
+   - **Partial-match fallback**: If a query term isn't in any KB item, tries substring matching as a fallback (0.3x weight).
+   - Verified: Query "How much does the pro plan cost per month?" → found 2 relevant KB items → AI answered "$79 per month" accurately.
+
+### Styling Polish
+- **Sidebar active item**: Added a left accent bar (rounded, primary-foreground color) on the active nav item for clear visual indication. Upgraded shadow from `shadow-sm` to `shadow-md`.
+- **Icon hover scale**: Inactive nav items' icons scale to 110% on hover (`group-hover:scale-110`) with smooth `transition-all`.
+- **ChevronRight opacity**: Active item's chevron is slightly translucent (opacity-70) for subtle hierarchy.
+- VLM confirmed: "bright yellow left accent bar... clean, consistent design... no visual issues."
+
+## Verification
+- Lint: clean (0 errors).
+- Pipeline card click: opens detail dialog with full lead info.
+- TF-IDF search: accurately matches relevant KB articles → AI gives precise pricing answers.
+- Sidebar styling: active accent bar + icon hover scale (VLM confirmed clean).
+- Dev server stable throughout, no errors.
+
+## Stage Summary
+- 1 new feature (pipeline card click), 1 major AI improvement (TF-IDF search), sidebar styling polish.
+- All features verified via agent-browser + VLM + direct API tests.
+
+## Unresolved / Next Steps
+- Email notifications on new leads (would need SMTP config).
+- Widget customization live preview (deferred).
+- Usage limits/alerts based on subscription plan.
+- Touch-device drag support for pipeline board (currently desktop HTML5 DnD only).
+- Consider adding a KB test-search UI so admins can test which articles match a query before going live.

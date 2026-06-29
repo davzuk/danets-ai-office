@@ -1299,7 +1299,7 @@ export function LeadsView({ user }: { user: UserProp }) {
               </p>
             </div>
           </div>
-          <PipelineBoard businessId={user.businessId} />
+          <PipelineBoard businessId={user.businessId} onLeadClick={openDetail} />
         </Card>
       ) : (
       /* List / table */

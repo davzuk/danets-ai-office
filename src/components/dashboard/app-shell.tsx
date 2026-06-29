@@ -262,15 +262,24 @@ function SidebarContent({
                   key={item.id}
                   onClick={() => onNavigate(item.id)}
                   className={cn(
-                    "w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors group",
+                    "w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all group relative",
                     isActive
-                      ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                      ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-md"
                       : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                   )}
                 >
-                  <Icon size={18} className="shrink-0" />
+                  {isActive && (
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r-full bg-sidebar-primary-foreground/80" />
+                  )}
+                  <Icon
+                    size={18}
+                    className={cn(
+                      "shrink-0 transition-transform",
+                      !isActive && "group-hover:scale-110"
+                    )}
+                  />
                   <span className="flex-1 text-left">{item.label}</span>
-                  {isActive && <ChevronRight size={14} />}
+                  {isActive && <ChevronRight size={14} className="opacity-70" />}
                 </button>
               );
             })}

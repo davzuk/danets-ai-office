@@ -45,6 +45,9 @@ interface PipelineBoardProps {
   onLeadClick?: (lead: Lead) => void;
 }
 
+// Re-export Lead type for consumers
+export type { Lead as PipelineLead };
+
 export function PipelineBoard({ businessId, onLeadClick }: PipelineBoardProps) {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -161,7 +164,7 @@ export function PipelineBoard({ businessId, onLeadClick }: PipelineBoardProps) {
                       setDraggedId(null);
                       setDragOverCol(null);
                     }}
-                    onClick={() => onLeadClick?.(lead)}
+                    onClick={() => onLeadClick?.(lead as any)}
                     className={cn(
                       "group rounded-lg border bg-background p-3 cursor-pointer hover:shadow-md hover:border-primary/30 transition-all",
                       draggedId === lead.id && "opacity-50"
