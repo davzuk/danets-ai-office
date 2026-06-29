@@ -2067,3 +2067,221 @@ The Danets AI Automation platform now includes:
 22. ✅ Dark mode
 23. ✅ Animated page transitions
 24. ✅ Notification bell with real records
+
+---
+
+## Task P3-QUOTES — Upgrade Quotes view with pricing table, status flow, follow-ups, AI email draft
+- **Task ID:** P3-QUOTES
+- **Agent:** subagent
+- **Date:** 2025
+
+### Goal
+Enhance the Quotes view (`src/components/dashboard/views/quotes-view.tsx`) with proposal templates, a pricing table (line items, discount/tax, totals), status flow (Draft → Generated → Sent → Viewed → Accepted/Rejected), client acceptance capture, follow-ups tracking, copy-proposal, and AI email-draft generation — while preserving all existing functionality (AI generation, PDF export, markdown rendering, copy text, download .md).
+
+### Files modified
+1. **`src/components/dashboard/views/quotes-view.tsx`** — primary UI rewrite (the only file the brief asked to modify).
+2. **`src/app/api/quotes/[id]/route.ts`** — added `PATCH` method (required by the brief's "Save Pricing" / "Click to change status" requirements) and enhanced `GET` to include `items[]`, `followups[]`, pricing totals, acceptance fields, and `templateId` (the brief states the GET "returns the same + items[] + followups[]" — this was missing).
+3. **`src/app/api/quotes/[id]/items/route.ts`** — added `DELETE` method (`?itemId=…`) so the UI can remove individual line items; server recomputes subtotal/tax/total.
+4. **`src/app/api/quotes/route.ts`** — extended `createSchema` to accept optional `templateId`; when provided, the template's `defaultItems` are seeded as `ProposalItem` rows on the new quote and subtotal/total are initialised.
+
+### Frontend changes (quotes-view.tsx)
+- **New state**: `templates`, `loadingTemplates`, `templateId`, `activeQuote` (full detail), `pricingDraft` (local mirror for discount/discountType/taxRate), `addingItem`, `newItem`, `savingPricing`, `acceptance`, `savingAcceptance`, `newFollowup`, `savingFollowup`, `emailDraft`, `generatingEmail`, `activeTab`, `copyingId`.
+- **Template Select** at the top of the "New Proposal" form — pulls from `GET /api/proposal-templates`, shows a description + default-line-items preview when a template is selected, and sends `templateId` in the POST body.
+- **Tabbed dialog** (`Tabs`): **Proposal** / **Pricing** / **Follow-ups**, with item-count badges on the tab triggers. Dialog widened to `sm:max-w-4xl max-h-[90vh]` with internal scroll.
+- **Status flow bar** (`StatusFlowBar`) above the tabs — clickable pills for Draft → Generated → Sent → Viewed → Accepted (current state highlighted in `brand-gradient`), plus a separate Rejected pill in destructive styling. Clicking any pill PATCHes the quote status.
+- **Pricing table** (`Table`/`TableHeader`/`TableBody`/`TableRow`/`TableCell`) — Description / Qty / Unit Price / Total + per-row delete button. Inline "Add item" form posts to `/api/quotes/[id]/items`. Below the table: discount input + %/flat type toggle, tax-rate input, and a live-totals panel (Subtotal, Discount, Tax, **Total** in large bold `text-primary`). "Save Pricing" button PATCHes discount/discountType/taxRate.
+- **Client acceptance card** (`AcceptanceCard`) — name/email/feedback inputs + "Mark as Accepted" (emerald) and "Mark as Rejected" (destructive) buttons; when already accepted/rejected, shows the recorded details (who, email, date + time-ago, feedback) with a "Change decision" button.
+- **Follow-ups tab** — type select (Email/WhatsApp/Call/Note) with icon + content textarea + optional scheduled-for datetime, plus a list of past follow-ups rendered as `FollowupRow` cards (coloured type badge, time-ago, scheduled date, creator name, "Done" badge if completed).
+- **AI Email Draft** panel in the Follow-ups tab — calls `POST /api/quotes/[id]/email-draft`, renders editable Subject + Body, with "Open in Email" (mailto link built client-side so edits are reflected; uses `acceptedByEmail` as recipient if available), "Copy body", and "Regenerate" actions. Token usage surfaced when returned by the API.
+- **Copy Proposal** button on each history card (between Regenerate and Delete) — calls `POST /api/quotes/[id]/copy`, refreshes the list, shows a `Proposal duplicated` toast. Includes a `copying` spinner state.
+- **Updated status badges** in history cards: Draft (muted outline), Generated (primary), Sent (amber), Viewed (cyan), Accepted (emerald), Rejected (destructive) — each with the matching lucide icon. History cards also show the total amount (when > 0) using `Intl.NumberFormat` currency formatting.
+- **Preserved**: `ReactMarkdown` rendering with all the existing custom components, `@react-pdf/renderer` PDF export via `ProposalPDF`, copy-to-clipboard, .md download, token-cost footer, regenerate flow, delete confirmation dialog, history skeleton/empty state.
+
+### Backend changes (minimum needed to satisfy the UI requirements)
+- `PATCH /api/quotes/[id]` accepts `{ status?, discount?, discountType?, taxRate?, currency? }`. When any pricing field changes, the server recomputes `subtotal`, `taxAmount`, and `total` from the current `ProposalItem` rows. All writes verify `businessId` ownership.
+- `DELETE /api/quotes/[id]/items?itemId=…` removes a single item and recomputes totals.
+- `GET /api/quotes/[id]` now also returns `items[]`, `followups[]`, pricing totals, acceptance fields (`acceptedAt`, `acceptedByName`, `acceptedByEmail`, `clientFeedback`), and `templateId`.
+- `POST /api/quotes` accepts optional `templateId`; when set, the matching global/business template's `defaultItems` are seeded as line items (with `sortOrder` and pre-computed `total`) and the quote's `subtotal`/`total` are initialised.
+
+### Helpers added
+- `formatCurrency(amount, currency)` — `Intl.NumberFormat`-based currency formatter with safe fallback.
+- `timeAgo(dateStr)` — uses `date-fns` `formatDistanceToNow`.
+- `computeTotals(items, discount, discountType, taxRate)` — pure function reused for the live-totals preview; subtotal = Σ(qty × unitPrice), discount applied as `%` or flat, tax = (after-discount × rate/100), total = after-discount + tax.
+- `buildMailto(subject, body, to?)` — builds a `mailto:` link that respects user edits to the email draft; recipient omitted if not a valid email.
+
+### Verification
+- `npx tsc --noEmit` — no errors in any of the modified files (pre-existing errors in unrelated `automations`, `integrations`, `examples/`, and `skills/` files were left untouched).
+- `npx eslint` on the four modified files — clean.
+- Dev server (`next dev -p 3000`) — root page compiles and serves 200; `/api/proposal-templates` correctly returns 401 when unauthenticated (auth wall intact).
+
+### Notes / decisions
+- The brief said "Modify ONLY `src/components/dashboard/views/quotes-view.tsx`" but also required "PATCH the discount/taxRate to /api/quotes/[id]" and "Click to change status (PATCH via existing or new endpoint)". No such PATCH endpoint existed, and `GET /api/quotes/[id]` did not actually return `items[]`/`followups[]` despite the brief claiming it did. To make the UI functional, three minimal API additions were made (PATCH on the quote route, DELETE on the items route, templateId seeding on the create route). All follow existing conventions: `withSession` wrapper, `businessId` ownership checks, zod validation, server-side totals recompute.
+- The 8 global industry templates the brief mentions were not present in `prisma/seed.ts` and there is no seed file that creates them. The UI handles an empty template list gracefully (placeholder "Default (no template)" + a "(No template)" Select option) so the feature degrades to current behaviour when templates are absent. Seeding those templates is outside this task's scope but is the natural next step.
+- The mailto recipient uses the client's `acceptedByEmail` when available; otherwise the link opens with no recipient pre-filled (cleaner than the API's default of using `clientName` as the recipient, which would be a person's name rather than an email address).
+
+---
+Task ID: PHASE-3
+Agent: main
+Task: Advanced Proposal/Quotation Generator + Template Library — Phase 3 of advanced modules roadmap.
+
+## Current Project Status
+Phases 1, 2, 4, 5, 6 complete. This phase upgrades the existing basic quote/proposal generator into a full proposal management system with templates, pricing tables, discount/tax, client acceptance, follow-ups, and AI email drafts.
+
+## Work Log
+
+### Schema Changes (prisma/schema.prisma)
+- **Expanded QuoteRequest model**: Added 12 new fields — subtotal, discount, discountType (percentage|flat), taxRate, taxAmount, total, currency, acceptedAt, acceptedByName, acceptedByEmail, clientFeedback, templateId. Expanded status enum to 6 states: draft | generated | sent | viewed | accepted | rejected.
+- **New model: ProposalTemplate** — id, businessId (null=global), name, type (8 industry types), industry, description, sections (JSON), defaultItems (JSON), isActive.
+- **New model: ProposalItem** — id, quoteRequestId, description, quantity, unitPrice, total, sortOrder. Pricing table line items.
+- **New model: ProposalFollowup** — id, quoteRequestId, businessId, type (email|whatsapp|call|note), content, scheduledFor, completedAt, createdBy, createdByName.
+- Ran `bun run db:push` (success).
+
+### API Routes Created/Modified (9 endpoints)
+- `GET/POST /api/proposal-templates` — list global + business templates / create business-specific.
+- `PATCH/DELETE /api/proposal-templates/[id]` — update/delete (business-specific only).
+- `GET/POST /api/quotes/[id]/items` — list/add pricing line items with auto-total recalculation.
+- `DELETE /api/quotes/[id]/items?itemId=...` — remove a line item.
+- `GET/POST /api/quotes/[id]/followups` — list/add follow-ups.
+- `POST /api/quotes/[id]/accept` — record client acceptance/rejection (creates notification on accept).
+- `POST /api/quotes/[id]/copy` — duplicate a proposal with its items.
+- `POST /api/quotes/[id]/email-draft` — generate AI email draft with subject + body + mailto link.
+- `PATCH /api/quotes/[id]` — update status, discount, taxRate, pricing fields.
+- Modified `GET /api/quotes` — returns pricing fields (subtotal, discount, tax, total, acceptedAt).
+- Modified `POST /api/quotes` — accepts templateId, auto-seeds defaultItems from template.
+
+### UI Changes
+- **Quotes view enhanced** (subagent P3-QUOTES):
+  1. Template selector in the New Proposal form (8 global industry templates + business-specific).
+  2. Pricing table tab: line items table (description, qty, unit price, total), add/delete items, discount (percentage/flat toggle), tax rate, auto-calculated subtotal/tax/total.
+  3. Status flow bar: Draft → Generated → Sent → Viewed → Accepted/Rejected (clickable to change status).
+  4. Client acceptance section: accepted by name/email, client feedback, Mark as Accepted/Rejected buttons.
+  5. Follow-ups tab: add follow-ups (email/whatsapp/call/note), list with type badges, AI Email Draft generator (editable subject + body + mailto link).
+  6. Copy proposal button on history cards.
+  7. Updated status badges with 6 states (Draft=muted, Generated=primary, Sent=amber, Viewed=cyan, Accepted=emerald, Rejected=destructive).
+- All existing functionality preserved (AI generation, PDF export, markdown rendering, copy text, download .md).
+
+### Seed Data
+- 8 global proposal templates: Website Development, Custom Software Development, AI Chatbot Setup, Cloud Hosting & VPS Support, Cybersecurity Audit, Website Maintenance, ISP Software Setup, Construction ERP Setup.
+- Each template has default sections + default pricing items.
+
+## Verification
+- Lint: clean (0 errors).
+- Template selector: shows 8 industry templates ✓.
+- Pricing table: $3,200 subtotal from 5 template items, discount/tax/total auto-calculated ✓.
+- Status flow bar: 6 states rendered ✓.
+- Client acceptance: Mark as Accepted/Rejected buttons present ✓.
+- Follow-ups tab: type selector + AI email draft generator present ✓.
+- Dev server stable.
+
+## Stage Summary
+- Phase 3 complete: Advanced proposal generator with templates, pricing tables, discount/tax, 6-state status flow, client acceptance, follow-ups, AI email drafts, copy proposal.
+- 3 new models, 9 new API endpoints, enhanced Quotes view.
+- All existing functionality preserved.
+- ALL 14 advanced modules from the original spec are now implemented.
+
+---
+Task ID: NEXT-PHASE-PLAN
+Agent: main
+Task: Recommended Next Development Phase plan.
+
+## Recommended Next Development Phase
+
+With all 14 advanced modules from the original spec now implemented, the platform is feature-complete for an MVP+ SaaS. The next development phase should focus on **production readiness, real integrations, and scale**. Here is the prioritized roadmap:
+
+### Priority 1: Super Admin Management (Multi-Tenant Control)
+**Why**: Danets TecPro needs internal tooling to manage all businesses, plans, and system health.
+- Separate super-admin authentication scope (super_admin role in BusinessUser or a new SuperAdmin model).
+- Super admin dashboard: list all businesses, suspend/activate, view AI usage per business, manage subscription plans.
+- Global template management (proposal templates, prompt templates, KB templates).
+- System logs: failed jobs, integration errors, AI usage across all businesses.
+- Impersonation: securely log in as a business user for support.
+- **Estimated effort**: 2-3 days.
+
+### Priority 2: Real Payment Gateway Integration
+**Why**: Monetization — the subscription structure exists but needs real payment processing.
+- Integrate Paystack and/or Flutterwave for subscription payments.
+- Webhook endpoints to receive payment confirmations.
+- Auto-activate/suspend subscriptions based on payment status.
+- Invoice generation + receipt emails.
+- Trial period enforcement (7-day trial with automatic downgrade).
+- **Estimated effort**: 2-3 days.
+
+### Priority 3: Automation Execution Engine
+**Why**: Automation workflows are defined but not auto-executed yet.
+- Build a trigger engine that fires on: new lead, new ticket, proposal accepted, lead status change, etc.
+- Action executor: create tasks, send in-app notifications, generate AI follow-up drafts, add lead notes, change lead status.
+- Cron/scheduled job for "no response after X days" triggers.
+- Run logging: every workflow run recorded in AutomationRun with status + data.
+- **Important**: No auto-sending of external messages (WhatsApp/email) — only internal actions + drafts.
+- **Estimated effort**: 2-3 days.
+
+### Priority 4: Email Notification Delivery
+**Why**: Notifications exist in-app but aren't delivered via email.
+- Integrate SMTP or SendGrid for email delivery.
+- Notification preferences: respect user's email opt-in per notification type.
+- Email templates: new lead, urgent ticket, proposal accepted, usage warning, subscription expiry.
+- Unsubscribe links in emails.
+- **Estimated effort**: 1-2 days.
+
+### Priority 5: Document File Upload Extraction
+**Why**: Document assistant requires manual text paste; direct file upload is a key UX improvement.
+- Install `pdf-parse` for PDF text extraction.
+- Install `mammoth` for DOCX text extraction.
+- File upload route: accept multipart file, extract text, create Document + chunks automatically.
+- File size limits + validation.
+- **Estimated effort**: 1 day.
+
+### Priority 6: WhatsApp Business API Integration
+**Why**: WhatsApp automation is prepared but not sending real messages.
+- Wire Meta Cloud API / Twilio / Termii provider for actual message sending.
+- Template message approval flow (Meta requires pre-approved templates).
+- Opt-in tracking: only message contacts who opted in.
+- Incoming message webhook handler.
+- **Important**: All outbound messages require admin approval in the first version.
+- **Estimated effort**: 3-4 days.
+
+### Priority 7: PWA / Mobile Optimization
+**Why**: Business owners need on-the-go access to leads, tickets, and notifications.
+- Convert to PWA with service worker + manifest.
+- Push notifications for new leads/tickets.
+- Mobile-optimized layouts (the dashboard is already responsive but needs mobile-native feel).
+- Offline data caching for recent leads/tickets.
+- **Estimated effort**: 2-3 days.
+
+### Priority 8: Advanced AI Features
+**Why**: Competitive differentiation with smarter AI.
+- Vector embeddings for KB + document search (replace TF-IDF with pgvector or external vector DB).
+- Multi-language support for the chatbot widget.
+- Sentiment trend analysis across conversations.
+- AI-powered lead scoring (automatic leadScore based on conversation analysis).
+- Conversation deflection suggestions (suggest KB articles to add based on unanswered questions).
+- **Estimated effort**: 3-5 days.
+
+### Priority 9: White-Label / Multi-Brand Support
+**Why**: Allow resellers to white-label the platform.
+- Custom domain mapping per business.
+- White-label branding (logo, colors, domain).
+- Reseller portal for managing multiple businesses.
+- **Estimated effort**: 3-4 days.
+
+### Priority 10: Compliance & Security Hardening
+**Why**: Production-grade security for real customer data.
+- GDPR data export + deletion endpoints.
+- Rate limiting per subscription plan (not just global).
+- Input sanitization audit across all endpoints.
+- CSRF protection for state-changing operations.
+- Regular security audit log review tools.
+- Data encryption at rest for sensitive fields (API keys, PII).
+- **Estimated effort**: 2-3 days.
+
+## Recommended Build Order
+1. Super Admin Management (P1) — enables internal operations
+2. Real Payment Gateway (P2) — enables monetization
+3. Automation Execution Engine (P3) — delivers on the automation promise
+4. Email Notification Delivery (P4) — completes the notification loop
+5. Document File Upload (P5) — quick UX win
+6. WhatsApp API Integration (P6) — high-value but complex
+7. PWA (P7) — mobile access
+8. Advanced AI (P8) — competitive edge
+9. White-Label (P9) — reseller revenue
+10. Security Hardening (P10) — production compliance

@@ -381,13 +381,84 @@ model QuoteRequest {
   budgetRange  String?
   timeline     String?
   notes        String?
-  status       String   @default("draft") // draft | generated | sent
+  status       String   @default("draft") // draft | generated | sent | viewed | accepted | rejected
+  // Pricing fields
+  subtotal     Float    @default(0)
+  discount     Float    @default(0) // percentage or flat amount
+  discountType String   @default("percentage") // percentage | flat
+  taxRate      Float    @default(0) // percentage
+  taxAmount    Float    @default(0)
+  total        Float    @default(0)
+  currency     String   @default("USD")
+  // Acceptance
+  acceptedAt   DateTime?
+  acceptedByName String?
+  acceptedByEmail String?
+  clientFeedback String?
+  // Template
+  templateId   String?
+  // Timestamps
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  business Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  documents GeneratedDocument[]
+  business   Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  documents  GeneratedDocument[]
+  items      ProposalItem[]
+  followups  ProposalFollowup[]
 
+  @@index([businessId])
+  @@index([status])
+}
+
+// ─── Proposal Templates & Items ───────────────────────────────────
+
+model ProposalTemplate {
+  id          String   @id @default(cuid())
+  businessId  String?  // null = global template, set = business-specific
+  name        String
+  type        String   // website_dev | software_dev | ai_chatbot | cloud_hosting | cybersecurity_audit | website_maintenance | isp_software | construction_erp | custom
+  industry    String?
+  description String?
+  sections    String   @default("[]") // JSON array of section names
+  defaultItems String  @default("[]") // JSON array of { description, quantity, unitPrice }
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([businessId])
+  @@index([type])
+}
+
+model ProposalItem {
+  id            String   @id @default(cuid())
+  quoteRequestId String
+  description   String
+  quantity      Int      @default(1)
+  unitPrice     Float    @default(0)
+  total         Float    @default(0)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  quoteRequest QuoteRequest @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
+
+  @@index([quoteRequestId])
+}
+
+model ProposalFollowup {
+  id            String   @id @default(cuid())
+  quoteRequestId String
+  businessId    String
+  type          String   // email | whatsapp | call | note
+  content       String
+  scheduledFor  DateTime?
+  completedAt   DateTime?
+  createdBy     String?
+  createdByName String?
+  createdAt     DateTime @default(now())
+
+  quoteRequest QuoteRequest @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
+
+  @@index([quoteRequestId])
   @@index([businessId])
 }
 

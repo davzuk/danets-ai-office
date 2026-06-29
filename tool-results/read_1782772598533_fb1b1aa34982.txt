@@ -1,0 +1,1065 @@
+     1→"use client";
+     2→
+     3→import { useCallback, useEffect, useState } from "react";
+     4→import ReactMarkdown from "react-markdown";
+     5→import { toast } from "sonner";
+     6→import { format } from "date-fns";
+     7→import {
+     8→  AlertCircle,
+     9→  Building2,
+    10→  Calendar,
+    11→  Clock,
+    12→  Copy,
+    13→  Download,
+    14→  FileDown,
+    15→  FileText,
+    16→  Loader2,
+    17→  Plus,
+    18→  RefreshCw,
+    19→  Sparkles,
+    20→  Tag,
+    21→  Trash2,
+    22→  User,
+    23→  Wand2,
+    24→} from "lucide-react";
+    25→
+    26→import { Button } from "@/components/ui/button";
+    27→import { pdf } from "@react-pdf/renderer";
+    28→import { ProposalPDF } from "@/components/dashboard/views/proposal-pdf";
+    29→import {
+    30→  Card,
+    31→  CardContent,
+    32→  CardDescription,
+    33→  CardFooter,
+    34→  CardHeader,
+    35→  CardTitle,
+    36→} from "@/components/ui/card";
+    37→import { Input } from "@/components/ui/input";
+    38→import { Textarea } from "@/components/ui/textarea";
+    39→import { Label } from "@/components/ui/label";
+    40→import { Badge } from "@/components/ui/badge";
+    41→import { Separator } from "@/components/ui/separator";
+    42→import { Skeleton } from "@/components/ui/skeleton";
+    43→import {
+    44→  Dialog,
+    45→  DialogContent,
+    46→  DialogDescription,
+    47→  DialogFooter,
+    48→  DialogHeader,
+    49→  DialogTitle,
+    50→} from "@/components/ui/dialog";
+    51→import {
+    52→  AlertDialog,
+    53→  AlertDialogAction,
+    54→  AlertDialogCancel,
+    55→  AlertDialogContent,
+    56→  AlertDialogDescription,
+    57→  AlertDialogFooter,
+    58→  AlertDialogHeader,
+    59→  AlertDialogTitle,
+    60→} from "@/components/ui/alert-dialog";
+    61→import {
+    62→  Select,
+    63→  SelectContent,
+    64→  SelectItem,
+    65→  SelectTrigger,
+    66→  SelectValue,
+    67→} from "@/components/ui/select";
+    68→import { cn } from "@/lib/utils";
+    69→
+    70→// ─── Types ────────────────────────────────────────────────────────────────
+    71→
+    72→interface User {
+    73→  userId: string;
+    74→  businessId: string;
+    75→  name: string;
+    76→  email: string;
+    77→  role: string;
+    78→  businessName: string;
+    79→}
+    80→
+    81→interface GeneratedDocument {
+    82→  id: string;
+    83→  title: string;
+    84→  content: string;
+    85→  type: string;
+    86→  createdAt: string;
+    87→  quoteRequestId?: string;
+    88→}
+    89→
+    90→interface TokenInfo {
+    91→  promptTokens: number;
+    92→  completionTokens: number;
+    93→  totalTokens: number;
+    94→}
+    95→
+    96→interface QuoteListItem {
+    97→  id: string;
+    98→  clientName: string;
+    99→  companyName: string | null;
+   100→  service: string;
+   101→  requirements: string;
+   102→  budgetRange: string | null;
+   103→  timeline: string | null;
+   104→  notes: string | null;
+   105→  status: string;
+   106→  createdAt: string;
+   107→  latestDocument: GeneratedDocument | null;
+   108→}
+   109→
+   110→// ─── Static options ───────────────────────────────────────────────────────
+   111→
+   112→const SERVICES = [
+   113→  "AI Chatbot Implementation",
+   114→  "Website Development",
+   115→  "Cloud Migration",
+   116→  "Cybersecurity Audit",
+   117→  "DevOps Automation",
+   118→  "Mobile App Development",
+   119→  "SEO & Digital Marketing",
+   120→  "AI Automation Workflow",
+   121→  "Data Analytics Dashboard",
+   122→  "Other",
+   123→];
+   124→
+   125→const BUDGET_RANGES = [
+   126→  "Less than $1k",
+   127→  "$1k – $5k",
+   128→  "$5k – $25k",
+   129→  "$25k – $100k",
+   130→  "$100k+",
+   131→  "Not sure",
+   132→];
+   133→
+   134→const TIMELINES = [
+   135→  "Less than 2 weeks",
+   136→  "2 – 4 weeks",
+   137→  "1 – 3 months",
+   138→  "3 – 6 months",
+   139→  "6+ months",
+   140→];
+   141→
+   142→// ─── Main component ───────────────────────────────────────────────────────
+   143→
+   144→export function QuotesView({ user }: { user: User }) {
+   145→  const [activeClientName, setActiveClientName] = useState("");
+   146→  // Form state
+   147→  const [clientName, setClientName] = useState("");
+   148→  const [companyName, setCompanyName] = useState("");
+   149→  const [serviceChoice, setServiceChoice] = useState<string>("");
+   150→  const [serviceOther, setServiceOther] = useState("");
+   151→  const [requirements, setRequirements] = useState("");
+   152→  const [budgetRange, setBudgetRange] = useState<string>("");
+   153→  const [timeline, setTimeline] = useState<string>("");
+   154→  const [notes, setNotes] = useState("");
+   155→
+   156→  const [submitting, setSubmitting] = useState(false);
+   157→
+   158→  // History state
+   159→  const [quotes, setQuotes] = useState<QuoteListItem[]>([]);
+   160→  const [loadingList, setLoadingList] = useState(true);
+   161→
+   162→  // Active dialog (view proposal) state
+   163→  const [viewOpen, setViewOpen] = useState(false);
+   164→  const [activeDoc, setActiveDoc] = useState<GeneratedDocument | null>(null);
+   165→  const [activeLoading, setActiveLoading] = useState(false);
+   166→  const [activeTokens, setActiveTokens] = useState<TokenInfo | null>(null);
+   167→  const [activeMeta, setActiveMeta] = useState<{
+   168→    clientName?: string;
+   169→    createdAt?: string;
+   170→  } | null>(null);
+   171→
+   172→  // Regenerate state (track which quote is regenerating)
+   173→  const [regenId, setRegenId] = useState<string | null>(null);
+   174→
+   175→  // Delete confirmation state
+   176→  const [deleteTarget, setDeleteTarget] = useState<QuoteListItem | null>(null);
+   177→  const [deleting, setDeleting] = useState(false);
+   178→
+   179→  // ─── Load history ───────────────────────────────────────────────────
+   180→
+   181→  const loadQuotes = useCallback(async () => {
+   182→    setLoadingList(true);
+   183→    try {
+   184→      const res = await fetch("/api/quotes");
+   185→      const data = await res.json();
+   186→      if (data.error) throw new Error(data.error);
+   187→      setQuotes(Array.isArray(data.quotes) ? data.quotes : []);
+   188→    } catch (e: any) {
+   189→      toast.error(e?.message || "Failed to load proposals");
+   190→    } finally {
+   191→      setLoadingList(false);
+   192→    }
+   193→  }, []);
+   194→
+   195→  useEffect(() => {
+   196→    loadQuotes();
+   197→  }, [loadQuotes]);
+   198→
+   199→  // ─── Submit form ────────────────────────────────────────────────────
+   200→
+   201→  const resolvedService =
+   202→    serviceChoice === "Other" ? serviceOther.trim() : serviceChoice;
+   203→
+   204→  function resetForm() {
+   205→    setClientName("");
+   206→    setCompanyName("");
+   207→    setServiceChoice("");
+   208→    setServiceOther("");
+   209→    setRequirements("");
+   210→    setBudgetRange("");
+   211→    setTimeline("");
+   212→    setNotes("");
+   213→  }
+   214→
+   215→  async function handleSubmit(e: React.FormEvent) {
+   216→    e.preventDefault();
+   217→
+   218→    if (!clientName.trim()) {
+   219→      toast.error("Client name is required");
+   220→      return;
+   221→    }
+   222→    if (!resolvedService) {
+   223→      toast.error("Please choose or type the service needed");
+   224→      return;
+   225→    }
+   226→    if (!requirements.trim()) {
+   227→      toast.error("Requirements are required");
+   228→      return;
+   229→    }
+   230→
+   231→    setSubmitting(true);
+   232→    try {
+   233→      const res = await fetch("/api/quotes", {
+   234→        method: "POST",
+   235→        headers: { "Content-Type": "application/json" },
+   236→        body: JSON.stringify({
+   237→          clientName: clientName.trim(),
+   238→          companyName: companyName.trim() || null,
+   239→          service: resolvedService,
+   240→          requirements: requirements.trim(),
+   241→          budgetRange: budgetRange || null,
+   242→          timeline: timeline || null,
+   243→          notes: notes.trim() || null,
+   244→        }),
+   245→      });
+   246→      const data = await res.json();
+   247→      if (data.error) throw new Error(data.error);
+   248→
+   249→      toast.success("Proposal generated");
+   250→
+   251→      // Show the result in the Dialog
+   252→      setActiveDoc({
+   253→        id: data.document.id,
+   254→        title: data.document.title,
+   255→        content: data.document.content,
+   256→        type: data.document.type,
+   257→        createdAt: data.document.createdAt,
+   258→      });
+   259→      setActiveTokens(data.tokens ?? null);
+   260→      setActiveMeta({
+   261→        clientName: data.quote?.clientName,
+   262→        createdAt: data.quote?.createdAt,
+   263→      });
+   264→      setActiveLoading(false);
+   265→      setViewOpen(true);
+   266→
+   267→      resetForm();
+   268→    } catch (e: any) {
+   269→      toast.error(e?.message || "Failed to generate proposal");
+   270→    } finally {
+   271→      setSubmitting(false);
+   272→      // Always refresh the list — a draft may have been created even on
+   273→      // partial AI failure.
+   274→      loadQuotes();
+   275→    }
+   276→  }
+   277→
+   278→  // ─── Open quote detail ─────────────────────────────────────────────
+   279→
+   280→  async function openQuote(quote: QuoteListItem) {
+   281→    setViewOpen(true);
+   282→    setActiveDoc(null);
+   283→    setActiveTokens(null);
+   284→    setActiveLoading(true);
+   285→    setActiveMeta({
+   286→      clientName: quote.clientName,
+   287→      createdAt: quote.createdAt,
+   288→    });
+   289→    try {
+   290→      const res = await fetch(`/api/quotes/${quote.id}`);
+   291→      const data = await res.json();
+   292→      if (data.error) throw new Error(data.error);
+   293→      const latest = data.quote?.documents?.[0];
+   294→      if (latest) {
+   295→        setActiveDoc(latest);
+   296→      } else {
+   297→        toast.error("No generated proposal found. Try Regenerate.");
+   298→        setViewOpen(false);
+   299→      }
+   300→    } catch (e: any) {
+   301→      toast.error(e?.message || "Failed to load proposal");
+   302→      setViewOpen(false);
+   303→    } finally {
+   304→      setActiveLoading(false);
+   305→    }
+   306→  }
+   307→
+   308→  // ─── Regenerate ─────────────────────────────────────────────────────
+   309→
+   310→  async function regenerate(quote: QuoteListItem, e?: React.MouseEvent) {
+   311→    e?.stopPropagation();
+   312→    setRegenId(quote.id);
+   313→    try {
+   314→      const res = await fetch("/api/quotes/generate", {
+   315→        method: "POST",
+   316→        headers: { "Content-Type": "application/json" },
+   317→        body: JSON.stringify({ quoteRequestId: quote.id }),
+   318→      });
+   319→      const data = await res.json();
+   320→      if (data.error) throw new Error(data.error);
+   321→
+   322→      toast.success("Proposal regenerated");
+   323→      setActiveDoc(data.document);
+   324→      setActiveTokens(data.tokens ?? null);
+   325→      setActiveMeta({
+   326→        clientName: quote.clientName,
+   327→        createdAt: data.document.createdAt,
+   328→      });
+   329→      setViewOpen(true);
+   330→      loadQuotes();
+   331→    } catch (err: any) {
+   332→      toast.error(err?.message || "Failed to regenerate proposal");
+   333→    } finally {
+   334→      setRegenId(null);
+   335→    }
+   336→  }
+   337→
+   338→  // ─── Delete ─────────────────────────────────────────────────────────
+   339→
+   340→  async function confirmDelete() {
+   341→    if (!deleteTarget) return;
+   342→    setDeleting(true);
+   343→    try {
+   344→      const res = await fetch(`/api/quotes/${deleteTarget.id}`, {
+   345→        method: "DELETE",
+   346→      });
+   347→      const data = await res.json();
+   348→      if (data.error) throw new Error(data.error);
+   349→      toast.success("Quote deleted");
+   350→      setQuotes((prev) => prev.filter((q) => q.id !== deleteTarget.id));
+   351→    } catch (e: any) {
+   352→      toast.error(e?.message || "Failed to delete quote");
+   353→    } finally {
+   354→      setDeleting(false);
+   355→      setDeleteTarget(null);
+   356→    }
+   357→  }
+   358→
+   359→  // ─── Copy & Download ────────────────────────────────────────────────
+   360→
+   361→  async function copyText(text: string) {
+   362→    try {
+   363→      await navigator.clipboard.writeText(text);
+   364→      toast.success("Proposal copied to clipboard");
+   365→    } catch {
+   366→      toast.error("Failed to copy. Try selecting manually.");
+   367→    }
+   368→  }
+   369→
+   370→  function downloadMarkdown(doc: GeneratedDocument) {
+   371→    const blob = new Blob([doc.content], { type: "text/markdown;charset=utf-8" });
+   372→    const url = URL.createObjectURL(blob);
+   373→    const a = document.createElement("a");
+   374→    const safeName =
+   375→      (doc.title || "proposal").replace(/[^a-z0-9-_]+/gi, "-").toLowerCase();
+   376→    a.href = url;
+   377→    a.download = `${safeName}.md`;
+   378→    document.body.appendChild(a);
+   379→    a.click();
+   380→    document.body.removeChild(a);
+   381→    URL.revokeObjectURL(url);
+   382→    toast.success("Downloaded markdown file");
+   383→  }
+   384→
+   385→  async function downloadPDF(doc: GeneratedDocument) {
+   386→    const toastId = "pdf-download";
+   387→    try {
+   388→      toast.loading("Generating PDF…", { id: toastId });
+   389→      const client = activeMeta?.clientName || "Client";
+   390→      const dateStr = activeMeta?.createdAt
+   391→        ? format(new Date(activeMeta.createdAt), "dd MMM yyyy")
+   392→        : format(new Date(), "dd MMM yyyy");
+   393→      const element = (
+   394→        <ProposalPDF
+   395→          title={doc.title}
+   396→          clientName={client}
+   397→          businessName={user.businessName}
+   398→          date={dateStr}
+   399→          content={doc.content}
+   400→        />
+   401→      );
+   402→      const blob = await pdf(element).toBlob();
+   403→      const url = URL.createObjectURL(blob);
+   404→      const a = document.createElement("a");
+   405→      const safeName =
+   406→        (doc.title || "proposal").replace(/[^a-z0-9-_]+/gi, "-").toLowerCase();
+   407→      a.href = url;
+   408→      a.download = `${safeName}.pdf`;
+   409→      document.body.appendChild(a);
+   410→      a.click();
+   411→      document.body.removeChild(a);
+   412→      URL.revokeObjectURL(url);
+   413→      toast.success("PDF downloaded successfully", { id: toastId });
+   414→    } catch (e: any) {
+   415→      toast.error("PDF generation failed: " + (e?.message || ""), { id: toastId });
+   416→    }
+   417→  }
+   418→
+   419→  // ─── Render ─────────────────────────────────────────────────────────
+   420→
+   421→  return (
+   422→    <div className="space-y-4">
+   423→      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+   424→        <div>
+   425→          <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+   426→            <FileText className="h-6 w-6 text-primary" />
+   427→            Quotes & Proposals
+   428→          </h1>
+   429→          <p className="text-sm text-muted-foreground mt-1">
+   430→            Turn a short brief into a polished, client-ready proposal in seconds.
+   431→          </p>
+   432→        </div>
+   433→        <Badge className="bg-accent/20 text-accent-foreground border-transparent">
+   434→          <Sparkles className="h-3 w-3 mr-1" />
+   435→          AI-powered
+   436→        </Badge>
+   437→      </div>
+   438→
+   439→      <div className="grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-4 lg:gap-6">
+   440→        {/* LEFT — New Proposal form */}
+   441→        <Card className="self-start lg:sticky lg:top-[4.5rem] shadow-sm">
+   442→          <CardHeader>
+   443→            <CardTitle className="flex items-center gap-2 text-lg">
+   444→              <Wand2 className="h-5 w-5 text-primary" />
+   445→              New Proposal
+   446→            </CardTitle>
+   447→            <CardDescription>
+   448→              Fill in the brief — the AI drafts a structured proposal instantly.
+   449→            </CardDescription>
+   450→          </CardHeader>
+   451→          <form onSubmit={handleSubmit}>
+   452→            <CardContent className="space-y-4">
+   453→              {/* Client name */}
+   454→              <div className="space-y-1.5">
+   455→                <Label htmlFor="clientName">
+   456→                  Client name <span className="text-destructive">*</span>
+   457→                </Label>
+   458→                <div className="relative">
+   459→                  <User className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   460→                  <Input
+   461→                    id="clientName"
+   462→                    value={clientName}
+   463→                    onChange={(e) => setClientName(e.target.value)}
+   464→                    placeholder="e.g. Ada Okonkwo"
+   465→                    className="pl-8"
+   466→                    disabled={submitting}
+   467→                    maxLength={120}
+   468→                  />
+   469→                </div>
+   470→              </div>
+   471→
+   472→              {/* Company name */}
+   473→              <div className="space-y-1.5">
+   474→                <Label htmlFor="companyName">Company name</Label>
+   475→                <div className="relative">
+   476→                  <Building2 className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   477→                  <Input
+   478→                    id="companyName"
+   479→                    value={companyName}
+   480→                    onChange={(e) => setCompanyName(e.target.value)}
+   481→                    placeholder="Optional"
+   482→                    className="pl-8"
+   483→                    disabled={submitting}
+   484→                    maxLength={120}
+   485→                  />
+   486→                </div>
+   487→              </div>
+   488→
+   489→              {/* Service needed */}
+   490→              <div className="space-y-1.5">
+   491→                <Label htmlFor="service">
+   492→                  Service needed <span className="text-destructive">*</span>
+   493→                </Label>
+   494→                <Select
+   495→                  value={serviceChoice}
+   496→                  onValueChange={setServiceChoice}
+   497→                  disabled={submitting}
+   498→                >
+   499→                  <SelectTrigger id="service" className="w-full">
+   500→                    <SelectValue placeholder="Choose a service" />
+   501→                  </SelectTrigger>
+   502→                  <SelectContent>
+   503→                    {SERVICES.map((s) => (
+   504→                      <SelectItem key={s} value={s}>
+   505→                        {s}
+   506→                      </SelectItem>
+   507→                    ))}
+   508→                  </SelectContent>
+   509→                </Select>
+   510→                {serviceChoice === "Other" && (
+   511→                  <Input
+   512→                    value={serviceOther}
+   513→                    onChange={(e) => setServiceOther(e.target.value)}
+   514→                    placeholder="Type the service needed"
+   515→                    disabled={submitting}
+   516→                    maxLength={200}
+   517→                    className="mt-2"
+   518→                  />
+   519→                )}
+   520→              </div>
+   521→
+   522→              {/* Requirements */}
+   523→              <div className="space-y-1.5">
+   524→                <Label htmlFor="requirements">
+   525→                  Requirements <span className="text-destructive">*</span>
+   526→                </Label>
+   527→                <Textarea
+   528→                  id="requirements"
+   529→                  value={requirements}
+   530→                  onChange={(e) => setRequirements(e.target.value)}
+   531→                  placeholder="Describe what the client needs, goals, scope, integrations…"
+   532→                  rows={4}
+   533→                  disabled={submitting}
+   534→                  maxLength={4000}
+   535→                />
+   536→                <p className="text-[11px] text-muted-foreground">
+   537→                  {requirements.length}/4000
+   538→                </p>
+   539→              </div>
+   540→
+   541→              {/* Budget range */}
+   542→              <div className="space-y-1.5">
+   543→                <Label>Budget range</Label>
+   544→                <Select
+   545→                  value={budgetRange}
+   546→                  onValueChange={setBudgetRange}
+   547→                  disabled={submitting}
+   548→                >
+   549→                  <SelectTrigger className="w-full">
+   550→                    <SelectValue placeholder="Select budget" />
+   551→                  </SelectTrigger>
+   552→                  <SelectContent>
+   553→                    {BUDGET_RANGES.map((b) => (
+   554→                      <SelectItem key={b} value={b}>
+   555→                        {b}
+   556→                      </SelectItem>
+   557→                    ))}
+   558→                  </SelectContent>
+   559→                </Select>
+   560→              </div>
+   561→
+   562→              {/* Timeline */}
+   563→              <div className="space-y-1.5">
+   564→                <Label>Timeline</Label>
+   565→                <Select
+   566→                  value={timeline}
+   567→                  onValueChange={setTimeline}
+   568→                  disabled={submitting}
+   569→                >
+   570→                  <SelectTrigger className="w-full">
+   571→                    <SelectValue placeholder="Select timeline" />
+   572→                  </SelectTrigger>
+   573→                  <SelectContent>
+   574→                    {TIMELINES.map((t) => (
+   575→                      <SelectItem key={t} value={t}>
+   576→                        {t}
+   577→                      </SelectItem>
+   578→                    ))}
+   579→                  </SelectContent>
+   580→                </Select>
+   581→              </div>
+   582→
+   583→              {/* Notes */}
+   584→              <div className="space-y-1.5">
+   585→                <Label htmlFor="notes">Notes</Label>
+   586→                <Textarea
+   587→                  id="notes"
+   588→                  value={notes}
+   589→                  onChange={(e) => setNotes(e.target.value)}
+   590→                  placeholder="Anything else we should know — preferences, constraints, contacts…"
+   591→                  rows={3}
+   592→                  disabled={submitting}
+   593→                  maxLength={4000}
+   594→                />
+   595→              </div>
+   596→            </CardContent>
+   597→
+   598→            <CardFooter className="flex-col items-stretch gap-2">
+   599→              <Button
+   600→                type="submit"
+   601→                disabled={submitting}
+   602→                className="w-full brand-gradient text-white hover:opacity-95"
+   603→              >
+   604→                {submitting ? (
+   605→                  <>
+   606→                    <Loader2 className="h-4 w-4 animate-spin" />
+   607→                    AI is drafting your proposal…
+   608→                  </>
+   609→                ) : (
+   610→                  <>
+   611→                    <Sparkles className="h-4 w-4" />
+   612→                    Generate Proposal
+   613→                  </>
+   614→                )}
+   615→              </Button>
+   616→              <p className="text-[11px] text-center text-muted-foreground">
+   617→                Generates a markdown proposal with 7 standard sections.
+   618→              </p>
+   619→            </CardFooter>
+   620→          </form>
+   621→        </Card>
+   622→
+   623→        {/* RIGHT — History list */}
+   624→        <div className="space-y-3 min-w-0">
+   625→          <div className="flex items-center justify-between">
+   626→            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+   627→              Generated Proposals
+   628→            </h2>
+   629→            <Button
+   630→              variant="ghost"
+   631→              size="sm"
+   632→              onClick={loadQuotes}
+   633→              disabled={loadingList}
+   634→            >
+   635→              <RefreshCw
+   636→                className={cn("h-3.5 w-3.5", loadingList && "animate-spin")}
+   637→              />
+   638→              Refresh
+   639→            </Button>
+   640→          </div>
+   641→
+   642→          {loadingList ? (
+   643→            <HistorySkeleton />
+   644→          ) : quotes.length === 0 ? (
+   645→            <EmptyHistory />
+   646→          ) : (
+   647→            <div className="max-h-[75vh] overflow-y-auto scroll-thin pr-1 space-y-3">
+   648→              {quotes.map((q) => (
+   649→                <QuoteCard
+   650→                  key={q.id}
+   651→                  quote={q}
+   652→                  onOpen={() => openQuote(q)}
+   653→                  onRegenerate={(e) => regenerate(q, e)}
+   654→                  onDelete={() => setDeleteTarget(q)}
+   655→                  regenerating={regenId === q.id}
+   656→                />
+   657→              ))}
+   658→            </div>
+   659→          )}
+   660→        </div>
+   661→      </div>
+   662→
+   663→      {/* Proposal Dialog */}
+   664→      <Dialog open={viewOpen} onOpenChange={setViewOpen}>
+   665→        <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col">
+   666→          <DialogHeader>
+   667→            <DialogTitle className="flex items-center gap-2 pr-6">
+   668→              <FileText className="h-5 w-5 text-primary shrink-0" />
+   669→              <span className="truncate">{activeDoc?.title || "Proposal"}</span>
+   670→            </DialogTitle>
+   671→            <DialogDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+   672→              {activeMeta?.clientName && (
+   673→                <span className="inline-flex items-center gap-1">
+   674→                  <User className="h-3 w-3" />
+   675→                  {activeMeta.clientName}
+   676→                </span>
+   677→              )}
+   678→              {activeMeta?.createdAt && (
+   679→                <span className="inline-flex items-center gap-1">
+   680→                  <Calendar className="h-3 w-3" />
+   681→                  {format(new Date(activeMeta.createdAt), "dd MMM yyyy, HH:mm")}
+   682→                </span>
+   683→              )}
+   684→              {activeTokens && (
+   685→                <span className="inline-flex items-center gap-1 text-accent-foreground/80">
+   686→                  <Sparkles className="h-3 w-3" />
+   687→                  {activeTokens.totalTokens.toLocaleString()} tokens
+   688→                </span>
+   689→              )}
+   690→            </DialogDescription>
+   691→          </DialogHeader>
+   692→
+   693→          <Separator />
+   694→
+   695→          <div className="flex-1 overflow-y-auto scroll-thin pr-1 -mr-1">
+   696→            {activeLoading ? (
+   697→              <div className="space-y-3">
+   698→                <Skeleton className="h-5 w-1/3" />
+   699→                <Skeleton className="h-4 w-full" />
+   700→                <Skeleton className="h-4 w-5/6" />
+   701→                <Skeleton className="h-5 w-1/4 mt-4" />
+   702→                <Skeleton className="h-4 w-full" />
+   703→                <Skeleton className="h-4 w-3/4" />
+   704→                <Skeleton className="h-5 w-1/3 mt-4" />
+   705→                <Skeleton className="h-4 w-full" />
+   706→                <Skeleton className="h-4 w-2/3" />
+   707→              </div>
+   708→            ) : activeDoc ? (
+   709→              <div className="prose-danets text-sm leading-relaxed">
+   710→                <ReactMarkdown
+   711→                  components={{
+   712→                    h1: (props) => (
+   713→                      <h1
+   714→                        className="text-xl font-bold mt-4 mb-2 text-foreground"
+   715→                        {...props}
+   716→                      />
+   717→                    ),
+   718→                    h2: (props) => (
+   719→                      <h2
+   720→                        className="text-base font-semibold mt-5 mb-2 text-primary border-b border-border/60 pb-1"
+   721→                        {...props}
+   722→                      />
+   723→                    ),
+   724→                    h3: (props) => (
+   725→                      <h3
+   726→                        className="text-sm font-semibold mt-3 mb-1 text-foreground"
+   727→                        {...props}
+   728→                      />
+   729→                    ),
+   730→                    h4: (props) => (
+   731→                      <h4
+   732→                        className="text-sm font-medium mt-2 mb-1 text-foreground"
+   733→                        {...props}
+   734→                      />
+   735→                    ),
+   736→                    p: (props) => (
+   737→                      <p className="text-sm leading-relaxed my-2" {...props} />
+   738→                    ),
+   739→                    ul: (props) => (
+   740→                      <ul className="list-disc pl-5 my-2 space-y-0.5" {...props} />
+   741→                    ),
+   742→                    ol: (props) => (
+   743→                      <ol
+   744→                        className="list-decimal pl-5 my-2 space-y-0.5"
+   745→                        {...props}
+   746→                      />
+   747→                    ),
+   748→                    li: (props) => (
+   749→                      <li className="text-sm leading-relaxed" {...props} />
+   750→                    ),
+   751→                    strong: (props) => (
+   752→                      <strong className="font-semibold text-foreground" {...props} />
+   753→                    ),
+   754→                    em: (props) => <em className="italic" {...props} />,
+   755→                    code: (props) => (
+   756→                      <code
+   757→                        className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono"
+   758→                        {...props}
+   759→                      />
+   760→                    ),
+   761→                    pre: (props) => (
+   762→                      <pre
+   763→                        className="bg-muted p-3 rounded-md text-xs overflow-x-auto my-2"
+   764→                        {...props}
+   765→                      />
+   766→                    ),
+   767→                    blockquote: (props) => (
+   768→                      <blockquote
+   769→                        className="border-l-2 border-primary pl-3 italic text-muted-foreground my-2"
+   770→                        {...props}
+   771→                      />
+   772→                    ),
+   773→                    hr: () => <hr className="my-3 border-border" />,
+   774→                    a: (props) => (
+   775→                      <a
+   776→                        className="text-primary underline underline-offset-2"
+   777→                        target="_blank"
+   778→                        rel="noopener noreferrer"
+   779→                        {...props}
+   780→                      />
+   781→                    ),
+   782→                  }}
+   783→                >
+   784→                  {activeDoc.content}
+   785→                </ReactMarkdown>
+   786→              </div>
+   787→            ) : (
+   788→              <div className="text-center text-sm text-muted-foreground py-8">
+   789→                No content available.
+   790→              </div>
+   791→            )}
+   792→          </div>
+   793→
+   794→          <Separator />
+   795→
+   796→          <DialogFooter className="flex-col items-stretch sm:items-stretch gap-2 sm:flex-col">
+   797→            <div className="flex flex-wrap gap-2">
+   798→              <Button
+   799→                type="button"
+   800→                onClick={() => activeDoc && copyText(activeDoc.content)}
+   801→                disabled={!activeDoc}
+   802→                className="brand-gradient text-white hover:opacity-95 flex-1"
+   803→              >
+   804→                <Copy className="h-4 w-4" />
+   805→                Copy proposal text
+   806→              </Button>
+   807→              <Button
+   808→                type="button"
+   809→                variant="outline"
+   810→                onClick={() => activeDoc && downloadPDF(activeDoc)}
+   811→                disabled={!activeDoc}
+   812→                className="border-primary/30 text-primary hover:bg-primary/5"
+   813→              >
+   814→                <FileDown className="h-4 w-4" />
+   815→                Download PDF
+   816→              </Button>
+   817→              <Button
+   818→                type="button"
+   819→                variant="outline"
+   820→                onClick={() => activeDoc && downloadMarkdown(activeDoc)}
+   821→                disabled={!activeDoc}
+   822→              >
+   823→                <Download className="h-4 w-4" />
+   824→                <span className="hidden sm:inline">.md</span>
+   825→              </Button>
+   826→            </div>
+   827→            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+   828→              <span className="inline-flex items-center gap-1">
+   829→                <Sparkles className="h-3 w-3 text-accent-foreground" />
+   830→                Export as PDF or Markdown — ready to send to your client.
+   831→              </span>
+   832→              {activeTokens && (
+   833→                <span className="inline-flex items-center gap-1">
+   834→                  <Sparkles className="h-3 w-3 text-accent-foreground" />
+   835→                  Token cost:{" "}
+   836→                  <span className="font-medium text-foreground">
+   837→                    {activeTokens.totalTokens.toLocaleString()}
+   838→                  </span>{" "}
+   839→                  total ·{" "}
+   840→                  <span className="font-medium text-foreground">
+   841→                    ${(activeTokens.totalTokens / 1000 * 0.002).toFixed(4)}
+   842→                  </span>{" "}
+   843→                  est.
+   844→                </span>
+   845→              )}
+   846→            </div>
+   847→          </DialogFooter>
+   848→        </DialogContent>
+   849→      </Dialog>
+   850→
+   851→      {/* Delete confirmation */}
+   852→      <AlertDialog
+   853→        open={!!deleteTarget}
+   854→        onOpenChange={(o) => !o && setDeleteTarget(null)}
+   855→      >
+   856→        <AlertDialogContent>
+   857→          <AlertDialogHeader>
+   858→            <AlertDialogTitle>Delete this quote?</AlertDialogTitle>
+   859→            <AlertDialogDescription>
+   860→              This will permanently delete the quote request for{" "}
+   861→              <span className="font-medium text-foreground">
+   862→                {deleteTarget?.clientName}
+   863→              </span>{" "}
+   864→              and all its generated proposals. This cannot be undone.
+   865→            </AlertDialogDescription>
+   866→          </AlertDialogHeader>
+   867→          <AlertDialogFooter>
+   868→            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+   869→            <AlertDialogAction
+   870→              onClick={confirmDelete}
+   871→              disabled={deleting}
+   872→              className="bg-destructive text-white hover:bg-destructive/90"
+   873→            >
+   874→              {deleting ? (
+   875→                <>
+   876→                  <Loader2 className="h-4 w-4 animate-spin" />
+   877→                  Deleting…
+   878→                </>
+   879→              ) : (
+   880→                <>
+   881→                  <Trash2 className="h-4 w-4" />
+   882→                  Delete
+   883→                </>
+   884→              )}
+   885→            </AlertDialogAction>
+   886→          </AlertDialogFooter>
+   887→        </AlertDialogContent>
+   888→      </AlertDialog>
+   889→    </div>
+   890→  );
+   891→}
+   892→
+   893→// ─── Subcomponents ────────────────────────────────────────────────────────
+   894→
+   895→function QuoteCard({
+   896→  quote,
+   897→  onOpen,
+   898→  onRegenerate,
+   899→  onDelete,
+   900→  regenerating,
+   901→}: {
+   902→  quote: QuoteListItem;
+   903→  onOpen: () => void;
+   904→  onRegenerate: (e: React.MouseEvent) => void;
+   905→  onDelete: () => void;
+   906→  regenerating: boolean;
+   907→}) {
+   908→  return (
+   909→    <Card
+   910→      className="cursor-pointer hover:shadow-md hover:border-primary/40 transition-all py-4 group"
+   911→      onClick={onOpen}
+   912→    >
+   913→      <CardHeader className="pb-2">
+   914→        <div className="flex items-start justify-between gap-2">
+   915→          <div className="min-w-0">
+   916→            <CardTitle className="text-base truncate flex items-center gap-2">
+   917→              <span className="truncate">{quote.clientName}</span>
+   918→            </CardTitle>
+   919→            <CardDescription className="flex items-center gap-1.5 mt-0.5 truncate">
+   920→              <Building2 className="h-3 w-3 shrink-0" />
+   921→              <span className="truncate">
+   922→                {quote.companyName || "No company"}
+   923→              </span>
+   924→            </CardDescription>
+   925→          </div>
+   926→          <StatusBadge status={quote.status} />
+   927→        </div>
+   928→      </CardHeader>
+   929→      <CardContent className="space-y-2 pb-2">
+   930→        <div className="flex items-center gap-1.5 text-sm">
+   931→          <Tag className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+   932→          <span className="truncate font-medium">{quote.service}</span>
+   933→        </div>
+   934→        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+   935→          <span className="inline-flex items-center gap-1">
+   936→            <Calendar className="h-3 w-3" />
+   937→            {format(new Date(quote.createdAt), "dd MMM yyyy")}
+   938→          </span>
+   939→          {quote.timeline && (
+   940→            <span className="inline-flex items-center gap-1">
+   941→              <Clock className="h-3 w-3" />
+   942→              {quote.timeline}
+   943→            </span>
+   944→          )}
+   945→          {quote.budgetRange && (
+   946→            <span className="inline-flex items-center gap-1">
+   947→              <span className="font-medium">{quote.budgetRange}</span>
+   948→            </span>
+   949→          )}
+   950→        </div>
+   951→        <p className="text-xs text-muted-foreground line-clamp-2">
+   952→          {quote.requirements}
+   953→        </p>
+   954→      </CardContent>
+   955→      <CardFooter className="pt-1 flex items-center gap-2">
+   956→        <Button
+   957→          size="sm"
+   958→          variant="outline"
+   959→          onClick={onRegenerate}
+   960→          disabled={regenerating}
+   961→          className="h-7"
+   962→        >
+   963→          {regenerating ? (
+   964→            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+   965→          ) : (
+   966→            <RefreshCw className="h-3.5 w-3.5" />
+   967→          )}
+   968→          Regenerate
+   969→        </Button>
+   970→        <Button
+   971→          size="sm"
+   972→          variant="ghost"
+   973→          onClick={(e) => {
+   974→            e.stopPropagation();
+   975→            onDelete();
+   976→          }}
+   977→          className="h-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+   978→        >
+   979→          <Trash2 className="h-3.5 w-3.5" />
+   980→          Delete
+   981→        </Button>
+   982→        <Button
+   983→          size="sm"
+   984→          variant="ghost"
+   985→          onClick={(e) => {
+   986→            e.stopPropagation();
+   987→            onOpen();
+   988→          }}
+   989→          className="h-7 ml-auto text-primary"
+   990→        >
+   991→          View
+   992→        </Button>
+   993→      </CardFooter>
+   994→    </Card>
+   995→  );
+   996→}
+   997→
+   998→function StatusBadge({ status }: { status: string }) {
+   999→  if (status === "generated") {
+  1000→    return (
+  1001→      <Badge className="bg-primary/15 text-primary border-primary/30 hover:bg-primary/15">
+  1002→        <Sparkles className="h-3 w-3" />
+  1003→        Generated
+  1004→      </Badge>
+  1005→    );
+  1006→  }
+  1007→  if (status === "sent") {
+  1008→    return (
+  1009→      <Badge className="bg-accent/30 text-accent-foreground border-accent/40 hover:bg-accent/30">
+  1010→        Sent
+  1011→      </Badge>
+  1012→    );
+  1013→  }
+  1014→  return (
+  1015→    <Badge variant="outline" className="text-muted-foreground">
+  1016→      <AlertCircle className="h-3 w-3" />
+  1017→      Draft
+  1018→    </Badge>
+  1019→  );
+  1020→}
+  1021→
+  1022→function EmptyHistory() {
+  1023→  return (
+  1024→    <Card className="border-dashed py-10">
+  1025→      <CardContent className="flex flex-col items-center justify-center text-center gap-3 py-6">
+  1026→        <div className="h-14 w-14 rounded-full bg-accent/20 flex items-center justify-center">
+  1027→          <FileText className="h-7 w-7 text-accent-foreground" />
+  1028→        </div>
+  1029→        <div>
+  1030→          <p className="font-medium">No proposals yet</p>
+  1031→          <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+  1032→            Fill in the brief on the left and click{" "}
+  1033→            <span className="font-medium text-foreground">Generate Proposal</span>{" "}
+  1034→            to create your first AI-drafted proposal.
+  1035→          </p>
+  1036→        </div>
+  1037→        <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-2">
+  1038→          <Plus className="h-3.5 w-3.5" />
+  1039→          Try it now — it takes seconds.
+  1040→        </div>
+  1041→      </CardContent>
+  1042→    </Card>
+  1043→  );
+  1044→}
+  1045→
+  1046→function HistorySkeleton() {
+  1047→  return (
+  1048→    <div className="space-y-3">
+  1049→      {[0, 1, 2].map((i) => (
+  1050→        <Card key={i} className="py-4">
+  1051→          <CardHeader className="pb-2">
+  1052→            <Skeleton className="h-5 w-1/2" />
+  1053→            <Skeleton className="h-3 w-1/3 mt-1" />
+  1054→          </CardHeader>
+  1055→          <CardContent className="space-y-2">
+  1056→            <Skeleton className="h-4 w-2/3" />
+  1057→            <Skeleton className="h-3 w-1/2" />
+  1058→            <Skeleton className="h-3 w-full" />
+  1059→          </CardContent>
+  1060→        </Card>
+  1061→      ))}
+  1062→    </div>
+  1063→  );
+  1064→}
+  1065→

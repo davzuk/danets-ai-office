@@ -12,6 +12,7 @@ const createSchema = z.object({
   budgetRange: z.string().max(60).optional().nullable(),
   timeline: z.string().max(60).optional().nullable(),
   notes: z.string().max(4000).optional().nullable(),
+  templateId: z.string().max(100).optional().nullable(),
 });
 
 const DEFAULT_QUOTE_PROMPT =
@@ -116,6 +117,15 @@ export async function GET() {
         timeline: q.timeline,
         notes: q.notes,
         status: q.status,
+        // Pricing fields
+        subtotal: q.subtotal,
+        discount: q.discount,
+        discountType: q.discountType,
+        taxRate: q.taxRate,
+        taxAmount: q.taxAmount,
+        total: q.total,
+        currency: q.currency,
+        acceptedAt: q.acceptedAt?.toISOString() || null,
         createdAt: q.createdAt,
         latestDocument: q.documents[0]
           ? {
@@ -150,7 +160,32 @@ export async function POST(req: NextRequest) {
       budgetRange,
       timeline,
       notes,
+      templateId,
     } = parsed.data;
+
+    // If a template was selected, optionally seed its default line items.
+    let templateItems: Array<{
+      description: string;
+      quantity: number;
+      unitPrice: number;
+    }> = [];
+    if (templateId) {
+      const tpl = await db.proposalTemplate.findFirst({
+        where: {
+          id: templateId,
+          OR: [{ businessId: null }, { businessId: user.businessId }],
+        },
+        select: { defaultItems: true },
+      });
+      if (tpl) {
+        try {
+          const parsed = JSON.parse(tpl.defaultItems || "[]");
+          if (Array.isArray(parsed)) templateItems = parsed;
+        } catch {
+          templateItems = [];
+        }
+      }
+    }
 
     const quote = await db.quoteRequest.create({
       data: {
@@ -163,8 +198,33 @@ export async function POST(req: NextRequest) {
         timeline: timeline?.trim() || null,
         notes: notes?.trim() || null,
         status: "draft",
+        templateId: templateId || null,
+        items: templateItems.length
+          ? {
+              create: templateItems.map((it, idx) => ({
+                description: it.description,
+                quantity: it.quantity ?? 1,
+                unitPrice: it.unitPrice ?? 0,
+                total: (it.quantity ?? 1) * (it.unitPrice ?? 0),
+                sortOrder: idx,
+              })),
+            }
+          : undefined,
       },
     });
+
+    // Recompute totals once items (if any) are in place.
+    if (templateItems.length) {
+      const items = await db.proposalItem.findMany({
+        where: { quoteRequestId: quote.id },
+        select: { total: true },
+      });
+      const subtotal = items.reduce((s, i) => s + i.total, 0);
+      await db.quoteRequest.update({
+        where: { id: quote.id },
+        data: { subtotal, total: subtotal },
+      });
+    }
 
     // Immediately generate the proposal via AI. If this fails the quote is
     // still saved as a draft so the user can retry via /api/quotes/generate.
