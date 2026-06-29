@@ -103,10 +103,14 @@ export function OverviewView({
             backgroundSize: "42px 42px",
           }}
         />
-        <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 animate-fade-up">
           <div>
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white/90 mb-3 backdrop-blur-sm">
+              <Sparkles size={12} />
+              AI Automation Dashboard
+            </div>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
-              Welcome back, {user.name.split(" ")[0]} 👋
+              Welcome back, <span className="text-white/90">{user.name.split(" ")[0]}</span> 👋
             </h1>
             <p className="text-white/85 mt-1.5 max-w-xl">
               Here&apos;s what&apos;s happening at {user.businessName} today.
@@ -417,7 +421,7 @@ function StatCard({
 }) {
   return (
     <Card
-      className="hover:shadow-md transition-shadow cursor-pointer group"
+      className="hover:shadow-lg hover:-translate-y-0.5 transition-all cursor-pointer group relative overflow-hidden"
       onClick={onClick}
     >
       <CardContent className="p-5">
@@ -426,11 +430,11 @@ function StatCard({
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
               {label}
             </p>
-            <div className="text-2xl font-bold">{value}</div>
+            <div className="text-2xl font-bold tabular-nums">{value}</div>
             {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
           </div>
           <div
-            className={`h-10 w-10 rounded-xl flex items-center justify-center ${
+            className={`h-10 w-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 ${
               accent ? "bg-accent/20" : "bg-primary/10"
             } ${tint}`}
           >
@@ -438,6 +442,7 @@ function StatCard({
           </div>
         </div>
       </CardContent>
+      <div className={`absolute bottom-0 left-0 right-0 h-0.5 ${accent ? "bg-accent" : "bg-primary"} scale-x-0 group-hover:scale-x-100 transition-transform origin-left`} />
     </Card>
   );
 }

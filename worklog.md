@@ -423,3 +423,115 @@ MVP was complete and stable from prior rounds. All 10 modules functional. This r
 - **Conversation analytics** on overview (top questions, deflection rate) — proposed but not yet built.
 - **Webhook/email notifications** on new leads.
 - Dev server persistence across cron rounds: the `start-dev.sh` launcher works but if the process dies, the next cron round should check and restart it.
+
+---
+Task ID: F2
+Agent: subagent
+Task: Add Bulk Import feature to existing Knowledge Base view (UI only — backend `POST /api/knowledge-base/import` already existed).
+
+Files modified:
+- `src/components/dashboard/views/knowledge-view.tsx` — added Import button + Import dialog. No other files touched.
+
+Work Log:
+- Added `Upload` icon to the existing `lucide-react` import block.
+- Added module-level constants near `EMPTY_FORM`:
+  - `type ImportFormat = "auto" | "colon" | "blocks" | "json"`.
+  - `IMPORT_HELP` — per-format description text shown under the textarea.
+  - `IMPORT_PLACEHOLDERS` — per-format placeholder shown inside the textarea.
+  - `IMPORT_EXAMPLES` — per-format example shown in a bordered "Example:" callout.
+- Added new component state (alongside existing dialog state):
+  - `importDialogOpen`, `importFormat` (default `"auto"`), `importCategory` (default `"Imported"`), `importText`, `importing`.
+- Added `openImport()` — resets all import state to defaults and opens the dialog.
+- Added `handleImport()`:
+  - Guards against empty text with a sonner error toast.
+  - POSTs `{ format, category, text }` to relative path `/api/knowledge-base/import` (category falls back to `"Imported"` if blank).
+  - Parses `{ imported, skipped }` from the response (defensive `Number(... ?? 0)`).
+  - On success: sonner success toast `Imported N item[s]` with skipped-count description, closes the dialog, and refreshes KB list + stats in parallel via `Promise.all([loadItems({ silent: true }), loadStats()])`.
+  - On error: sonner error toast with the API error message (or generic fallback).
+  - `importing` flag toggled in `finally` for the button's `Loader2` spinner.
+- Added an "Import" button (`variant="outline"`, Upload icon) between the existing Refresh icon-button and the "New item" button in the KB view header.
+- Added the Import Dialog (`sm:max-w-2xl`, matching the existing edit dialog):
+  - Format selector: shadcn `Tabs` with 4 triggers — Auto-detect / Title: content / Blocks / JSON array. TabsList uses `flex-wrap h-auto` so it degrades gracefully on narrow viewports.
+  - Category Input (optional) with `list="kb-category-options"` — reuses the existing `<datalist>` of known categories so the user can pick from existing ones. Defaults to "Imported".
+  - Large Textarea: `rows={10}`, `min-h-[220px]`, monospace, per-format placeholder.
+  - Live char counter + per-format help text below the textarea.
+  - Bordered "Example:" callout with `whitespace-pre-wrap break-words` to handle multi-line JSON/blocks examples.
+  - DialogFooter with Cancel (outline) + Import items (primary, with `Loader2` spinner while `importing`, disabled when text is empty or importing).
+- On dialog close (X / Cancel / Esc / backdrop), `importText` is cleared so reopening shows a fresh state.
+- Help text / examples follow the spec exactly:
+  - Colon: `Refund Policy: We offer 30-day refunds on all plans.`
+  - Blocks: "First line is the title, following lines are content, separated by blank lines." (with a real 2-block example in the callout).
+  - JSON: `[{"title":"...","content":"...","category":"..."}]`.
+
+Conventions honoured:
+- Only `src/components/dashboard/views/knowledge-view.tsx` was modified. No API or other component files touched.
+- Used existing shadcn/ui components already imported in the file: `Dialog`, `Tabs`/`TabsList`/`TabsTrigger`, `Textarea`, `Input`, `Button`, `Label`.
+- `sonner` for all toasts. Relative fetch path (`/api/knowledge-base/import`).
+- Brand color classes only (`bg-primary`, `bg-accent`, `bg-muted`, etc.) — no raw indigo/blue.
+- All existing functionality (list, search, filters, create/edit, delete, preview, stats, refresh) preserved unchanged.
+
+Verification:
+- `bunx tsc --noEmit` — zero errors in `src/components/dashboard/views/knowledge-view.tsx` (the only TS errors reported are pre-existing in `examples/` and `skills/` and unrelated to this task).
+- `bunx eslint src/components/dashboard/views/knowledge-view.tsx` — clean (0 warnings, 0 errors).
+
+Stage Summary:
+- Bulk Import UI is complete and type-safe. Admins can now paste content in 3 formats (or auto-detect) and create up to 50 KB items in one action via the existing `/api/knowledge-base/import` endpoint. List and stats refresh automatically after a successful import.
+
+---
+Task ID: CRON-2
+Agent: main (webDevReview cron round 2)
+Task: QA assessment, notification bell, PDF export, KB bulk import, styling polish.
+
+## Current Project Status
+MVP stable from prior rounds. All 10 modules + dark mode + quick replies + CSV export working. This round focused on high-value new features and styling polish.
+
+## Work Log
+
+### QA Findings
+- Logged in, tested all views — stable, no errors.
+- Tested quote generation flow end-to-end: AI generates full proposal (778 tokens) with all 7 sections.
+- VLM assessment of overview: 7/10 polish, suggested hover states, depth, spacing improvements.
+- No bugs found — app is stable.
+
+### New Features
+1. **Notification Bell** (topbar):
+   - Created `/api/notifications` endpoint (unread counts: new leads, active sessions, draft quotes + recent leads list).
+   - Created `notification-bell.tsx` component: bell icon with unread badge (destructive pill), dropdown panel with summary chips (leads/sessions/quotes), recent leads list with quality badges + time-ago, "View all" footer. Polls every 30s. Click-outside-to-close. Wiggle animation when unread.
+   - Wired into app-shell topbar (between theme toggle and user info).
+   - Added `wiggle`, `shimmer`, `fade-up` keyframe animations to globals.css.
+
+2. **Proposal PDF Export**:
+   - Installed `@react-pdf/renderer`.
+   - Created `proposal-pdf.tsx` — branded PDF document with letterhead (Danets AI Automation header), markdown parser (h1/h2/h3/p/ul/ol/quote), styled sections, footer. 2-page A4 layout.
+   - Added `downloadPDF()` function in quotes-view.tsx using `pdf(element).toBlob()` → browser download.
+   - Replaced "PDF export coming soon" placeholder with "Download PDF" button (primary-tinted) alongside .md download.
+   - Verified: generates valid 2-page PDF (6.8KB) — confirmed in ~/Downloads.
+
+3. **KB Bulk Import** (subagent Task F2):
+   - Created `/api/knowledge-base/import` endpoint — supports 3 formats: "Title: content" (colon), blank-line-separated blocks, JSON array. Auto-detect mode. Caps at 50 items.
+   - Added Import button + dialog to knowledge-view.tsx: format tabs, category input, large textarea, help examples, live char counter, refresh-on-success.
+   - Verified: imported 2 items via API + 3 via UI — all appeared in KB list.
+
+### Styling Polish
+- Overview hero: added "AI Automation Dashboard" badge with Sparkles icon, fade-up animation, backdrop-blur.
+- Stat cards: hover lift (`hover:-translate-y-0.5`), shadow-lg on hover, icon scale-110 on hover, bottom accent bar that scales in on hover, tabular-nums for values.
+- Added CSS animations: `wiggle` (bell), `shimmer` (skeletons), `fade-up` (content entrance).
+
+## Verification
+- Lint: clean (0 errors).
+- Notification bell: shows "9 unread", dropdown renders correctly with summary + lead list (VLM confirmed clean).
+- PDF export: generates valid 2-page PDF document (verified file on disk).
+- KB import: API returns `{imported: N}`, items appear in list after refresh.
+- Dev server stable throughout.
+
+## Stage Summary
+- 3 new features shipped (notification bell, PDF export, KB bulk import).
+- Styling polished with animations, hover states, hero badge.
+- All features verified working via agent-browser + direct API tests.
+
+## Unresolved / Next Steps
+- Toast visibility for PDF download could be improved (loading→success transition may be too fast to see).
+- Embeddings-based KB retrieval (still keyword scoring).
+- Conversation analytics on overview (top questions, deflection rate).
+- Email notifications on new leads.
+- The VLM suggested more typography/spacing refinements (7/10 → target 9/10) — could add Inter font, more consistent spacing system.

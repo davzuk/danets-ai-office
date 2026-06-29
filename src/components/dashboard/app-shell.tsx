@@ -19,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { DanetsLogo } from "@/components/dashboard/shared/danets-logo";
 import { ThemeToggle } from "@/components/dashboard/shared/theme-toggle";
+import { NotificationBell } from "@/components/dashboard/shared/notification-bell";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -162,6 +163,7 @@ export function AppShell({
               Agent online
             </div>
             <ThemeToggle />
+            <NotificationBell businessId={user.businessId} onNavigate={onNavigate} />
             <div className="text-right hidden sm:block">
               <div className="text-xs font-medium leading-tight">{user.name}</div>
               <div className="text-[11px] text-muted-foreground leading-tight">

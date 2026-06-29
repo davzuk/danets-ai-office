@@ -24,6 +24,8 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { pdf } from "@react-pdf/renderer";
+import { ProposalPDF } from "@/components/dashboard/views/proposal-pdf";
 import {
   Card,
   CardContent,
@@ -139,7 +141,8 @@ const TIMELINES = [
 
 // ─── Main component ───────────────────────────────────────────────────────
 
-export function QuotesView({ user: _user }: { user: User }) {
+export function QuotesView({ user }: { user: User }) {
+  const [activeClientName, setActiveClientName] = useState("");
   // Form state
   const [clientName, setClientName] = useState("");
   const [companyName, setCompanyName] = useState("");
@@ -377,6 +380,40 @@ export function QuotesView({ user: _user }: { user: User }) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     toast.success("Downloaded markdown file");
+  }
+
+  async function downloadPDF(doc: GeneratedDocument) {
+    const toastId = "pdf-download";
+    try {
+      toast.loading("Generating PDF…", { id: toastId });
+      const client = activeMeta?.clientName || "Client";
+      const dateStr = activeMeta?.createdAt
+        ? format(new Date(activeMeta.createdAt), "dd MMM yyyy")
+        : format(new Date(), "dd MMM yyyy");
+      const element = (
+        <ProposalPDF
+          title={doc.title}
+          clientName={client}
+          businessName={user.businessName}
+          date={dateStr}
+          content={doc.content}
+        />
+      );
+      const blob = await pdf(element).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const safeName =
+        (doc.title || "proposal").replace(/[^a-z0-9-_]+/gi, "-").toLowerCase();
+      a.href = url;
+      a.download = `${safeName}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("PDF downloaded successfully", { id: toastId });
+    } catch (e: any) {
+      toast.error("PDF generation failed: " + (e?.message || ""), { id: toastId });
+    }
   }
 
   // ─── Render ─────────────────────────────────────────────────────────
@@ -770,17 +807,27 @@ export function QuotesView({ user: _user }: { user: User }) {
               <Button
                 type="button"
                 variant="outline"
+                onClick={() => activeDoc && downloadPDF(activeDoc)}
+                disabled={!activeDoc}
+                className="border-primary/30 text-primary hover:bg-primary/5"
+              >
+                <FileDown className="h-4 w-4" />
+                Download PDF
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
                 onClick={() => activeDoc && downloadMarkdown(activeDoc)}
                 disabled={!activeDoc}
               >
                 <Download className="h-4 w-4" />
-                Download .md
+                <span className="hidden sm:inline">.md</span>
               </Button>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
               <span className="inline-flex items-center gap-1">
-                <FileDown className="h-3 w-3" />
-                PDF export coming soon.
+                <Sparkles className="h-3 w-3 text-accent-foreground" />
+                Export as PDF or Markdown — ready to send to your client.
               </span>
               {activeTokens && (
                 <span className="inline-flex items-center gap-1">

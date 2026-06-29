@@ -18,6 +18,7 @@ import {
   Eye,
   ExternalLink,
   Link as LinkIcon,
+  Upload,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -236,6 +237,33 @@ const EMPTY_FORM: FormState = {
   status: "active",
 };
 
+type ImportFormat = "auto" | "colon" | "blocks" | "json";
+
+const IMPORT_HELP: Record<ImportFormat, string> = {
+  auto: "We'll detect the format automatically — JSON array first, then blank-line-separated blocks, then 'Title: content' lines.",
+  colon: "One item per line, 'Title: content' separated by the first colon.",
+  blocks:
+    "First line is the title, following lines are content, separated by blank lines.",
+  json: 'A JSON array of objects: [{"title":"...","content":"...","category":"..."}]. Category is optional.',
+};
+
+const IMPORT_PLACEHOLDERS: Record<ImportFormat, string> = {
+  auto: "Paste content here…",
+  colon:
+    "Refund Policy: We offer 30-day refunds on all plans.\nSupport Hours: Mon–Fri, 9am–6pm.",
+  blocks:
+    "Refund Policy\nWe offer 30-day refunds on all plans.\n\nSupport Hours\nMon–Fri, 9am–6pm.",
+  json: '[\n  {"title":"Refund Policy","content":"We offer 30-day refunds on all plans."},\n  {"title":"Support Hours","content":"Mon–Fri, 9am–6pm.","category":"Support"}\n]',
+};
+
+const IMPORT_EXAMPLES: Record<ImportFormat, string> = {
+  auto: "Any of the formats below — we'll pick the right one.",
+  colon: "Refund Policy: We offer 30-day refunds on all plans.",
+  blocks:
+    "Refund Policy\nWe offer 30-day refunds on all plans.\n\nSupport Hours\nMon–Fri, 9am–6pm.",
+  json: '[{"title":"...","content":"...","category":"..."}]',
+};
+
 export function KnowledgeView({ user: _user }: { user: KbUser }) {
   const [items, setItems] = useState<KbItem[]>([]);
   const [stats, setStats] = useState<KbStats | null>(null);
@@ -260,6 +288,13 @@ export function KnowledgeView({ user: _user }: { user: KbUser }) {
 
   // Preview dialog
   const [previewItem, setPreviewItem] = useState<KbItem | null>(null);
+
+  // Bulk import dialog state
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importFormat, setImportFormat] = useState<ImportFormat>("auto");
+  const [importCategory, setImportCategory] = useState("Imported");
+  const [importText, setImportText] = useState("");
+  const [importing, setImporting] = useState(false);
 
   const fetchInFlight = useRef(false);
 
@@ -443,6 +478,54 @@ export function KnowledgeView({ user: _user }: { user: KbUser }) {
     toast.success("Refreshed");
   }
 
+  function openImport() {
+    setImportFormat("auto");
+    setImportCategory("Imported");
+    setImportText("");
+    setImportDialogOpen(true);
+  }
+
+  async function handleImport() {
+    if (!importText.trim()) {
+      toast.error("Paste some content to import");
+      return;
+    }
+    setImporting(true);
+    try {
+      const res = await fetch("/api/knowledge-base/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          format: importFormat,
+          category: importCategory.trim() || "Imported",
+          text: importText,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || "Import failed");
+      }
+      const imported: number = Number(data?.imported ?? 0);
+      const skipped: number = Number(data?.skipped ?? 0);
+      toast.success(
+        `Imported ${imported} item${imported === 1 ? "" : "s"}`,
+        {
+          description:
+            skipped > 0
+              ? `${skipped} skipped · knowledge base updated.`
+              : "Your knowledge base has been updated.",
+        }
+      );
+      setImportDialogOpen(false);
+      setImportText("");
+      await Promise.all([loadItems({ silent: true }), loadStats()]);
+    } catch (e: any) {
+      toast.error(e?.message || "Could not import items");
+    } finally {
+      setImporting(false);
+    }
+  }
+
   const visibleCount = items.length;
 
   return (
@@ -474,6 +557,14 @@ export function KnowledgeView({ user: _user }: { user: KbUser }) {
             <RefreshCw
               className={cn("size-4", refreshing && "animate-spin")}
             />
+          </Button>
+          <Button
+            variant="outline"
+            onClick={openImport}
+            className="gap-2"
+          >
+            <Upload className="size-4" />
+            Import
           </Button>
           <Button onClick={openCreate} className="gap-2">
             <Plus className="size-4" />
@@ -788,6 +879,101 @@ export function KnowledgeView({ user: _user }: { user: KbUser }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Bulk import dialog */}
+      <Dialog
+        open={importDialogOpen}
+        onOpenChange={(o) => {
+          setImportDialogOpen(o);
+          if (!o) setImportText("");
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Bulk import knowledge items</DialogTitle>
+            <DialogDescription>
+              Paste content in one of the supported formats to create many
+              items at once. Up to 50 items per import.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4">
+            <div className="grid gap-1.5">
+              <Label>Format</Label>
+              <Tabs
+                value={importFormat}
+                onValueChange={(v) =>
+                  setImportFormat(v as ImportFormat)
+                }
+              >
+                <TabsList className="flex-wrap h-auto">
+                  <TabsTrigger value="auto">Auto-detect</TabsTrigger>
+                  <TabsTrigger value="colon">Title: content</TabsTrigger>
+                  <TabsTrigger value="blocks">Blocks</TabsTrigger>
+                  <TabsTrigger value="json">JSON array</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label htmlFor="kb-import-category">
+                Category (optional)
+              </Label>
+              <Input
+                id="kb-import-category"
+                list="kb-category-options"
+                value={importCategory}
+                onChange={(e) => setImportCategory(e.target.value)}
+                placeholder="Imported"
+              />
+              <p className="text-xs text-muted-foreground">
+                Applied to every imported item. JSON items can override this
+                with their own <code>category</code> field.
+              </p>
+            </div>
+
+            <div className="grid gap-1.5">
+              <Label htmlFor="kb-import-text">Content</Label>
+              <Textarea
+                id="kb-import-text"
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+                rows={10}
+                className="min-h-[220px] resize-y font-mono text-[13px] leading-relaxed"
+                placeholder={IMPORT_PLACEHOLDERS[importFormat]}
+              />
+              <p className="text-xs text-muted-foreground">
+                {importText.length} characters · {IMPORT_HELP[importFormat]}
+              </p>
+            </div>
+
+            <div className="rounded-lg border bg-muted/40 p-3 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Example: </span>
+              <code className="font-mono whitespace-pre-wrap break-words">
+                {IMPORT_EXAMPLES[importFormat]}
+              </code>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setImportDialogOpen(false)}
+              disabled={importing}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleImport}
+              disabled={importing || !importText.trim()}
+              className="gap-2"
+            >
+              {importing && <Loader2 className="size-4 animate-spin" />}
+              Import items
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Preview dialog */}
       <Dialog
