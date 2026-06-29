@@ -13,6 +13,7 @@ import {
   Trash2,
   Phone,
   Mail,
+  MessageCircle,
   MessageSquare,
   Inbox,
   Filter,
@@ -60,6 +61,9 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -232,6 +236,122 @@ function initials(name: string): string {
     .join("");
 }
 
+// ─── Quick reply helpers ─────────────────────────────────────────
+// All helpers are pure (except the action wrappers that call window + toast).
+// `LeadContact` is satisfied by both `Lead` (table row) and `LeadDetail` (dialog).
+type LeadContact = Pick<
+  Lead,
+  "name" | "email" | "phone" | "service" | "message"
+>;
+
+/** Contextual WhatsApp message body (NOT URL-encoded). */
+function buildWhatsAppMessage(lead: LeadContact): string {
+  const name = lead.name?.trim() || "there";
+  const service = lead.service?.trim();
+  const msg = lead.message?.trim();
+
+  const greeting = service
+    ? `Hi ${name}, thanks for your interest in ${service}. How can we help?`
+    : `Hi ${name}, thanks for reaching out. How can we help?`;
+
+  if (!msg) return greeting;
+  const snippet = msg.slice(0, 280);
+  const ellipsis = msg.length > 280 ? "…" : "";
+  return `${greeting}\n\nYou mentioned: "${snippet}${ellipsis}"`;
+}
+
+/** Contextual email subject line. */
+function buildEmailSubject(lead: LeadContact): string {
+  const service = lead.service?.trim();
+  return service
+    ? `Re: Your inquiry about ${service}`
+    : "Re: Your inquiry";
+}
+
+/** Contextual email body (plain text, line-break separated). */
+function buildEmailBody(lead: LeadContact): string {
+  const name = lead.name?.trim() || "there";
+  const service = lead.service?.trim();
+  const msg = lead.message?.trim();
+
+  const lines: string[] = [];
+  lines.push(`Hi ${name},`);
+  lines.push("");
+  lines.push(
+    service
+      ? `Thanks for reaching out about ${service}. We'd love to help!`
+      : `Thanks for reaching out. We'd love to help!`
+  );
+  if (msg) {
+    const snippet = msg.slice(0, 400);
+    const ellipsis = msg.length > 400 ? "…" : "";
+    lines.push("");
+    lines.push("You mentioned:");
+    lines.push(`"${snippet}${ellipsis}"`);
+  }
+  lines.push("");
+  lines.push(
+    "We'll get back to you shortly. Feel free to reply with any additional details."
+  );
+  lines.push("");
+  lines.push("Best regards,");
+  lines.push("The Danets Team");
+  return lines.join("\n");
+}
+
+/** Strip a phone string to digits-only for wa.me (intl format, no `+`). */
+function normalizePhoneForWhatsApp(phone: string): string {
+  return phone.replace(/\D/g, "");
+}
+
+/** Build a `https://wa.me/<digits>?text=<encoded>` URL, or null if no usable phone. */
+function buildWhatsAppUrl(lead: LeadContact): string | null {
+  if (!lead.phone) return null;
+  const digits = normalizePhoneForWhatsApp(lead.phone);
+  if (!digits) return null;
+  return `https://wa.me/${digits}?text=${encodeURIComponent(
+    buildWhatsAppMessage(lead)
+  )}`;
+}
+
+/** Build a `mailto:` URL with prefilled subject + body, or null if no email. */
+function buildMailtoUrl(lead: LeadContact): string | null {
+  if (!lead.email) return null;
+  const subject = encodeURIComponent(buildEmailSubject(lead));
+  const body = encodeURIComponent(buildEmailBody(lead));
+  return `mailto:${lead.email}?subject=${subject}&body=${body}`;
+}
+
+/** Build a `tel:` URL (whitespace stripped), or null if no phone. */
+function buildTelUrl(lead: LeadContact): string | null {
+  if (!lead.phone) return null;
+  return `tel:${lead.phone.replace(/\s+/g, "")}`;
+}
+
+/** Open WhatsApp in a new tab with a prefilled message + sonner feedback. */
+function openWhatsApp(lead: LeadContact) {
+  const url = buildWhatsAppUrl(lead);
+  if (!url) return;
+  window.open(url, "_blank", "noopener,noreferrer");
+  toast.success("Opening WhatsApp…");
+}
+
+/** Trigger the OS mailto handler with prefilled subject/body + sonner feedback. */
+function openEmail(lead: LeadContact) {
+  const url = buildMailtoUrl(lead);
+  if (!url) return;
+  window.location.href = url;
+  toast.success("Opening email client…");
+}
+
+/** Trigger the OS tel handler + sonner feedback. */
+function openCall(lead: LeadContact) {
+  const url = buildTelUrl(lead);
+  if (!url) return;
+  window.location.href = url;
+  toast.success("Initiating call…");
+}
+
 // ─── Stat card ───────────────────────────────────────────────────
 function StatCard({
   label,
@@ -391,6 +511,58 @@ function LeadDetailDialog({
                 </p>
               </div>
             )}
+
+            {/* Quick reply actions */}
+            <div className="rounded-lg border border-primary/20 bg-primary/[0.03] p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                  <MessageCircle size={13} className="text-primary" />
+                  Quick reply
+                </div>
+                {!lead.phone && !lead.email && (
+                  <span className="text-[11px] text-muted-foreground">
+                    No contact details
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  className="gap-1.5 text-white border-transparent hover:opacity-90"
+                  style={{ backgroundColor: "#25D366" }}
+                  disabled={!lead.phone}
+                  onClick={() => openWhatsApp(lead)}
+                  title={lead.phone ? `WhatsApp ${lead.phone}` : "No phone on file"}
+                >
+                  <MessageCircle size={15} />
+                  WhatsApp
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="gap-1.5"
+                  disabled={!lead.email}
+                  onClick={() => openEmail(lead)}
+                  title={lead.email ? `Email ${lead.email}` : "No email on file"}
+                >
+                  <Mail size={15} />
+                  Email
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  disabled={!lead.phone}
+                  onClick={() => openCall(lead)}
+                  title={lead.phone ? `Call ${lead.phone}` : "No phone on file"}
+                >
+                  <Phone size={15} />
+                  Call
+                </Button>
+              </div>
+            </div>
 
             {/* Status & quality controls */}
             <div className="grid sm:grid-cols-2 gap-3">
@@ -636,6 +808,35 @@ function LeadRowActions({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <MessageCircle size={14} /> Quick reply
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <DropdownMenuItem
+              disabled={!lead.phone}
+              onClick={() => openWhatsApp(lead)}
+            >
+              <MessageCircle size={14} className="text-[#25D366]" />
+              WhatsApp
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={!lead.email}
+              onClick={() => openEmail(lead)}
+            >
+              <Mail size={14} className="text-primary" />
+              Email
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={!lead.phone}
+              onClick={() => openCall(lead)}
+            >
+              <Phone size={14} />
+              Call
+            </DropdownMenuItem>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSeparator />
         <DropdownMenuLabel>Update status</DropdownMenuLabel>
         <DropdownMenuItem
           onClick={() => onStatusChange(lead, "contacted")}

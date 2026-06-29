@@ -1,0 +1,1309 @@
+     1→     1→"use client";
+     2→     2→
+     3→     3→import * as React from "react";
+     4→     4→import { toast } from "sonner";
+     5→     5→import {
+     6→     6→  Loader2,
+     7→     7→  Search,
+     8→     8→  Users,
+     9→     9→  Flame,
+    10→    10→  TrendingUp,
+    11→    11→  Sparkles,
+    12→    12→  MoreHorizontal,
+    13→    13→  Trash2,
+    14→    14→  Phone,
+    15→    15→  Mail,
+    16→    16→  MessageSquare,
+    17→    17→  Inbox,
+    18→    18→  Filter,
+    19→    19→  X,
+    20→    20→  RefreshCw,
+    21→    21→  Download,
+    22→    22→  CheckCircle2,
+    23→    23→  CircleDot,
+    24→    24→  Target,
+    25→    25→  CalendarClock,
+    26→    26→  ArrowUpRight,
+    27→    27→  Tag,
+    28→    28→  ExternalLink,
+    29→    29→  UserCircle2,
+    30→    30→} from "lucide-react";
+    31→    31→
+    32→    32→import {
+    33→    33→  Card,
+    34→    34→  CardContent,
+    35→    35→  CardDescription,
+    36→    36→  CardHeader,
+    37→    37→  CardTitle,
+    38→    38→} from "@/components/ui/card";
+    39→    39→import { Button } from "@/components/ui/button";
+    40→    40→import { Badge } from "@/components/ui/badge";
+    41→    41→import { Input } from "@/components/ui/input";
+    42→    42→import {
+    43→    43→  Select,
+    44→    44→  SelectContent,
+    45→    45→  SelectItem,
+    46→    46→  SelectTrigger,
+    47→    47→  SelectValue,
+    48→    48→} from "@/components/ui/select";
+    49→    49→import {
+    50→    50→  Dialog,
+    51→    51→  DialogContent,
+    52→    52→  DialogDescription,
+    53→    53→  DialogFooter,
+    54→    54→  DialogHeader,
+    55→    55→  DialogTitle,
+    56→    56→} from "@/components/ui/dialog";
+    57→    57→import {
+    58→    58→  DropdownMenu,
+    59→    59→  DropdownMenuContent,
+    60→    60→  DropdownMenuItem,
+    61→    61→  DropdownMenuLabel,
+    62→    62→  DropdownMenuSeparator,
+    63→    63→  DropdownMenuTrigger,
+    64→    64→} from "@/components/ui/dropdown-menu";
+    65→    65→import {
+    66→    66→  AlertDialog,
+    67→    67→  AlertDialogAction,
+    68→    68→  AlertDialogCancel,
+    69→    69→  AlertDialogContent,
+    70→    70→  AlertDialogDescription,
+    71→    71→  AlertDialogFooter,
+    72→    72→  AlertDialogHeader,
+    73→    73→  AlertDialogTitle,
+    74→    74→} from "@/components/ui/alert-dialog";
+    75→    75→import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+    76→    76→import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+    77→    77→import {
+    78→    78→  Table,
+    79→    79→  TableBody,
+    80→    80→  TableCell,
+    81→    81→  TableHead,
+    82→    82→  TableHeader,
+    83→    83→  TableRow,
+    84→    84→} from "@/components/ui/table";
+    85→    85→import { cn } from "@/lib/utils";
+    86→    86→
+    87→    87→interface UserProp {
+    88→    88→  userId: string;
+    89→    89→  businessId: string;
+    90→    90→  name: string;
+    91→    91→  email: string;
+    92→    92→  role: string;
+    93→    93→  businessName: string;
+    94→    94→}
+    95→    95→
+    96→    96→type LeadStatus = "new" | "contacted" | "qualified" | "won" | "lost";
+    97→    97→type LeadQuality = "low" | "medium" | "high";
+    98→    98→
+    99→    99→interface Lead {
+   100→   100→  id: string;
+   101→   101→  name: string;
+   102→   102→  email: string | null;
+   103→   103→  phone: string | null;
+   104→   104→  service: string | null;
+   105→   105→  message: string | null;
+   106→   106→  quality: LeadQuality;
+   107→   107→  status: LeadStatus;
+   108→   108→  source: string;
+   109→   109→  sessionId: string | null;
+   110→   110→  visitorEmail: string | null;
+   111→   111→  createdAt: string;
+   112→   112→  updatedAt: string;
+   113→   113→}
+   114→   114→
+   115→   115→interface LeadDetail extends Lead {
+   116→   116→  session: {
+   117→   117→    id: string;
+   118→   118→    visitorEmail: string | null;
+   119→   119→    visitorName: string | null;
+   120→   120→    visitorPhone: string | null;
+   121→   121→    status: string;
+   122→   122→    summary: string | null;
+   123→   123→    nextAction: string | null;
+   124→   124→    leadQuality: string | null;
+   125→   125→  } | null;
+   126→   126→}
+   127→   127→
+   128→   128→interface LeadStats {
+   129→   129→  total: number;
+   130→   130→  new: number;
+   131→   131→  high: number;
+   132→   132→  won: number;
+   133→   133→  conversionRate: number;
+   134→   134→  byQuality: { quality: string; count: number }[];
+   135→   135→  byStatus: { status: string; count: number }[];
+   136→   136→  thisWeek: number;
+   137→   137→}
+   138→   138→
+   139→   139→const STATUSES: LeadStatus[] = ["new", "contacted", "qualified", "won", "lost"];
+   140→   140→const QUALITIES: LeadQuality[] = ["low", "medium", "high"];
+   141→   141→
+   142→   142→// ─── badge styling ───────────────────────────────────────────────
+   143→   143→function qualityBadgeClass(q: LeadQuality) {
+   144→   144→  switch (q) {
+   145→   145→    case "high":
+   146→   146→      return "bg-destructive/10 text-destructive border-destructive/20";
+   147→   147→    case "medium":
+   148→   148→      return "bg-accent/30 text-accent-foreground border-accent/40";
+   149→   149→    case "low":
+   150→   150→    default:
+   151→   151→      return "bg-muted text-muted-foreground border-border";
+   152→   152→  }
+   153→   153→}
+   154→   154→
+   155→   155→function statusBadgeClass(s: LeadStatus) {
+   156→   156→  switch (s) {
+   157→   157→    case "new":
+   158→   158→      return "bg-primary/10 text-primary border-primary/20";
+   159→   159→    case "contacted":
+   160→   160→      return "bg-muted text-muted-foreground border-border";
+   161→   161→    case "qualified":
+   162→   162→      return "bg-accent/40 text-accent-foreground border-accent/50 font-medium";
+   163→   163→    case "won":
+   164→   164→      return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20";
+   165→   165→    case "lost":
+   166→   166→      return "bg-destructive/10 text-destructive border-destructive/20";
+   167→   167→    default:
+   168→   168→      return "bg-muted text-muted-foreground border-border";
+   169→   169→  }
+   170→   170→}
+   171→   171→
+   172→   172→function QualityBadge({ quality }: { quality: LeadQuality }) {
+   173→   173→  return (
+   174→   174→    <Badge
+   175→   175→      variant="outline"
+   176→   176→      className={cn("capitalize gap-1", qualityBadgeClass(quality))}
+   177→   177→    >
+   178→   178→      {quality === "high" && <Flame size={11} />}
+   179→   179→      {quality}
+   180→   180→    </Badge>
+   181→   181→  );
+   182→   182→}
+   183→   183→
+   184→   184→function StatusBadge({ status }: { status: LeadStatus }) {
+   185→   185→  return (
+   186→   186→    <Badge
+   187→   187→      variant="outline"
+   188→   188→      className={cn("capitalize gap-1", statusBadgeClass(status))}
+   189→   189→    >
+   190→   190→      {status === "new" && (
+   191→   191→        <span className="relative flex size-1.5">
+   192→   192→          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+   193→   193→          <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
+   194→   194→        </span>
+   195→   195→      )}
+   196→   196→      {status}
+   197→   197→    </Badge>
+   198→   198→  );
+   199→   199→}
+   200→   200→
+   201→   201→// ─── date helpers ────────────────────────────────────────────────
+   202→   202→function relativeTime(iso: string): string {
+   203→   203→  const d = new Date(iso);
+   204→   204→  const diff = Date.now() - d.getTime();
+   205→   205→  const sec = Math.floor(diff / 1000);
+   206→   206→  if (sec < 60) return "just now";
+   207→   207→  const min = Math.floor(sec / 60);
+   208→   208→  if (min < 60) return `${min}m ago`;
+   209→   209→  const hr = Math.floor(min / 60);
+   210→   210→  if (hr < 24) return `${hr}h ago`;
+   211→   211→  const day = Math.floor(hr / 24);
+   212→   212→  if (day < 7) return `${day}d ago`;
+   213→   213→  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+   214→   214→}
+   215→   215→
+   216→   216→function fullDate(iso: string): string {
+   217→   217→  return new Date(iso).toLocaleString(undefined, {
+   218→   218→    month: "short",
+   219→   219→    day: "numeric",
+   220→   220→    year: "numeric",
+   221→   221→    hour: "2-digit",
+   222→   222→    minute: "2-digit",
+   223→   223→  });
+   224→   224→}
+   225→   225→
+   226→   226→function initials(name: string): string {
+   227→   227→  return name
+   228→   228→    .split(/\s+/)
+   229→   229→    .filter(Boolean)
+   230→   230→    .slice(0, 2)
+   231→   231→    .map((s) => s[0]?.toUpperCase())
+   232→   232→    .join("");
+   233→   233→}
+   234→   234→
+   235→   235→// ─── Stat card ───────────────────────────────────────────────────
+   236→   236→function StatCard({
+   237→   237→  label,
+   238→   238→  value,
+   239→   239→  hint,
+   240→   240→  icon: Icon,
+   241→   241→  accent,
+   242→   242→  loading,
+   243→   243→}: {
+   244→   244→  label: string;
+   245→   245→  value: React.ReactNode;
+   246→   246→  hint?: React.ReactNode;
+   247→   247→  icon: React.ComponentType<{ size?: number; className?: string }>;
+   248→   248→  accent?: "blue" | "green" | "amber" | "rose";
+   249→   249→  loading?: boolean;
+   250→   250→}) {
+   251→   251→  const accentCls =
+   252→   252→    accent === "green"
+   253→   253→      ? "bg-accent/20 text-accent-foreground"
+   254→   254→      : accent === "amber"
+   255→   255→      ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+   256→   256→      : accent === "rose"
+   257→   257→      ? "bg-destructive/10 text-destructive"
+   258→   258→      : "bg-primary/10 text-primary";
+   259→   259→
+   260→   260→  return (
+   261→   261→    <Card className="overflow-hidden py-0">
+   262→   262→      <CardContent className="p-4 flex items-center gap-4">
+   263→   263→        <div
+   264→   264→          className={cn(
+   265→   265→            "size-10 rounded-lg flex items-center justify-center shrink-0",
+   266→   266→            accentCls
+   267→   267→          )}
+   268→   268→        >
+   269→   269→          <Icon size={18} />
+   270→   270→        </div>
+   271→   271→        <div className="min-w-0 flex-1">
+   272→   272→          <div className="text-xs text-muted-foreground truncate">{label}</div>
+   273→   273→          {loading ? (
+   274→   274→            <div className="h-6 w-12 mt-0.5 rounded bg-muted animate-pulse" />
+   275→   275→          ) : (
+   276→   276→            <div className="text-xl font-bold leading-tight truncate">
+   277→   277→              {value}
+   278→   278→            </div>
+   279→   279→          )}
+   280→   280→          {hint && (
+   281→   281→            <div className="text-[11px] text-muted-foreground truncate mt-0.5">
+   282→   282→              {hint}
+   283→   283→            </div>
+   284→   284→          )}
+   285→   285→        </div>
+   286→   286→      </CardContent>
+   287→   287→    </Card>
+   288→   288→  );
+   289→   289→}
+   290→   290→
+   291→   291→// ─── Detail Dialog ───────────────────────────────────────────────
+   292→   292→function LeadDetailDialog({
+   293→   293→  lead,
+   294→   294→  open,
+   295→   295→  onOpenChange,
+   296→   296→  onSave,
+   297→   297→  onDeleted,
+   298→   298→  saving,
+   299→   299→}: {
+   300→   300→  lead: LeadDetail | null;
+   301→   301→  open: boolean;
+   302→   302→  onOpenChange: (v: boolean) => void;
+   303→   303→  onSave: (id: string, patch: { status?: LeadStatus; quality?: LeadQuality }) => Promise<boolean>;
+   304→   304→  onDeleted: (id: string) => void;
+   305→   305→  saving: boolean;
+   306→   306→}) {
+   307→   307→  const [confirmDelete, setConfirmDelete] = React.useState(false);
+   308→   308→
+   309→   309→  // Reset confirm state when dialog closes
+   310→   310→  React.useEffect(() => {
+   311→   311→    if (!open) setConfirmDelete(false);
+   312→   312→  }, [open]);
+   313→   313→
+   314→   314→  if (!lead) return null;
+   315→   315→
+   316→   316→  const isNew = lead.status === "new";
+   317→   317→
+   318→   318→  return (
+   319→   319→    <Dialog open={open} onOpenChange={onOpenChange}>
+   320→   320→      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto scroll-thin">
+   321→   321→        <DialogHeader>
+   322→   322→          <div className="flex items-start gap-3 pr-6">
+   323→   323→            <Avatar className="size-11 shrink-0">
+   324→   324→              <AvatarFallback className="brand-gradient text-white font-semibold">
+   325→   325→                {initials(lead.name) || "?"}
+   326→   326→              </AvatarFallback>
+   327→   327→            </Avatar>
+   328→   328→            <div className="min-w-0 flex-1">
+   329→   329→              <DialogTitle className="truncate flex items-center gap-2">
+   330→   330→                <span className="truncate">{lead.name}</span>
+   331→   331→                {isNew && (
+   332→   332→                  <span className="relative flex size-2 shrink-0">
+   333→   333→                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+   334→   334→                    <span className="relative inline-flex size-2 rounded-full bg-primary" />
+   335→   335→                  </span>
+   336→   336→                )}
+   337→   337→              </DialogTitle>
+   338→   338→              <DialogDescription className="truncate">
+   339→   339→                {lead.service || "General inquiry"} · {relativeTime(lead.createdAt)}
+   340→   340→              </DialogDescription>
+   341→   341→            </div>
+   342→   342→          </div>
+   343→   343→        </DialogHeader>
+   344→   344→
+   345→   345→        <Tabs defaultValue="details" className="w-full">
+   346→   346→          <TabsList className="w-full">
+   347→   347→            <TabsTrigger value="details" className="flex-1">
+   348→   348→              Details
+   349→   349→            </TabsTrigger>
+   350→   350→            <TabsTrigger value="conversation" className="flex-1">
+   351→   351→              Conversation
+   352→   352→            </TabsTrigger>
+   353→   353→          </TabsList>
+   354→   354→
+   355→   355→          {/* ─── Details tab ─── */}
+   356→   356→          <TabsContent value="details" className="mt-4 space-y-4">
+   357→   357→            {/* Contact info */}
+   358→   358→            <div className="grid sm:grid-cols-2 gap-3">
+   359→   359→              <InfoRow
+   360→   360→                icon={Mail}
+   361→   361→                label="Email"
+   362→   362→                value={lead.email || "—"}
+   363→   363→                href={lead.email ? `mailto:${lead.email}` : undefined}
+   364→   364→              />
+   365→   365→              <InfoRow
+   366→   366→                icon={Phone}
+   367→   367→                label="Phone"
+   368→   368→                value={lead.phone || "—"}
+   369→   369→                href={lead.phone ? `tel:${lead.phone}` : undefined}
+   370→   370→              />
+   371→   371→              <InfoRow
+   372→   372→                icon={Tag}
+   373→   373→                label="Service"
+   374→   374→                value={lead.service || "—"}
+   375→   375→              />
+   376→   376→              <InfoRow
+   377→   377→                icon={CircleDot}
+   378→   378→                label="Source"
+   379→   379→                value={<span className="capitalize">{lead.source}</span>}
+   380→   380→              />
+   381→   381→            </div>
+   382→   382→
+   383→   383→            {/* Message */}
+   384→   384→            {lead.message && (
+   385→   385→              <div className="rounded-lg border bg-muted/30 p-3">
+   386→   386→                <div className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
+   387→   387→                  <MessageSquare size={12} /> Message
+   388→   388→                </div>
+   389→   389→                <p className="text-sm whitespace-pre-wrap break-words">
+   390→   390→                  {lead.message}
+   391→   391→                </p>
+   392→   392→              </div>
+   393→   393→            )}
+   394→   394→
+   395→   395→            {/* Status & quality controls */}
+   396→   396→            <div className="grid sm:grid-cols-2 gap-3">
+   397→   397→              <div className="space-y-1.5">
+   398→   398→                <label className="text-xs font-medium text-muted-foreground">
+   399→   399→                  Status
+   400→   400→                </label>
+   401→   401→                <Select
+   402→   402→                  value={lead.status}
+   403→   403→                  onValueChange={(v) =>
+   404→   404→                    onSave(lead.id, { status: v as LeadStatus })
+   405→   405→                  }
+   406→   406→                  disabled={saving}
+   407→   407→                >
+   408→   408→                  <SelectTrigger className="w-full">
+   409→   409→                    <SelectValue />
+   410→   410→                  </SelectTrigger>
+   411→   411→                  <SelectContent>
+   412→   412→                    {STATUSES.map((s) => (
+   413→   413→                      <SelectItem key={s} value={s} className="capitalize">
+   414→   414→                        {s}
+   415→   415→                      </SelectItem>
+   416→   416→                    ))}
+   417→   417→                  </SelectContent>
+   418→   418→                </Select>
+   419→   419→              </div>
+   420→   420→              <div className="space-y-1.5">
+   421→   421→                <label className="text-xs font-medium text-muted-foreground">
+   422→   422→                  Quality
+   423→   423→                </label>
+   424→   424→                <Select
+   425→   425→                  value={lead.quality}
+   426→   426→                  onValueChange={(v) =>
+   427→   427→                    onSave(lead.id, { quality: v as LeadQuality })
+   428→   428→                  }
+   429→   429→                  disabled={saving}
+   430→   430→                >
+   431→   431→                  <SelectTrigger className="w-full">
+   432→   432→                    <SelectValue />
+   433→   433→                  </SelectTrigger>
+   434→   434→                  <SelectContent>
+   435→   435→                    {QUALITIES.map((q) => (
+   436→   436→                      <SelectItem key={q} value={q} className="capitalize">
+   437→   437→                        {q}
+   438→   438→                      </SelectItem>
+   439→   439→                    ))}
+   440→   440→                  </SelectContent>
+   441→   441→                </Select>
+   442→   442→              </div>
+   443→   443→            </div>
+   444→   444→
+   445→   445→            {/* Meta */}
+   446→   446→            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground pt-1">
+   447→   447→              <span className="flex items-center gap-1">
+   448→   448→                <CalendarClock size={12} />
+   449→   449→                Created {fullDate(lead.createdAt)}
+   450→   450→              </span>
+   451→   451→              <span className="flex items-center gap-1">
+   452→   452→                <RefreshCw size={12} />
+   453→   453→                Updated {fullDate(lead.updatedAt)}
+   454→   454→              </span>
+   455→   455→            </div>
+   456→   456→          </TabsContent>
+   457→   457→
+   458→   458→          {/* ─── Conversation tab ─── */}
+   459→   459→          <TabsContent value="conversation" className="mt-4">
+   460→   460→            {lead.session ? (
+   461→   461→              <div className="space-y-3">
+   462→   462→                <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+   463→   463→                  <div className="flex items-center justify-between gap-2">
+   464→   464→                    <div className="flex items-center gap-2 text-sm font-medium">
+   465→   465→                      <UserCircle2 size={16} className="text-primary" />
+   466→   466→                      {lead.session.visitorName ||
+   467→   467→                        lead.session.visitorEmail ||
+   468→   468→                        "Anonymous visitor"}
+   469→   469→                    </div>
+   470→   470→                    <Badge variant="secondary" className="capitalize text-xs">
+   471→   471→                      {lead.session.status}
+   472→   472→                    </Badge>
+   473→   473→                  </div>
+   474→   474→                  {(lead.session.visitorEmail ||
+   475→   475→                    lead.session.visitorPhone) && (
+   476→   476→                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+   477→   477→                      {lead.session.visitorEmail && (
+   478→   478→                        <span className="flex items-center gap-1">
+   479→   479→                          <Mail size={11} />
+   480→   480→                          {lead.session.visitorEmail}
+   481→   481→                        </span>
+   482→   482→                      )}
+   483→   483→                      {lead.session.visitorPhone && (
+   484→   484→                        <span className="flex items-center gap-1">
+   485→   485→                          <Phone size={11} />
+   486→   486→                          {lead.session.visitorPhone}
+   487→   487→                        </span>
+   488→   488→                      )}
+   489→   489→                    </div>
+   490→   490→                  )}
+   491→   491→                  {lead.session.leadQuality && (
+   492→   492→                    <div className="text-xs">
+   493→   493→                      <span className="text-muted-foreground">AI quality:</span>{" "}
+   494→   494→                      <span className="capitalize font-medium">
+   495→   495→                        {lead.session.leadQuality}
+   496→   496→                      </span>
+   497→   497→                    </div>
+   498→   498→                  )}
+   499→   499→                  {lead.session.summary && (
+   500→   500→                    <div className="text-sm text-foreground/80 border-t pt-2 mt-1">
+   501→   501→                      {lead.session.summary}
+   502→   502→                    </div>
+   503→   503→                  )}
+   504→   504→                  {lead.session.nextAction && (
+   505→   505→                    <div className="text-xs">
+   506→   506→                      <span className="text-muted-foreground">
+   507→   507→                        Suggested next action:
+   508→   508→                      </span>{" "}
+   509→   509→                      <span className="text-foreground">
+   510→   510→                        {lead.session.nextAction}
+   511→   511→                      </span>
+   512→   512→                    </div>
+   513→   513→                  )}
+   514→   514→                </div>
+   515→   515→                <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+   516→   516→                  <ExternalLink size={12} />
+   517→   517→                  Open the Conversations view for the full chat transcript.
+   518→   518→                </p>
+   519→   519→              </div>
+   520→   520→            ) : (
+   521→   521→              <div className="rounded-lg border border-dashed py-10 text-center">
+   522→   522→                <MessageSquare className="mx-auto text-muted-foreground/60" />
+   523→   523→                <p className="text-sm text-muted-foreground mt-2">
+   524→   524→                  No linked conversation
+   525→   525→                </p>
+   526→   526→                <p className="text-xs text-muted-foreground/70 mt-1">
+   527→   527→                  This lead was captured without a chat session.
+   528→   528→                </p>
+   529→   529→              </div>
+   530→   530→            )}
+   531→   531→          </TabsContent>
+   532→   532→        </Tabs>
+   533→   533→
+   534→   534→        <DialogFooter className="gap-2 sm:gap-2">
+   535→   535→          <Button
+   536→   536→            variant="destructive"
+   537→   537→            size="sm"
+   538→   538→            onClick={() => setConfirmDelete(true)}
+   539→   539→            disabled={saving}
+   540→   540→            className="mr-auto"
+   541→   541→          >
+   542→   542→            <Trash2 size={14} />
+   543→   543→            Delete
+   544→   544→          </Button>
+   545→   545→          <Button
+   546→   546→            variant="outline"
+   547→   547→            size="sm"
+   548→   548→            onClick={() => onOpenChange(false)}
+   549→   549→            disabled={saving}
+   550→   550→          >
+   551→   551→            Close
+   552→   552→          </Button>
+   553→   553→        </DialogFooter>
+   554→   554→      </DialogContent>
+   555→   555→
+   556→   556→      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+   557→   557→        <AlertDialogContent>
+   558→   558→          <AlertDialogHeader>
+   559→   559→            <AlertDialogTitle>Delete this lead?</AlertDialogTitle>
+   560→   560→            <AlertDialogDescription>
+   561→   561→              This will permanently remove <strong>{lead.name}</strong> from
+   562→   562→              your leads. This action cannot be undone.
+   563→   563→            </AlertDialogDescription>
+   564→   564→          </AlertDialogHeader>
+   565→   565→          <AlertDialogFooter>
+   566→   566→            <AlertDialogCancel>Cancel</AlertDialogCancel>
+   567→   567→            <AlertDialogAction
+   568→   568→              className="bg-destructive text-white hover:bg-destructive/90"
+   569→   569→              onClick={() => {
+   570→   570→                onDeleted(lead.id);
+   571→   571→                setConfirmDelete(false);
+   572→   572→              }}
+   573→   573→            >
+   574→   574→              Delete lead
+   575→   575→            </AlertDialogAction>
+   576→   576→          </AlertDialogFooter>
+   577→   577→        </AlertDialogContent>
+   578→   578→      </AlertDialog>
+   579→   579→    </Dialog>
+   580→   580→  );
+   581→   581→}
+   582→   582→
+   583→   583→function InfoRow({
+   584→   584→  icon: Icon,
+   585→   585→  label,
+   586→   586→  value,
+   587→   587→  href,
+   588→   588→}: {
+   589→   589→  icon: React.ComponentType<{ size?: number; className?: string }>;
+   590→   590→  label: string;
+   591→   591→  value: React.ReactNode;
+   592→   592→  href?: string;
+   593→   593→}) {
+   594→   594→  const content = (
+   595→   595→    <div className="flex items-start gap-2.5 rounded-lg border bg-card px-3 py-2.5">
+   596→   596→      <Icon size={15} className="text-muted-foreground mt-0.5 shrink-0" />
+   597→   597→      <div className="min-w-0 flex-1">
+   598→   598→        <div className="text-[11px] text-muted-foreground uppercase tracking-wide">
+   599→   599→          {label}
+   600→   600→        </div>
+   601→   601→        <div className="text-sm font-medium truncate">{value}</div>
+   602→   602→      </div>
+   603→   603→    </div>
+   604→   604→  );
+   605→   605→  if (href) {
+   606→   606→    return (
+   607→   607→      <a href={href} className="block hover:opacity-80 transition-opacity">
+   608→   608→        {content}
+   609→   609→      </a>
+   610→   610→    );
+   611→   611→  }
+   612→   612→  return content;
+   613→   613→}
+   614→   614→
+   615→   615→// ─── Row actions dropdown ────────────────────────────────────────
+   616→   616→function LeadRowActions({
+   617→   617→  lead,
+   618→   618→  onStatusChange,
+   619→   619→  onDelete,
+   620→   620→}: {
+   621→   621→  lead: Lead;
+   622→   622→  onStatusChange: (lead: Lead, status: LeadStatus) => void;
+   623→   623→  onDelete: (lead: Lead) => void;
+   624→   624→}) {
+   625→   625→  return (
+   626→   626→    <DropdownMenu>
+   627→   627→      <DropdownMenuTrigger asChild>
+   628→   628→        <Button
+   629→   629→          variant="ghost"
+   630→   630→          size="icon"
+   631→   631→          className="size-8"
+   632→   632→          onClick={(e) => e.stopPropagation()}
+   633→   633→          aria-label="Lead actions"
+   634→   634→        >
+   635→   635→          <MoreHorizontal size={16} />
+   636→   636→        </Button>
+   637→   637→      </DropdownMenuTrigger>
+   638→   638→      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+   639→   639→        <DropdownMenuLabel>Update status</DropdownMenuLabel>
+   640→   640→        <DropdownMenuItem
+   641→   641→          onClick={() => onStatusChange(lead, "contacted")}
+   642→   642→          disabled={lead.status === "contacted"}
+   643→   643→        >
+   644→   644→          <MessageSquare size={14} /> Mark contacted
+   645→   645→        </DropdownMenuItem>
+   646→   646→        <DropdownMenuItem
+   647→   647→          onClick={() => onStatusChange(lead, "qualified")}
+   648→   648→          disabled={lead.status === "qualified"}
+   649→   649→        >
+   650→   650→          <Target size={14} /> Mark qualified
+   651→   651→        </DropdownMenuItem>
+   652→   652→        <DropdownMenuItem
+   653→   653→          onClick={() => onStatusChange(lead, "won")}
+   654→   654→          disabled={lead.status === "won"}
+   655→   655→        >
+   656→   656→          <CheckCircle2 size={14} className="text-emerald-600" /> Mark won
+   657→   657→        </DropdownMenuItem>
+   658→   658→        <DropdownMenuItem
+   659→   659→          onClick={() => onStatusChange(lead, "lost")}
+   660→   660→          disabled={lead.status === "lost"}
+   661→   661→        >
+   662→   662→          <X size={14} className="text-destructive" /> Mark lost
+   663→   663→        </DropdownMenuItem>
+   664→   664→        <DropdownMenuSeparator />
+   665→   665→        <DropdownMenuItem
+   666→   666→          variant="destructive"
+   667→   667→          onClick={() => onDelete(lead)}
+   668→   668→        >
+   669→   669→          <Trash2 size={14} /> Delete lead
+   670→   670→        </DropdownMenuItem>
+   671→   671→      </DropdownMenuContent>
+   672→   672→    </DropdownMenu>
+   673→   673→  );
+   674→   674→}
+   675→   675→
+   676→   676→// ─── Empty state ─────────────────────────────────────────────────
+   677→   677→function EmptyState({
+   678→   678→  hasFilters,
+   679→   679→  onRefresh,
+   680→   680→  onClearFilters,
+   681→   681→}: {
+   682→   682→  hasFilters: boolean;
+   683→   683→  onRefresh: () => void;
+   684→   684→  onClearFilters: () => void;
+   685→   685→}) {
+   686→   686→  return (
+   687→   687→    <div className="rounded-xl border border-dashed py-16 px-6 text-center">
+   688→   688→      <div className="mx-auto size-14 rounded-full bg-accent/20 flex items-center justify-center">
+   689→   689→        <Inbox className="text-accent-foreground" size={26} />
+   690→   690→      </div>
+   691→   691→      <h3 className="mt-4 text-lg font-semibold">
+   692→   692→        {hasFilters ? "No matching leads" : "No leads yet"}
+   693→   693→      </h3>
+   694→   694→      <p className="mt-1.5 text-sm text-muted-foreground max-w-md mx-auto">
+   695→   695→        {hasFilters
+   696→   696→          ? "Try adjusting or clearing your filters to see more leads."
+   697→   697→          : "Leads captured by your AI chatbot will appear here. Embed the widget on your website to start collecting leads."}
+   698→   698→      </p>
+   699→   699→      <div className="mt-5 flex items-center justify-center gap-2 flex-wrap">
+   700→   700→        {hasFilters ? (
+   701→   701→          <Button onClick={onClearFilters} variant="outline">
+   702→   702→            <Filter size={14} /> Clear filters
+   703→   703→          </Button>
+   704→   704→        ) : (
+   705→   705→          <Button onClick={onRefresh}>
+   706→   706→            <RefreshCw size={14} /> Refresh
+   707→   707→          </Button>
+   708→   708→        )}
+   709→   709→      </div>
+   710→   710→    </div>
+   711→   711→  );
+   712→   712→}
+   713→   713→
+   714→   714→// ─── Main view ───────────────────────────────────────────────────
+   715→   715→export function LeadsView({ user }: { user: UserProp }) {
+   716→   716→  const [leads, setLeads] = React.useState<Lead[]>([]);
+   717→   717→  const [loading, setLoading] = React.useState(true);
+   718→   718→  const [stats, setStats] = React.useState<LeadStats | null>(null);
+   719→   719→  const [statsLoading, setStatsLoading] = React.useState(true);
+   720→   720→
+   721→   721→  const [searchInput, setSearchInput] = React.useState("");
+   722→   722→  const [search, setSearch] = React.useState("");
+   723→   723→  const [statusFilter, setStatusFilter] = React.useState<string>("all");
+   724→   724→  const [qualityFilter, setQualityFilter] = React.useState<string>("all");
+   725→   725→
+   726→   726→  const [detailOpen, setDetailOpen] = React.useState(false);
+   727→   727→  const [selectedLead, setSelectedLead] = React.useState<LeadDetail | null>(
+   728→   728→    null
+   729→   729→  );
+   730→   730→  const [detailLoading, setDetailLoading] = React.useState(false);
+   731→   731→  const [saving, setSaving] = React.useState(false);
+   732→   732→
+   733→   733→  const [deleteTarget, setDeleteTarget] = React.useState<Lead | null>(null);
+   734→   734→
+   735→   735→  // ─── Debounce search input ─────────────────────────────────────
+   736→   736→  React.useEffect(() => {
+   737→   737→    const t = setTimeout(() => setSearch(searchInput.trim()), 350);
+   738→   738→    return () => clearTimeout(t);
+   739→   739→  }, [searchInput]);
+   740→   740→
+   741→   741→  const hasFilters = !!search || statusFilter !== "all" || qualityFilter !== "all";
+   742→   742→
+   743→   743→  // ─── Fetch list ────────────────────────────────────────────────
+   744→   744→  const fetchLeads = React.useCallback(async () => {
+   745→   745→    setLoading(true);
+   746→   746→    try {
+   747→   747→      const params = new URLSearchParams();
+   748→   748→      if (search) params.set("q", search);
+   749→   749→      if (statusFilter !== "all") params.set("status", statusFilter);
+   750→   750→      if (qualityFilter !== "all") params.set("quality", qualityFilter);
+   751→   751→      const res = await fetch(`/api/leads?${params.toString()}`, {
+   752→   752→        cache: "no-store",
+   753→   753→      });
+   754→   754→      if (!res.ok) throw new Error("Failed to load");
+   755→   755→      const data = await res.json();
+   756→   756→      setLeads(data.leads || []);
+   757→   757→    } catch {
+   758→   758→      toast.error("Failed to load leads");
+   759→   759→    } finally {
+   760→   760→      setLoading(false);
+   761→   761→    }
+   762→   762→  }, [search, statusFilter, qualityFilter]);
+   763→   763→
+   764→   764→  React.useEffect(() => {
+   765→   765→    fetchLeads();
+   766→   766→  }, [fetchLeads]);
+   767→   767→
+   768→   768→  // ─── Fetch stats ───────────────────────────────────────────────
+   769→   769→  const fetchStats = React.useCallback(async () => {
+   770→   770→    setStatsLoading(true);
+   771→   771→    try {
+   772→   772→      const res = await fetch("/api/leads/stats", { cache: "no-store" });
+   773→   773→      if (!res.ok) throw new Error("Failed to load stats");
+   774→   774→      const data = await res.json();
+   775→   775→      setStats(data);
+   776→   776→    } catch {
+   777→   777→      /* silent */
+   778→   778→    } finally {
+   779→   779→      setStatsLoading(false);
+   780→   780→    }
+   781→   781→  }, []);
+   782→   782→
+   783→   783→  React.useEffect(() => {
+   784→   784→    fetchStats();
+   785→   785→  }, [fetchStats]);
+   786→   786→
+   787→   787→  // ─── Open detail dialog (fetch full lead w/ session) ───────────
+   788→   788→  async function openDetail(lead: Lead) {
+   789→   789→    setSelectedLead({
+   790→   790→      ...lead,
+   791→   791→      session: null,
+   792→   792→    });
+   793→   793→    setDetailOpen(true);
+   794→   794→    setDetailLoading(true);
+   795→   795→    try {
+   796→   796→      const res = await fetch(`/api/leads/${lead.id}`, { cache: "no-store" });
+   797→   797→      if (!res.ok) throw new Error("Failed to load lead");
+   798→   798→      const data = await res.json();
+   799→   799→      setSelectedLead(data.lead);
+   800→   800→    } catch {
+   801→   801→      toast.error("Failed to load lead details");
+   802→   802→    } finally {
+   803→   803→      setDetailLoading(false);
+   804→   804→    }
+   805→   805→  }
+   806→   806→
+   807→   807→  // ─── Save (PATCH) ──────────────────────────────────────────────
+   808→   808→  async function updateLead(
+   809→   809→    id: string,
+   810→   810→    patch: { status?: LeadStatus; quality?: LeadQuality }
+   811→   811→  ): Promise<boolean> {
+   812→   812→    setSaving(true);
+   813→   813→    try {
+   814→   814→      const res = await fetch(`/api/leads/${id}`, {
+   815→   815→        method: "PATCH",
+   816→   816→        headers: { "Content-Type": "application/json" },
+   817→   817→        body: JSON.stringify(patch),
+   818→   818→      });
+   819→   819→      if (!res.ok) {
+   820→   820→        const data = await res.json().catch(() => ({}));
+   821→   821→        throw new Error(data.error || "Failed to update");
+   822→   822→      }
+   823→   823→      const data = await res.json();
+   824→   824→      const updated = data.lead;
+   825→   825→      setLeads((prev) =>
+   826→   826→        prev.map((l) => (l.id === id ? { ...l, ...updated } : l))
+   827→   827→      );
+   828→   828→      if (selectedLead?.id === id) {
+   829→   829→        setSelectedLead((prev) =>
+   830→   830→          prev ? { ...prev, ...updated, session: prev.session } : prev
+   831→   831→        );
+   832→   832→      }
+   833→   833→      toast.success("Lead updated");
+   834→   834→      fetchStats();
+   835→   835→      return true;
+   836→   836→    } catch (e: any) {
+   837→   837→      toast.error(e.message || "Update failed");
+   838→   838→      return false;
+   839→   839→    } finally {
+   840→   840→      setSaving(false);
+   841→   841→    }
+   842→   842→  }
+   843→   843→
+   844→   844→  // ─── Status change from row dropdown ───────────────────────────
+   845→   845→  function handleStatusChange(lead: Lead, status: LeadStatus) {
+   846→   846→    updateLead(lead.id, { status });
+   847→   847→  }
+   848→   848→
+   849→   849→  // ─── Delete ────────────────────────────────────────────────────
+   850→   850→  async function handleDelete(id: string) {
+   851→   851→    try {
+   852→   852→      const res = await fetch(`/api/leads/${id}`, { method: "DELETE" });
+   853→   853→      if (!res.ok) throw new Error("Failed to delete");
+   854→   854→      setLeads((prev) => prev.filter((l) => l.id !== id));
+   855→   855→      toast.success("Lead deleted");
+   856→   856→      setDeleteTarget(null);
+   857→   857→      if (selectedLead?.id === id) {
+   858→   858→        setDetailOpen(false);
+   859→   859→        setSelectedLead(null);
+   860→   860→      }
+   861→   861→      fetchStats();
+   862→   862→    } catch (e: any) {
+   863→   863→      toast.error(e.message || "Delete failed");
+   864→   864→    }
+   865→   865→  }
+   866→   866→
+   867→   867→  function clearFilters() {
+   868→   868→    setSearchInput("");
+   869→   869→    setStatusFilter("all");
+   870→   870→    setQualityFilter("all");
+   871→   871→  }
+   872→   872→
+   873→   873→  // ─── Derived counts for header chips ───────────────────────────
+   874→   874→  const newThisWeek = stats?.thisWeek ?? 0;
+   875→   875→  const highCount = stats?.high ?? 0;
+   876→   876→  const totalCount = stats?.total ?? leads.length;
+   877→   877→
+   878→   878→  return (
+   879→   879→    <div className="space-y-5">
+   880→   880→      {/* Header */}
+   881→   881→      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+   882→   882→        <div>
+   883→   883→          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+   884→   884→            <Users className="text-primary" size={22} />
+   885→   885→            Leads
+   886→   886→          </h1>
+   887→   887→          <p className="text-sm text-muted-foreground mt-1">
+   888→   888→            Capture, qualify, and convert prospects collected by your AI agent
+   889→   889→            for{" "}
+   890→   890→            <span className="font-medium text-foreground">{user.businessName}</span>.
+   891→   891→          </p>
+   892→   892→        </div>
+   893→   893→
+   894→   894→        {/* Stat chips */}
+   895→   895→        <div className="flex flex-wrap items-center gap-2">
+   896→   896→          <Badge
+   897→   897→            variant="outline"
+   898→   898→            className="bg-card gap-1.5 py-1 px-2.5 text-xs"
+   899→   899→          >
+   900→   900→            <Users size={12} className="text-primary" />
+   901→   901→            <span className="font-semibold">{totalCount}</span> total
+   902→   902→          </Badge>
+   903→   903→          <Badge
+   904→   904→            variant="outline"
+   905→   905→            className="bg-card gap-1.5 py-1 px-2.5 text-xs"
+   906→   906→          >
+   907→   907→            <Sparkles size={12} className="text-primary" />
+   908→   908→            <span className="font-semibold">{newThisWeek}</span> this week
+   909→   909→          </Badge>
+   910→   910→          <Badge
+   911→   911→            variant="outline"
+   912→   912→            className="bg-card gap-1.5 py-1 px-2.5 text-xs"
+   913→   913→          >
+   914→   914→            <Flame size={12} className="text-destructive" />
+   915→   915→            <span className="font-semibold">{highCount}</span> high quality
+   916→   916→          </Badge>
+   917→   917→        </div>
+   918→   918→      </div>
+   919→   919→
+   920→   920→      {/* Stats row */}
+   921→   921→      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+   922→   922→        <StatCard
+   923→   923→          label="Total leads"
+   924→   924→          value={stats?.total ?? 0}
+   925→   925→          icon={Users}
+   926→   926→          accent="blue"
+   927→   927→          loading={statsLoading}
+   928→   928→        />
+   929→   929→        <StatCard
+   930→   930→          label="New (status)"
+   931→   931→          value={stats?.new ?? 0}
+   932→   932→          hint={`${newThisWeek} this week`}
+   933→   933→          icon={Sparkles}
+   934→   934→          accent="amber"
+   935→   935→          loading={statsLoading}
+   936→   936→        />
+   937→   937→        <StatCard
+   938→   938→          label="High quality"
+   939→   939→          value={stats?.high ?? 0}
+   940→   940→          icon={Flame}
+   941→   941→          accent="rose"
+   942→   942→          loading={statsLoading}
+   943→   943→        />
+   944→   944→        <StatCard
+   945→   945→          label="Conversion rate"
+   946→   946→          value={`${stats?.conversionRate ?? 0}%`}
+   947→   947→          hint={`${stats?.won ?? 0} won`}
+   948→   948→          icon={TrendingUp}
+   949→   949→          accent="green"
+   950→   950→          loading={statsLoading}
+   951→   951→        />
+   952→   952→      </div>
+   953→   953→
+   954→   954→      {/* Toolbar */}
+   955→   955→      <Card className="py-3">
+   956→   956→        <CardContent className="px-3 sm:px-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+   957→   957→          <div className="relative flex-1 max-w-xl">
+   958→   958→            <Search
+   959→   959→              size={16}
+   960→   960→              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+   961→   961→            />
+   962→   962→            <Input
+   963→   963→              placeholder="Search by name, email or phone…"
+   964→   964→              value={searchInput}
+   965→   965→              onChange={(e) => setSearchInput(e.target.value)}
+   966→   966→              className="pl-9 pr-9"
+   967→   967→            />
+   968→   968→            {searchInput && (
+   969→   969→              <Button
+   970→   970→                variant="ghost"
+   971→   971→                size="icon"
+   972→   972→                className="absolute right-1 top-1/2 -translate-y-1/2 size-7"
+   973→   973→                onClick={() => setSearchInput("")}
+   974→   974→                aria-label="Clear search"
+   975→   975→              >
+   976→   976→                <X size={14} />
+   977→   977→              </Button>
+   978→   978→            )}
+   979→   979→          </div>
+   980→   980→
+   981→   981→          <div className="flex items-center gap-2 flex-wrap">
+   982→   982→            <Select value={statusFilter} onValueChange={setStatusFilter}>
+   983→   983→              <SelectTrigger className="w-[140px]" size="sm">
+   984→   984→                <SelectValue placeholder="Status" />
+   985→   985→              </SelectTrigger>
+   986→   986→              <SelectContent>
+   987→   987→                <SelectItem value="all">All statuses</SelectItem>
+   988→   988→                {STATUSES.map((s) => (
+   989→   989→                  <SelectItem key={s} value={s} className="capitalize">
+   990→   990→                    {s}
+   991→   991→                  </SelectItem>
+   992→   992→                ))}
+   993→   993→              </SelectContent>
+   994→   994→            </Select>
+   995→   995→
+   996→   996→            <Select value={qualityFilter} onValueChange={setQualityFilter}>
+   997→   997→              <SelectTrigger className="w-[140px]" size="sm">
+   998→   998→                <SelectValue placeholder="Quality" />
+   999→   999→              </SelectTrigger>
+  1000→  1000→              <SelectContent>
+  1001→  1001→                <SelectItem value="all">All qualities</SelectItem>
+  1002→  1002→                {QUALITIES.map((q) => (
+  1003→  1003→                  <SelectItem key={q} value={q} className="capitalize">
+  1004→  1004→                    {q}
+  1005→  1005→                  </SelectItem>
+  1006→  1006→                ))}
+  1007→  1007→              </SelectContent>
+  1008→  1008→            </Select>
+  1009→  1009→
+  1010→  1010→            {hasFilters && (
+  1011→  1011→              <Button
+  1012→  1012→                variant="ghost"
+  1013→  1013→                size="sm"
+  1014→  1014→                onClick={clearFilters}
+  1015→  1015→                className="text-muted-foreground"
+  1016→  1016→              >
+  1017→  1017→                <X size={14} /> Clear
+  1018→  1018→              </Button>
+  1019→  1019→            )}
+  1020→  1020→
+  1021→  1021→            <Button
+  1022→  1022→              variant="outline"
+  1023→  1023→              size="sm"
+  1024→  1024→              onClick={() => {
+  1025→  1025→                const params = new URLSearchParams();
+  1026→  1026→                if (statusFilter) params.set("status", statusFilter);
+  1027→  1027→                if (qualityFilter) params.set("quality", qualityFilter);
+  1028→  1028→                const qs = params.toString();
+  1029→  1029→                window.open(
+  1030→  1030→                  `/api/leads/export${qs ? "?" + qs : ""}`,
+  1031→  1031→                  "_blank"
+  1032→  1032→                );
+  1033→  1033→                toast.success("Exporting leads as CSV…");
+  1034→  1034→              }}
+  1035→  1035→              disabled={leads.length === 0}
+  1036→  1036→              className="gap-1.5"
+  1037→  1037→              title="Export filtered leads as CSV"
+  1038→  1038→            >
+  1039→  1039→              <Download size={15} />
+  1040→  1040→              <span className="hidden sm:inline">Export CSV</span>
+  1041→  1041→            </Button>
+  1042→  1042→            <Button
+  1043→  1043→              variant="outline"
+  1044→  1044→              size="icon"
+  1045→  1045→              onClick={() => {
+  1046→  1046→                fetchLeads();
+  1047→  1047→                fetchStats();
+  1048→  1048→              }}
+  1049→  1049→              disabled={loading}
+  1050→  1050→              aria-label="Refresh"
+  1051→  1051→            >
+  1052→  1052→              <RefreshCw
+  1053→  1053→                size={15}
+  1054→  1054→                className={loading ? "animate-spin" : ""}
+  1055→  1055→              />
+  1056→  1056→            </Button>
+  1057→  1057→          </div>
+  1058→  1058→        </CardContent>
+  1059→  1059→      </Card>
+  1060→  1060→
+  1061→  1061→      {/* List / table */}
+  1062→  1062→      <Card className="py-0 overflow-hidden">
+  1063→  1063→        {loading && leads.length === 0 ? (
+  1064→  1064→          <div className="py-20 flex flex-col items-center justify-center gap-3">
+  1065→  1065→            <Loader2 className="size-7 animate-spin text-primary" />
+  1066→  1066→            <p className="text-sm text-muted-foreground">Loading leads…</p>
+  1067→  1067→          </div>
+  1068→  1068→        ) : leads.length === 0 ? (
+  1069→  1069→          <div className="p-4">
+  1070→  1070→            <EmptyState
+  1071→  1071→              hasFilters={hasFilters}
+  1072→  1072→              onRefresh={() => {
+  1073→  1073→                fetchLeads();
+  1074→  1074→                fetchStats();
+  1075→  1075→              }}
+  1076→  1076→              onClearFilters={clearFilters}
+  1077→  1077→            />
+  1078→  1078→          </div>
+  1079→  1079→        ) : (
+  1080→  1080→          <>
+  1081→  1081→            {/* Desktop table */}
+  1082→  1082→            <div className="hidden lg:block max-h-[65vh] overflow-auto scroll-thin">
+  1083→  1083→              <Table>
+  1084→  1084→                <TableHeader className="sticky top-0 z-10 bg-card">
+  1085→  1085→                  <TableRow className="hover:bg-transparent">
+  1086→  1086→                    <TableHead className="pl-4 min-w-[180px]">Name</TableHead>
+  1087→  1087→                    <TableHead className="min-w-[200px]">Contact</TableHead>
+  1088→  1088→                    <TableHead className="min-w-[140px]">Service</TableHead>
+  1089→  1089→                    <TableHead className="min-w-[110px]">Quality</TableHead>
+  1090→  1090→                    <TableHead className="min-w-[120px]">Status</TableHead>
+  1091→  1091→                    <TableHead className="min-w-[110px]">Source</TableHead>
+  1092→  1092→                    <TableHead className="min-w-[120px]">Date</TableHead>
+  1093→  1093→                    <TableHead className="text-right pr-4 w-[60px]">
+  1094→  1094→                      Actions
+  1095→  1095→                    </TableHead>
+  1096→  1096→                  </TableRow>
+  1097→  1097→                </TableHeader>
+  1098→  1098→                <TableBody>
+  1099→  1099→                  {leads.map((lead) => {
+  1100→  1100→                    const isNew = lead.status === "new";
+  1101→  1101→                    return (
+  1102→  1102→                      <TableRow
+  1103→  1103→                        key={lead.id}
+  1104→  1104→                        onClick={() => openDetail(lead)}
+  1105→  1105→                        className={cn(
+  1106→  1106→                          "cursor-pointer group",
+  1107→  1107→                          isNew && "bg-primary/[0.035] hover:bg-primary/[0.06]"
+  1108→  1108→                        )}
+  1109→  1109→                      >
+  1110→  1110→                        <TableCell className="pl-4">
+  1111→  1111→                          <div className="flex items-center gap-2.5">
+  1112→  1112→                            <Avatar className="size-8">
+  1113→  1113→                              <AvatarFallback className="text-xs font-semibold bg-primary/10 text-primary">
+  1114→  1114→                                {initials(lead.name) || "?"}
+  1115→  1115→                              </AvatarFallback>
+  1116→  1116→                            </Avatar>
+  1117→  1117→                            <div className="min-w-0">
+  1118→  1118→                              <div className="font-medium text-sm truncate flex items-center gap-1.5">
+  1119→  1119→                                <span className="truncate">{lead.name}</span>
+  1120→  1120→                                {isNew && (
+  1121→  1121→                                  <span className="relative flex size-1.5 shrink-0">
+  1122→  1122→                                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+  1123→  1123→                                    <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
+  1124→  1124→                                  </span>
+  1125→  1125→                                )}
+  1126→  1126→                              </div>
+  1127→  1127→                              {lead.sessionId && (
+  1128→  1128→                                <div className="text-[11px] text-muted-foreground flex items-center gap-1">
+  1129→  1129→                                  <MessageSquare size={9} />
+  1130→  1130→                                  Has chat
+  1131→  1131→                                </div>
+  1132→  1132→                              )}
+  1133→  1133→                            </div>
+  1134→  1134→                          </div>
+  1135→  1135→                        </TableCell>
+  1136→  1136→                        <TableCell>
+  1137→  1137→                          <div className="text-xs space-y-0.5">
+  1138→  1138→                            {lead.email ? (
+  1139→  1139→                              <div className="flex items-center gap-1.5 truncate">
+  1140→  1140→                                <Mail size={11} className="text-muted-foreground shrink-0" />
+  1141→  1141→                                <span className="truncate">{lead.email}</span>
+  1142→  1142→                              </div>
+  1143→  1143→                            ) : (
+  1144→  1144→                              <div className="text-muted-foreground/60">—</div>
+  1145→  1145→                            )}
+  1146→  1146→                            {lead.phone && (
+  1147→  1147→                              <div className="flex items-center gap-1.5 truncate text-muted-foreground">
+  1148→  1148→                                <Phone size={11} className="shrink-0" />
+  1149→  1149→                                <span className="truncate">{lead.phone}</span>
+  1150→  1150→                              </div>
+  1151→  1151→                            )}
+  1152→  1152→                          </div>
+  1153→  1153→                        </TableCell>
+  1154→  1154→                        <TableCell>
+  1155→  1155→                          <span className="text-sm truncate block max-w-[180px]">
+  1156→  1156→                            {lead.service || (
+  1157→  1157→                              <span className="text-muted-foreground/60">—</span>
+  1158→  1158→                            )}
+  1159→  1159→                          </span>
+  1160→  1160→                        </TableCell>
+  1161→  1161→                        <TableCell>
+  1162→  1162→                          <QualityBadge quality={lead.quality} />
+  1163→  1163→                        </TableCell>
+  1164→  1164→                        <TableCell>
+  1165→  1165→                          <StatusBadge status={lead.status} />
+  1166→  1166→                        </TableCell>
+  1167→  1167→                        <TableCell>
+  1168→  1168→                          <span className="text-xs capitalize text-muted-foreground">
+  1169→  1169→                            {lead.source}
+  1170→  1170→                          </span>
+  1171→  1171→                        </TableCell>
+  1172→  1172→                        <TableCell>
+  1173→  1173→                          <div className="text-xs text-muted-foreground">
+  1174→  1174→                            {relativeTime(lead.createdAt)}
+  1175→  1175→                          </div>
+  1176→  1176→                        </TableCell>
+  1177→  1177→                        <TableCell
+  1178→  1178→                          className="text-right pr-4"
+  1179→  1179→                          onClick={(e) => e.stopPropagation()}
+  1180→  1180→                        >
+  1181→  1181→                          <LeadRowActions
+  1182→  1182→                            lead={lead}
+  1183→  1183→                            onStatusChange={handleStatusChange}
+  1184→  1184→                            onDelete={(l) => setDeleteTarget(l)}
+  1185→  1185→                          />
+  1186→  1186→                        </TableCell>
+  1187→  1187→                      </TableRow>
+  1188→  1188→                    );
+  1189→  1189→                  })}
+  1190→  1190→                </TableBody>
+  1191→  1191→              </Table>
+  1192→  1192→            </div>
+  1193→  1193→
+  1194→  1194→            {/* Mobile cards */}
+  1195→  1195→            <div className="lg:hidden divide-y max-h-[65vh] overflow-auto scroll-thin">
+  1196→  1196→              {leads.map((lead) => {
+  1197→  1197→                const isNew = lead.status === "new";
+  1198→  1198→                return (
+  1199→  1199→                  <div
+  1200→  1200→                    key={lead.id}
+  1201→  1201→                    onClick={() => openDetail(lead)}
+  1202→  1202→                    className={cn(
+  1203→  1203→                      "p-4 cursor-pointer hover:bg-muted/40 transition-colors",
+  1204→  1204→                      isNew && "bg-primary/[0.035]"
+  1205→  1205→                    )}
+  1206→  1206→                  >
+  1207→  1207→                    <div className="flex items-start gap-3">
+  1208→  1208→                      <Avatar className="size-10 shrink-0">
+  1209→  1209→                        <AvatarFallback className="text-sm font-semibold bg-primary/10 text-primary">
+  1210→  1210→                          {initials(lead.name) || "?"}
+  1211→  1211→                        </AvatarFallback>
+  1212→  1212→                      </Avatar>
+  1213→  1213→                      <div className="min-w-0 flex-1">
+  1214→  1214→                        <div className="flex items-start justify-between gap-2">
+  1215→  1215→                          <div className="min-w-0">
+  1216→  1216→                            <div className="font-medium text-sm truncate flex items-center gap-1.5">
+  1217→  1217→                              <span className="truncate">{lead.name}</span>
+  1218→  1218→                              {isNew && (
+  1219→  1219→                                <span className="relative flex size-1.5 shrink-0">
+  1220→  1220→                                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+  1221→  1221→                                  <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
+  1222→  1222→                                </span>
+  1223→  1223→                              )}
+  1224→  1224→                            </div>
+  1225→  1225→                            <div className="text-xs text-muted-foreground truncate">
+  1226→  1226→                              {lead.email || lead.phone || lead.service || "—"}
+  1227→  1227→                            </div>
+  1228→  1228→                          </div>
+  1229→  1229→                          <div onClick={(e) => e.stopPropagation()}>
+  1230→  1230→                            <LeadRowActions
+  1231→  1231→                              lead={lead}
+  1232→  1232→                              onStatusChange={handleStatusChange}
+  1233→  1233→                              onDelete={(l) => setDeleteTarget(l)}
+  1234→  1234→                            />
+  1235→  1235→                          </div>
+  1236→  1236→                        </div>
+  1237→  1237→                        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+  1238→  1238→                          <QualityBadge quality={lead.quality} />
+  1239→  1239→                          <StatusBadge status={lead.status} />
+  1240→  1240→                          <span className="text-[11px] text-muted-foreground ml-auto">
+  1241→  1241→                            {relativeTime(lead.createdAt)}
+  1242→  1242→                          </span>
+  1243→  1243→                        </div>
+  1244→  1244→                      </div>
+  1245→  1245→                    </div>
+  1246→  1246→                  </div>
+  1247→  1247→                );
+  1248→  1248→              })}
+  1249→  1249→            </div>
+  1250→  1250→
+  1251→  1251→            {/* Footer count */}
+  1252→  1252→            <div className="border-t px-4 py-2.5 text-xs text-muted-foreground flex items-center justify-between bg-muted/20">
+  1253→  1253→              <span>
+  1254→  1254→                Showing{" "}
+  1255→  1255→                <span className="font-medium text-foreground">
+  1256→  1256→                  {leads.length}
+  1257→  1257→                </span>{" "}
+  1258→  1258→                {leads.length === 1 ? "lead" : "leads"}
+  1259→  1259→                {hasFilters && " (filtered)"}
+  1260→  1260→              </span>
+  1261→  1261→              {leads.length >= 200 && (
+  1262→  1262→                <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1">
+  1263→  1263→                  <ArrowUpRight size={11} /> Limit 200 reached
+  1264→  1264→                </span>
+  1265→  1265→              )}
+  1266→  1266→            </div>
+  1267→  1267→          </>
+  1268→  1268→        )}
+  1269→  1269→      </Card>
+  1270→  1270→
+  1271→  1271→      {/* Detail dialog */}
+  1272→  1272→      <LeadDetailDialog
+  1273→  1273→        lead={selectedLead}
+  1274→  1274→        open={detailOpen}
+  1275→  1275→        onOpenChange={setDetailOpen}
+  1276→  1276→        onSave={updateLead}
+  1277→  1277→        onDeleted={handleDelete}
+  1278→  1278→        saving={saving || detailLoading}
+  1279→  1279→      />
+  1280→  1280→
+  1281→  1281→      {/* Row-level delete confirmation */}
+  1282→  1282→      <AlertDialog
+  1283→  1283→        open={!!deleteTarget}
+  1284→  1284→        onOpenChange={(v) => !v && setDeleteTarget(null)}
+  1285→  1285→      >
+  1286→  1286→        <AlertDialogContent>
+  1287→  1287→          <AlertDialogHeader>
+  1288→  1288→            <AlertDialogTitle>Delete this lead?</AlertDialogTitle>
+  1289→  1289→            <AlertDialogDescription>
+  1290→  1290→              This will permanently remove{" "}
+  1291→  1291→              <strong>{deleteTarget?.name}</strong> from your leads. This action
+  1292→  1292→              cannot be undone.
+  1293→  1293→            </AlertDialogDescription>
+  1294→  1294→          </AlertDialogHeader>
+  1295→  1295→          <AlertDialogFooter>
+  1296→  1296→            <AlertDialogCancel>Cancel</AlertDialogCancel>
+  1297→  1297→            <AlertDialogAction
+  1298→  1298→              className="bg-destructive text-white hover:bg-destructive/90"
+  1299→  1299→              onClick={() => deleteTarget && handleDelete(deleteTarget.id)}
+  1300→  1300→            >
+  1301→  1301→              Delete lead
+  1302→  1302→            </AlertDialogAction>
+  1303→  1303→          </AlertDialogFooter>
+  1304→  1304→        </AlertDialogContent>
+  1305→  1305→      </AlertDialog>
+  1306→  1306→    </div>
+  1307→  1307→  );
+  1308→  1308→}
+  1309→  1309→

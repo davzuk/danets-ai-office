@@ -535,3 +535,108 @@ MVP stable from prior rounds. All 10 modules + dark mode + quick replies + CSV e
 - Conversation analytics on overview (top questions, deflection rate).
 - Email notifications on new leads.
 - The VLM suggested more typography/spacing refinements (7/10 → target 9/10) — could add Inter font, more consistent spacing system.
+
+---
+Task ID: F2
+Agent: subagent
+Task: Add lead quick-reply actions (WhatsApp / Email / Call) to the Leads view.
+
+Files modified:
+- `src/components/dashboard/views/leads-view.tsx` (only file touched).
+
+Work Log:
+- **Imports**: added `MessageCircle` (lucide-react) and `DropdownMenuSub` / `DropdownMenuSubTrigger` / `DropdownMenuSubContent` (shadcn dropdown-menu) to the existing import blocks. No new packages needed.
+- **Pure helper functions** (module-level, defined after `initials()` so they're hoisted before any component uses them):
+  - `type LeadContact = Pick<Lead, "name" | "email" | "phone" | "service" | "message">` — narrowest possible shape; satisfied by both `Lead` (table row) and `LeadDetail` (dialog) so the helpers work in both contexts without re-casting.
+  - `buildWhatsAppMessage(lead)` — contextual body. Uses `Hi {name}, thanks for your interest in {service}. How can we help?` when a service exists, else `Hi {name}, thanks for reaching out. How can we help?`. Appends a truncated (≤280 chars) quoted snippet of the lead's original message when present. NOT URL-encoded (encoding happens in the URL builder).
+  - `buildEmailSubject(lead)` — `Re: Your inquiry about {service}` (or `Re: Your inquiry` when no service).
+  - `buildEmailBody(lead)` — multi-line plain text: greeting, contextual thanks line, optional quoted message snippet (≤400 chars), closing CTA, "The Danets Team" signature. Joined with `\n` for clean `mailto:` body rendering.
+  - `normalizePhoneForWhatsApp(phone)` — strips all non-digit chars so wa.me gets the international format it requires (no `+`, spaces, dashes, parens).
+  - `buildWhatsAppUrl(lead)` — returns `https://wa.me/<digits>?text=<encodeURIComponent(message)>` or `null` when no phone / digits-only is empty.
+  - `buildMailtoUrl(lead)` — returns `mailto:{email}?subject=…&body=…` with both fields `encodeURIComponent`-encoded, or `null` when no email.
+  - `buildTelUrl(lead)` — returns `tel:<phone-without-whitespace>` or `null` when no phone.
+- **Action wrappers** (module-level; pure-except-side-effects):
+  - `openWhatsApp(lead)` — `window.open(url, "_blank", "noopener,noreferrer")` + `toast.success("Opening WhatsApp…")`.
+  - `openEmail(lead)` — `window.location.href = mailtoUrl` (OS mailto handler, no SPA navigation) + `toast.success("Opening email client…")`.
+  - `openCall(lead)` — `window.location.href = telUrl` + `toast.success("Initiating call…")`.
+  - All three early-return when the URL is `null` (no contact info), so they're safe to call unconditionally.
+- **Lead detail dialog** (`LeadDetailDialog`, Details tab): added a prominent **"Quick reply"** card directly below the lead's Message block (and above the Status/Quality controls), so the natural read-then-act flow is preserved: contact info → message → quick reply → status/quality → meta.
+  - Card uses `border-primary/20 bg-primary/[0.03]` to visually distinguish it from the surrounding muted cards.
+  - Header row: `MessageCircle` icon + "Quick reply" label, with an inline "No contact details" hint badge on the right when both phone and email are missing.
+  - Three buttons in a responsive `grid-cols-1 sm:grid-cols-3` layout:
+    - **WhatsApp** — `size="sm"`, inline `style={{ backgroundColor: "#25D366" }}` (WhatsApp brand green, guaranteed to override the default `bg-primary` from Button's `variant="default"`), white text, transparent border, `hover:opacity-90`, `MessageCircle` icon, disabled when `!lead.phone`. `title` tooltip shows `WhatsApp {phone}` or `No phone on file`.
+    - **Email** — `size="sm"`, default variant (primary blue), `Mail` icon, disabled when `!lead.email`. `title` tooltip shows the address.
+    - **Call** — `size="sm"`, `variant="outline"`, `Phone` icon, disabled when `!lead.phone`. `title` tooltip shows the number.
+- **Row actions dropdown** (`LeadRowActions`): added a **"Quick reply" `DropdownMenuSub`** at the very top of the menu (before "Update status"), so the most-used actions are first. The submenu contains three `DropdownMenuItem`s (WhatsApp / Email / Call) with the same icons, same disabled rules, and the same `openWhatsApp` / `openEmail` / `openCall` handlers as the dialog. Icon tints: WhatsApp green `text-[#25D366]`, email primary blue `text-primary`, call default. A `DropdownMenuSeparator` divides the submenu from the existing "Update status" block; everything else (status items, destructive delete) is unchanged. The parent `DropdownMenuContent`'s `onClick={(e) => e.stopPropagation()}` already prevents submenu clicks from bubbling up to the row's `openDetail(lead)` handler.
+- **Toast feedback**: every quick-reply action surfaces a `sonner` `toast.success` (matching the codebase's existing toast pattern) with the exact strings from the spec: `"Opening WhatsApp…"`, `"Opening email client…"`, `"Initiating call…"`.
+- **Preserved behavior**: all existing functionality (status dropdown, quality dropdown, delete confirmation, conversation tab, stats, search/filter, export CSV, refresh, mobile cards) is untouched. No API changes. No new dependencies.
+
+Constraints honoured:
+- Modified ONLY `src/components/dashboard/views/leads-view.tsx`.
+- Used only existing shadcn/ui components (`Button`, `DropdownMenuSub*`, `DropdownMenuItem`, `DropdownMenuSeparator`, `DropdownMenuLabel`, `Dialog`, `Tabs`, `Card`, etc.) and lucide icons (`MessageCircle`, `Mail`, `Phone`).
+- WhatsApp brand color `#25D366` applied via inline `style` so it deterministically overrides the Button's variant background regardless of Tailwind class order.
+- `sonner` for toasts; relative/protocol URLs only (`https://wa.me/...`, `mailto:`, `tel:`).
+- Lead object's existing `name`, `email`, `phone`, `service`, `message` fields reused — no interface changes.
+
+Verification:
+- `bunx tsc --noEmit` — zero errors in `src/components/dashboard/views/leads-view.tsx`. (Pre-existing unrelated errors in `examples/`, `skills/`, and other agents' files remain and are not affected.)
+- `bunx eslint src/components/dashboard/views/leads-view.tsx` — clean (0 warnings / 0 errors).
+- Manual review confirmed all five edits applied in the expected locations (imports, helpers block, dialog Quick Reply card, row-actions submenu).
+
+Stage Summary:
+- Admins can now contact a lead via WhatsApp, email, or phone with one click from either the lead detail dialog (prominent Quick Reply card with prefilled, contextual message/subject/body) or the per-row dropdown (Quick reply submenu). Disabled states prevent dead clicks when contact info is missing. Every action gives immediate sonner feedback. No backend changes; no new dependencies; no existing functionality regressed.
+
+---
+Task ID: CRON-3
+Agent: main (webDevReview cron round 3)
+Task: QA assessment, conversation analytics, lead quick-reply, styling polish (Inter font).
+
+## Current Project Status
+MVP stable and feature-rich from prior rounds (10 modules + dark mode + quick replies + CSV export + notification bell + PDF export + KB bulk import). This round focused on analytics insights, lead engagement actions, and typography polish.
+
+## Work Log
+
+### QA Findings
+- Logged in, tested all views — stable, no errors.
+- Widget demo: quick replies render, chat works, AI grounded in KB.
+- No bugs found — app is stable.
+
+### New Features
+1. **Conversation Analytics** (overview dashboard):
+   - Created `/api/analytics` endpoint computing: AI deflection rate (% sessions resolved without handover), lead conversion rate, avg messages/session, AI success rate, top 5 visitor questions (grouped by first 4 words), lead quality distribution (high/medium/low), 24h hourly activity.
+   - Added analytics section to overview-view.tsx with 4 InsightCards (Deflection Rate, Lead Conversion, Avg Messages, AI Success Rate) + 2 detail cards (Top Visitor Questions with numbered list + count badges, Lead Quality Distribution with animated progress bars).
+   - Empty states for when no data exists.
+   - Analytics fetched in parallel with dashboard stats (Promise.all).
+
+2. **Lead Quick-Reply Actions** (subagent Task F2):
+   - Added Quick Reply section to lead detail dialog: WhatsApp (green #25D366), Email (primary blue), Call (outline) buttons with contextual pre-filled messages.
+   - Helper functions: `buildWhatsAppMessage()`, `buildEmailSubject()`, `buildEmailBody()` generate contextual text from lead name/service/message.
+   - Added Quick reply submenu to row actions dropdown.
+   - Toast feedback on each action ("Opening WhatsApp…").
+   - Buttons disabled when contact info missing.
+
+### Styling Polish
+- **Inter font**: Replaced Geist with Inter (next/font/google) for a more modern, premium feel. Added `display: "swap"` and font feature settings (cv02, cv03, cv04, cv11) for better number/letter rendering.
+- **Font smoothing**: Added `-webkit-font-smoothing: antialiased` and `text-rendering: optimizeLegibility` to body.
+- **Dark mode scrollbars**: Added `.dark .scroll-thin` scrollbar thumb colors for better dark theme contrast.
+- **Focus rings**: Added premium `:focus-visible` outline (2px solid ring, 2px offset) for accessibility.
+- **VLM rating**: Improved from 7/10 → 8/10.
+
+## Verification
+- Lint: clean (0 errors).
+- Analytics: renders on overview with insight cards, top questions, lead quality bars (VLM confirmed clean).
+- Lead quick-reply: WhatsApp/Email/Call buttons in detail dialog (VLM confirmed correct styling).
+- Dev server stable throughout.
+- VLM polish rating: 8/10 (up from 7/10).
+
+## Stage Summary
+- 2 new features shipped (conversation analytics, lead quick-reply).
+- Styling polished with Inter font, dark scrollbars, focus rings, font smoothing.
+- All features verified via agent-browser + VLM.
+
+## Unresolved / Next Steps
+- Embeddings-based KB retrieval (still keyword scoring).
+- Email notifications on new leads (would need SMTP config).
+- Chart data is sparse with limited demo data — will populate as usage grows.
+- VLM suggested icon uniformity and whitespace tweaks (minor, 8/10 → 9/10 target).
+- Consider adding a settings page for managing business users / team members.

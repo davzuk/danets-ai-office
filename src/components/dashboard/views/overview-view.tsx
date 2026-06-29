@@ -21,6 +21,10 @@ import {
   BookOpen,
   ArrowRight,
   Activity,
+  Target,
+  Zap,
+  CheckCircle2,
+  HelpCircle,
 } from "lucide-react";
 import type { ViewId } from "@/components/dashboard/app-shell";
 import {
@@ -49,6 +53,21 @@ interface Stats {
   series: { date: string; label: string; leads: number; sessions: number }[];
 }
 
+interface AnalyticsData {
+  insights: {
+    deflectionRate: number;
+    leadConversion: number;
+    avgMessages: number;
+    aiSuccessRate: number;
+    totalSessions: number;
+    totalLeads: number;
+    aiRequests: number;
+  };
+  topQuestions: { question: string; count: number }[];
+  leadQuality: { high: number; medium: number; low: number };
+  hourly: { hour: string; count: number }[];
+}
+
 export function OverviewView({
   user,
   onNavigate,
@@ -57,12 +76,18 @@ export function OverviewView({
   onNavigate: (v: ViewId) => void;
 }) {
   const [data, setData] = useState<Stats | null>(null);
+  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/dashboard/stats", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((d) => setData(d))
+    Promise.all([
+      fetch("/api/dashboard/stats", { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/analytics", { cache: "no-store" }).then((r) => r.json().catch(() => null)),
+    ])
+      .then(([d, a]) => {
+        setData(d);
+        setAnalytics(a);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -272,6 +297,130 @@ export function OverviewView({
         </Card>
       </div>
 
+      {/* AI Insights & Analytics */}
+      {analytics && (
+        <div className="grid gap-4 lg:grid-cols-4">
+          {/* Insight stat cards */}
+          <InsightCard
+            icon={CheckCircle2}
+            label="AI Deflection Rate"
+            value={`${analytics.insights.deflectionRate}%`}
+            sub="Sessions resolved without handover"
+            color="text-accent-foreground"
+            bg="bg-accent/15"
+          />
+          <InsightCard
+            icon={Target}
+            label="Lead Conversion"
+            value={`${analytics.insights.leadConversion}%`}
+            sub="Sessions that became leads"
+            color="text-primary"
+            bg="bg-primary/10"
+          />
+          <InsightCard
+            icon={MessagesSquare}
+            label="Avg Messages/Session"
+            value={String(analytics.insights.avgMessages)}
+            sub="Engagement depth"
+            color="text-foreground"
+            bg="bg-muted"
+          />
+          <InsightCard
+            icon={Zap}
+            label="AI Success Rate"
+            value={`${analytics.insights.aiSuccessRate}%`}
+            sub={`${analytics.insights.aiRequests} requests (30d)`}
+            color="text-accent-foreground"
+            bg="bg-accent/15"
+          />
+        </div>
+      )}
+
+      {/* Top Questions + Lead Quality */}
+      {analytics && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <HelpCircle size={16} /> Top Visitor Questions
+              </CardTitle>
+              <CardDescription>Most asked questions (30 days)</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {analytics.topQuestions.length === 0 && (
+                <p className="text-sm text-muted-foreground py-6 text-center">
+                  No visitor questions yet. Once people chat with your widget,
+                  the most common questions appear here.
+                </p>
+              )}
+              {analytics.topQuestions.map((q, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-3 rounded-lg p-2 hover:bg-muted/50 transition-colors"
+                >
+                  <span className="h-6 w-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0">
+                    {i + 1}
+                  </span>
+                  <span className="flex-1 text-sm truncate">{q.question}?</span>
+                  <Badge variant="secondary" className="tabular-nums">
+                    {q.count}×
+                  </Badge>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Target size={16} /> Lead Quality Distribution
+              </CardTitle>
+              <CardDescription>30-day lead breakdown by quality</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                const total =
+                  analytics.leadQuality.high +
+                  analytics.leadQuality.medium +
+                  analytics.leadQuality.low;
+                if (total === 0) {
+                  return (
+                    <p className="text-sm text-muted-foreground py-6 text-center">
+                      No leads yet. Leads captured by your AI widget appear here.
+                    </p>
+                  );
+                }
+                return (
+                  <div className="space-y-3">
+                    <QualityBar
+                      label="High quality"
+                      count={analytics.leadQuality.high}
+                      total={total}
+                      color="bg-destructive"
+                      textClass="text-destructive"
+                    />
+                    <QualityBar
+                      label="Medium quality"
+                      count={analytics.leadQuality.medium}
+                      total={total}
+                      color="bg-accent"
+                      textClass="text-accent-foreground"
+                    />
+                    <QualityBar
+                      label="Low quality"
+                      count={analytics.leadQuality.low}
+                      total={total}
+                      color="bg-muted-foreground"
+                      textClass="text-muted-foreground"
+                    />
+                  </div>
+                );
+              })()}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Recent conversations + recent quotes + top KB */}
       <div className="grid gap-4 lg:grid-cols-3">
         <Card>
@@ -450,5 +599,73 @@ function StatCard({
 function EmptyMini({ text }: { text: string }) {
   return (
     <div className="text-center py-8 text-sm text-muted-foreground">{text}</div>
+  );
+}
+
+function InsightCard({
+  icon: Icon,
+  label,
+  value,
+  sub,
+  color,
+  bg,
+}: {
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  label: string;
+  value: string;
+  sub: string;
+  color: string;
+  bg: string;
+}) {
+  return (
+    <Card className="relative overflow-hidden group hover:shadow-md transition-shadow">
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between mb-2">
+          <div className={`h-9 w-9 rounded-lg ${bg} ${color} flex items-center justify-center`}>
+            <Icon size={18} />
+          </div>
+        </div>
+        <div className="text-2xl font-bold tabular-nums">{value}</div>
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mt-0.5">
+          {label}
+        </div>
+        <div className="text-[11px] text-muted-foreground mt-1">{sub}</div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function QualityBar({
+  label,
+  count,
+  total,
+  color,
+  textClass,
+}: {
+  label: string;
+  count: number;
+  total: number;
+  color: string;
+  textClass: string;
+}) {
+  const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between text-sm">
+        <span className="flex items-center gap-2">
+          <span className={`h-2.5 w-2.5 rounded-full ${color}`} />
+          {label}
+        </span>
+        <span className="font-medium tabular-nums">
+          {count} <span className="text-muted-foreground">({pct}%)</span>
+        </span>
+      </div>
+      <div className="h-2 rounded-full bg-muted overflow-hidden">
+        <div
+          className={`h-full rounded-full ${color} transition-all duration-500`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
   );
 }
