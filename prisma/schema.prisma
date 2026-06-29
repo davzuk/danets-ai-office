@@ -42,6 +42,9 @@ model Business {
   documents          Document[]
   whatsappTemplates  WhatsAppTemplate[]
   whatsappIntegration WhatsAppIntegration[]
+  automationWorkflows AutomationWorkflow[]
+  integrations       Integration[]
+  subscription       BusinessSubscription?
 }
 
 model BusinessUser {
@@ -558,5 +561,88 @@ model WhatsAppIntegration {
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
+}
+
+// ─── Automation Workflows ─────────────────────────────────────────
+
+model AutomationWorkflow {
+  id          String   @id @default(cuid())
+  businessId  String
+  name        String
+  description String?
+  triggerType String   // new_lead | new_ticket | proposal_generated | proposal_accepted | lead_status_changed | document_uploaded | no_response_days
+  triggerConfig String? // JSON: { days?: number, leadStatus?: string }
+  actionType  String   // create_task | send_notification | generate_ai_followup | add_lead_note | change_lead_status | create_ticket | create_proposal_reminder
+  actionConfig String? // JSON: { taskTitle?, noteContent?, leadStatus?, notificationType? }
+  isActive    Boolean  @default(true)
+  runCount    Int      @default(0)
+  lastRunAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  runs     AutomationRun[]
+
+  @@index([businessId])
+  @@index([triggerType])
+  @@index([isActive])
+}
+
+model AutomationRun {
+  id          String   @id @default(cuid())
+  workflowId  String
+  businessId  String
+  triggerData String?  // JSON: what triggered this run
+  actionData  String?  // JSON: what action was taken
+  status      String   @default("success") // success | error
+  error       String?
+  createdAt   DateTime @default(now())
+
+  workflow AutomationWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([workflowId])
+  @@index([businessId])
+}
+
+// ─── Integrations ─────────────────────────────────────────────────
+
+model Integration {
+  id          String   @id @default(cuid())
+  businessId  String
+  category    String   // ai_provider | whatsapp | email | sms | payment | crm | website_widget
+  provider    String   // e.g. openai, zai, meta, twilio, sendgrid, paystack, flutterwave, manual
+  name        String   // display name
+  status      String   @default("inactive") // active | inactive | testing | error
+  config      String?  // JSON: provider-specific config (apiKey masked in frontend)
+  lastTestedAt DateTime?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([category])
+}
+
+// ─── Subscription Management ──────────────────────────────────────
+
+model BusinessSubscription {
+  id          String   @id @default(cuid())
+  businessId  String   @unique
+  planName    String   // free | starter | business | premium | enterprise
+  status      String   @default("active") // active | trial | past_due | canceled | expired
+  startDate   DateTime @default(now())
+  endDate     DateTime?
+  trialEndsAt DateTime?
+  monthlyFee  Float    @default(0)
+  paymentMethod String? // paystack | flutterwave | bank_transfer | manual
+  paymentRef  String?  // transaction reference
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([status])
 }
 

@@ -19,6 +19,9 @@ import {
   Ticket,
   History,
   MessageCircle,
+  Zap,
+  Plug,
+  CreditCard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DanetsLogo } from "@/components/dashboard/shared/danets-logo";
@@ -38,8 +41,12 @@ export type ViewId =
   | "tickets"
   | "documents"
   | "whatsapp"
+  | "automations"
+  | "analytics"
   | "usage"
   | "embed"
+  | "integrations"
+  | "subscription"
   | "settings"
   | "audit";
 
@@ -59,10 +66,14 @@ const NAV: NavItem[] = [
   { id: "quotes", label: "Quotes & Proposals", icon: FileText, group: "tools", desc: "AI proposal generator" },
   { id: "documents", label: "Document Assistant", icon: FileText, group: "tools", desc: "AI document Q&A" },
   { id: "whatsapp", label: "WhatsApp", icon: MessageCircle, group: "tools", desc: "Templates & automation" },
+  { id: "automations", label: "Automations", icon: Zap, group: "tools", desc: "Workflow builder" },
+  { id: "analytics", label: "Analytics", icon: BarChart3, group: "tools", desc: "Reports & insights" },
   { id: "usage", label: "AI Usage", icon: BarChart3, group: "tools", desc: "Token & cost logs" },
   { id: "agent", label: "AI Agent", icon: Bot, group: "tools", desc: "Bot configuration" },
   { id: "knowledge", label: "Knowledge Base", icon: BookOpen, group: "tools", desc: "KB articles" },
   { id: "embed", label: "Widget Embed", icon: Code2, group: "system", desc: "Install instructions" },
+  { id: "integrations", label: "Integrations", icon: Plug, group: "system", desc: "Provider settings" },
+  { id: "subscription", label: "Subscription", icon: CreditCard, group: "system", desc: "Plan & billing" },
   { id: "audit", label: "Audit Logs", icon: History, group: "system", desc: "Activity tracking" },
   { id: "settings", label: "Settings", icon: Settings, group: "system", desc: "Business settings" },
 ];

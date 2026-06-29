@@ -18,6 +18,10 @@ import { UsageView } from "@/components/dashboard/views/usage-view";
 import { EmbedView } from "@/components/dashboard/views/embed-view";
 import { SettingsView } from "@/components/dashboard/views/settings-view";
 import { AuditLogsView } from "@/components/dashboard/views/audit-logs-view";
+import { AutomationsView } from "@/components/dashboard/views/automations-view";
+import { IntegrationsView } from "@/components/dashboard/views/integrations-view";
+import { SubscriptionView } from "@/components/dashboard/views/subscription-view";
+import { AnalyticsView } from "@/components/dashboard/views/analytics-view";
 
 interface AuthUser {
   userId: string;
@@ -77,8 +81,12 @@ export default function Home() {
       case "tickets": return <TicketsView user={user} />;
       case "documents": return <DocumentsView user={user} />;
       case "whatsapp": return <WhatsAppView user={user} />;
+      case "automations": return <AutomationsView user={user} />;
+      case "analytics": return <AnalyticsView user={user} />;
       case "usage": return <UsageView user={user} />;
       case "embed": return <EmbedView user={user} />;
+      case "integrations": return <IntegrationsView user={user} />;
+      case "subscription": return <SubscriptionView user={user} />;
       case "settings": return <SettingsView user={user} />;
       case "audit": return <AuditLogsView user={user} />;
       default: return null;
