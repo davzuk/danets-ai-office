@@ -22,6 +22,7 @@ import {
   Zap,
   Plug,
   CreditCard,
+  Shield,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DanetsLogo } from "@/components/dashboard/shared/danets-logo";
@@ -48,7 +49,8 @@ export type ViewId =
   | "integrations"
   | "subscription"
   | "settings"
-  | "audit";
+  | "audit"
+  | "super-admin";
 
 interface NavItem {
   id: ViewId;
@@ -76,6 +78,7 @@ const NAV: NavItem[] = [
   { id: "subscription", label: "Subscription", icon: CreditCard, group: "system", desc: "Plan & billing" },
   { id: "audit", label: "Audit Logs", icon: History, group: "system", desc: "Activity tracking" },
   { id: "settings", label: "Settings", icon: Settings, group: "system", desc: "Business settings" },
+  { id: "super-admin", label: "Super Admin", icon: Shield, group: "system", desc: "Internal management" },
 ];
 
 export function AppShell({
@@ -90,6 +93,7 @@ export function AppShell({
     email: string;
     businessName: string;
     businessId: string;
+    isSuperAdmin?: boolean;
   };
   active: ViewId;
   onNavigate: (v: ViewId) => void;
@@ -135,6 +139,7 @@ export function AppShell({
             onNavigate(v);
             setMobileOpen(false);
           }}
+          isSuperAdmin={user.isSuperAdmin}
           groups={groups}
         />
         <SidebarFooter user={user} onLogout={logout} />
@@ -165,6 +170,7 @@ export function AppShell({
                 onNavigate(v);
                 setMobileOpen(false);
               }}
+              isSuperAdmin={user.isSuperAdmin}
               groups={groups}
             />
             <SidebarFooter user={user} onLogout={logout} />
@@ -260,11 +266,14 @@ function SidebarContent({
   active,
   onNavigate,
   groups,
+  isSuperAdmin,
 }: {
   active: ViewId;
   onNavigate: (v: ViewId) => void;
   groups: { key: NavItem["group"]; label: string }[];
+  isSuperAdmin?: boolean;
 }) {
+  const visibleNav = NAV.filter((n) => n.id !== "super-admin" || isSuperAdmin);
   return (
     <div className="flex-1 flex flex-col overflow-y-auto scroll-thin">
       <div className="p-4 border-b border-sidebar-border">
@@ -276,7 +285,7 @@ function SidebarContent({
             <div className="px-2 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/50">
               {g.label}
             </div>
-            {NAV.filter((n) => n.group === g.key).map((item) => {
+            {visibleNav.filter((n) => n.group === g.key).map((item) => {
               const Icon = item.icon;
               const isActive = active === item.id;
               return (

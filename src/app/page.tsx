@@ -22,6 +22,7 @@ import { AutomationsView } from "@/components/dashboard/views/automations-view";
 import { IntegrationsView } from "@/components/dashboard/views/integrations-view";
 import { SubscriptionView } from "@/components/dashboard/views/subscription-view";
 import { AnalyticsView } from "@/components/dashboard/views/analytics-view";
+import { SuperAdminView } from "@/components/dashboard/views/super-admin-view";
 
 interface AuthUser {
   userId: string;
@@ -30,6 +31,7 @@ interface AuthUser {
   role: string;
   businessId: string;
   businessName: string;
+  isSuperAdmin: boolean;
 }
 
 export default function Home() {
@@ -89,6 +91,7 @@ export default function Home() {
       case "subscription": return <SubscriptionView user={user} />;
       case "settings": return <SettingsView user={user} />;
       case "audit": return <AuditLogsView user={user} />;
+      case "super-admin": return <SuperAdminView user={user} />;
       default: return null;
     }
   };

@@ -12,6 +12,7 @@ export interface SessionUser {
   email: string;
   role: string;
   businessName: string;
+  isSuperAdmin: boolean;
 }
 
 function generateToken() {
@@ -70,6 +71,7 @@ export async function getSession(): Promise<SessionUser | null> {
     email: u.email,
     role: u.role,
     businessName: u.business.name,
+    isSuperAdmin: u.isSuperAdmin,
   };
 }
 

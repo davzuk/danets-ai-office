@@ -2285,3 +2285,98 @@ With all 14 advanced modules from the original spec now implemented, the platfor
 8. Advanced AI (P8) — competitive edge
 9. White-Label (P9) — reseller revenue
 10. Security Hardening (P10) — production compliance
+
+---
+Task ID: SA-VIEW
+Agent: subagent
+Task: Super Admin dashboard view — internal management UI for all businesses.
+
+Work Log:
+- Created `src/components/dashboard/views/super-admin-view.tsx` (`"use client"`):
+  - Export: `export function SuperAdminView({ user }: { user: { userId, businessId, name, email, role, businessName, isSuperAdmin } })`.
+  - **Guard**: If `!user.isSuperAdmin`, renders a "Forbidden" Card with ShieldAlert icon and explanatory text — defence-in-depth even though the parent (page.tsx) is expected to gate routing.
+  - **Distinctive header bar**: dark slate gradient (`from-slate-900 via-slate-800 to-slate-900`) with decorative oversized Shield watermark, amber-400 shield icon, an amber "Internal" badge, subtitle, a warning note ("You are logged in as a super admin. Changes here affect all businesses."), and a slate-toned Refresh button. Visually distinct from regular business dashboard headers.
+  - **System stats row** (8 StatCards): Total Businesses (Building2, primary), Active Businesses (CheckCircle2, emerald), Total Users (Users, accent), Total Leads (TrendingUp, amber), Total Chats (MessageSquare, violet), AI Requests (Zap, cyan, with compact-token hint), AI Cost (DollarSign, rose), Total Tickets (Ticket, orange). Each card has an icon-tinted bg ring, large value, and contextual hint.
+  - **Plans Breakdown Card** (left, lg:1/3): horizontal Progress bars per plan (free/starter/pro/enterprise) with colored indicators matching the plan badge color (slate / primary / accent / violet), absolute count + % of total, and a totals footer. Always renders all 4 plans even when count is 0.
+  - **Recent Businesses Card** (right, lg:2/3): list of the 5 most recently created businesses with avatar, name, email, plan badge, status badge, time-ago, and a hover-revealed "view details" icon button that opens the detail dialog.
+  - **Businesses Management Table** (main feature):
+    - Toolbar: debounced search input (350ms, searches name/email server-side), Plan Select (All/Free/Starter/Pro/Enterprise), Status Select (All/Active/Suspended).
+    - Sticky-header Table inside `max-h-[65vh] overflow-auto scroll-thin`.
+    - Each row shows: avatar + name + email/industry, color-coded plan Badge, status Badge, 4 mini-stat chips (users/leads/chats/tickets), AI usage (compact tokens + cost), time-ago created date, and an actions DropdownMenu.
+    - Actions dropdown: "View Details" (opens Dialog), "Suspend"/"Activate" (toggle, opens AlertDialog confirmation), "Change Plan" submenu (DropdownMenuSub → 4 plan options with current plan marked + disabled).
+  - **Detail Dialog**: fetches `GET /api/super-admin/businesses/[id]` on open. Shows identity header (avatar, name, plan badge, status badge, email, industry), 8-tile counts grid (Users/Leads/Chats/Tickets/Proposals/KB Items/Documents/AI Logs), subscription panel (plan, status, seats, renewal date, cancel-at-period-end notice), public key block, and full team-members list (with super-admin shield badge on relevant users).
+  - **Mutations**:
+    - Status toggle (`PATCH` with `{ status }`): confirmation AlertDialog (destructive styling when suspending), optimistic state update on both businesses list and totals, toast on success/error, background stats refresh.
+    - Plan change (`PATCH` with `{ plan }`): optimistic update with revert-on-error, toast, background stats refresh.
+  - **UX polish**: skeleton states for stat cards / breakdown / recent list / table rows / detail dialog; error cards with retry buttons; empty-state messaging with iconography; relative fetches only (`/api/super-admin/...`); `sonner` toasts for all mutations/errors; brand colors (`bg-primary`, `bg-accent`) plus plan-specific colors (slate/primary/accent/violet) and status colors (emerald/destructive).
+  - Reusable helpers: `planMeta(plan)` returns label+color+badgeClass+barClass; `timeAgo`, `formatDate`, `formatNumber`, `formatCompact`, `formatCost`; `StatusBadge`, `StatCard`, `StatCardSkeleton`, `CountTile`, `MiniStat` components.
+
+Conventions honoured:
+- Created ONLY `src/components/dashboard/views/super-admin-view.tsx`. Did not modify `page.tsx`, `app-shell.tsx`, the API routes, or any other file.
+- shadcn/ui components used: Card, Button, Input, Badge, Select, Dialog, DropdownMenu (incl. Sub), Table, AlertDialog, Separator, Skeleton, Progress, Avatar.
+- lucide-react icons only (Shield, ShieldAlert, Building2, CheckCircle2, Users, TrendingUp, MessageSquare, Zap, DollarSign, Ticket, Search, RefreshCw, MoreVertical, Eye, Ban, CheckCircle, ArrowRightCircle, Loader2, Mail, Calendar, Cpu, CircleDollarSign, Crown, ExternalLink, FileText, BookOpen).
+- `sonner` toasts; all fetches use relative paths.
+- Multi-tenant safety: this view only reads/calls super-admin endpoints that already enforce `user.isSuperAdmin` server-side; no client-supplied businessId.
+
+Verification:
+- `bunx tsc --noEmit` — 0 errors in `src/components/dashboard/views/super-admin-view.tsx`. (Pre-existing unrelated errors remain in `.next/dev/types/validator.ts` for `/api/super-admin/*` routes — the route handlers return raw objects instead of `NextResponse.json(...)`; this is a backend typing nit, not a view issue, and is out of scope for this task. Other pre-existing errors in `examples/`, `skills/`, and `/api/automations`+`/api/integrations` from other agents remain.)
+- `bunx eslint src/components/dashboard/views/super-admin-view.tsx` — 0 errors, 0 warnings.
+
+Integration note for parent task:
+- `src/app/page.tsx` does not yet wire `SuperAdminView` — it has no `super-admin` ViewId case and its `AuthUser` interface omits `isSuperAdmin`. The parent (or a follow-up task) needs to: (1) extend the `/api/auth/me` response to include `isSuperAdmin`, (2) add `isSuperAdmin` to `AuthUser` in page.tsx, (3) add a "super-admin" entry to `ViewId` in `app-shell.tsx` (likely sidebar group visible only when `user.isSuperAdmin`), and (4) add `case "super-admin": return <SuperAdminView user={user} />` to the switch. The component is self-contained and ready to mount once those wiring changes land.
+
+Stage Summary:
+- Super Admin dashboard view complete, type-safe, and lint-clean. Provides full CRUD-style oversight (view / suspend / activate / change plan) over every business on the platform with system-wide stats, plan distribution, recent signups, and a detailed per-business drill-down dialog. Distinct dark-gradient header makes it visually unmistakable as the internal super-admin area.
+
+---
+Task ID: NEXT-PHASE-P1
+Agent: main
+Task: Super Admin Management — Priority 1 of Recommended Next Development Phase.
+
+## Current Project Status
+All 14 advanced modules complete (Phases 1-6). This is the first item from the Recommended Next Development Phase plan: Super Admin Management for Danets TecPro internal team.
+
+## Work Log
+
+### Schema Changes
+- Added `isSuperAdmin Boolean @default(false)` to BusinessUser model.
+- Ran `bun run db:push` (success).
+
+### Auth System Updates
+- Updated `SessionUser` interface to include `isSuperAdmin: boolean`.
+- Updated `getSession()` to return `isSuperAdmin` from the BusinessUser record.
+- Updated `AuthUser` interface in page.tsx to include `isSuperAdmin`.
+
+### API Routes Created (3 new endpoints)
+- `GET /api/super-admin/stats` — system-wide stats: total businesses, active/suspended, users, leads, chats, tickets, proposals, AI requests/tokens/cost, plans breakdown, recent businesses. Super-admin-only (403 if not super admin).
+- `GET /api/super-admin/businesses` — list all businesses with per-business stats (users, leads, chats, tickets, proposals, AI usage) + search/filter. Super-admin-only.
+- `GET /api/super-admin/businesses/[id]` — detailed business view with users, subscription, counts.
+- `PATCH /api/super-admin/businesses/[id]` — update business status (active/suspended), plan, name. Logs to business audit log.
+
+### UI Created
+- **SuperAdminView** (`super-admin-view.tsx`, subagent SA-VIEW, ~1347 lines):
+  - Distinctive dark-gradient header with "Internal" badge + shield icon.
+  - 8 system-wide stat cards (businesses, active, users, leads, chats, AI requests, AI cost, tickets).
+  - Plans breakdown card with progress bars (free/starter/pro/enterprise).
+  - Recent businesses card (5 most recent).
+  - Businesses management table with search, plan/status filters, per-business stats, AI usage, actions dropdown (View Details, Suspend/Activate, Change Plan).
+  - Business detail dialog with users list, subscription, full counts.
+  - Guard: renders Forbidden card if !isSuperAdmin.
+- Wired into app-shell (conditional nav item — only visible for super admins) + page.tsx + command palette.
+
+### Seed Data
+- Created super admin user: `superadmin@danetstecpro.com` / `super123` (isSuperAdmin: true).
+
+## Verification
+- Lint: clean (0 errors).
+- Super admin login works: `superadmin@danetstecpro.com` / `super123`.
+- Super admin nav item only appears for super admins (not for regular admin).
+- Stats API: returns 3 businesses, 5 users, 20 AI requests, $0.02 cost ✓.
+- Businesses API: returns all businesses with stats ✓.
+- Dashboard renders with stats, plans breakdown, recent businesses, management table ✓ (VLM confirmed clean).
+
+## Stage Summary
+- Priority 1 (Super Admin Management) complete: internal tooling for Danets TecPro to manage all businesses, plans, and system health.
+- 1 schema field added, 4 API routes, 1 UI view, conditional nav item.
+- Super admin can: view all businesses, search/filter, suspend/activate, change plans, view per-business details.
+- Ready for Priority 2 (Real Payment Gateway Integration) on user's instruction.
