@@ -35,6 +35,8 @@ model Business {
   generatedDocuments GeneratedDocument[]
   usageLogs          AiUsageLog[]
   sessions           Session[]
+  ticketCategories   SupportTicketCategory[]
+  supportTickets     SupportTicket[]
 }
 
 model BusinessUser {
@@ -150,6 +152,7 @@ model ChatSession {
   agent    AiAgent?      @relation(fields: [agentId], references: [id], onDelete: SetNull)
   messages ChatMessage[]
   lead     Lead?
+  supportTickets SupportTicket[]
 
   @@index([businessId])
   @@index([status])
@@ -254,6 +257,90 @@ model LeadActivity {
   @@index([leadId])
   @@index([businessId])
   @@index([type])
+}
+
+// ─── Support Tickets ───────────────────────────────────────────────
+
+model SupportTicketCategory {
+  id          String   @id @default(cuid())
+  businessId  String
+  name        String
+  description String?
+  color       String   @default("#1d4ed8")
+  createdAt   DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  tickets  SupportTicket[]
+
+  @@index([businessId])
+}
+
+model SupportTicket {
+  id          String   @id @default(cuid())
+  businessId  String
+  categoryId  String?
+  chatSessionId String? // link to chat session if converted from chat
+  subject     String
+  description String
+  status      String   @default("open") // open | pending | in_progress | resolved | closed
+  priority    String   @default("medium") // low | medium | high | urgent
+  // AI-detected fields
+  aiSummary   String?
+  aiPriority  String?  // low | medium | high | urgent
+  aiSentiment String?  // positive | neutral | negative | frustrated
+  aiNextAction String?
+  // Customer info
+  customerName  String?
+  customerEmail String?
+  customerPhone String?
+  // Assignment
+  assignedTo  String?  // BusinessUser id
+  assignedName String?
+  // AI suggested reply (stored for review, not auto-sent)
+  aiSuggestedReply String?
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  resolvedAt  DateTime?
+
+  business    Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  category    SupportTicketCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  chatSession ChatSession?           @relation(fields: [chatSessionId], references: [id], onDelete: SetNull)
+  messages    SupportTicketMessage[]
+  notes       SupportTicketNote[]
+
+  @@index([businessId])
+  @@index([status])
+  @@index([priority])
+}
+
+model SupportTicketMessage {
+  id          String   @id @default(cuid())
+  ticketId    String
+  role        String   // customer | agent | system
+  content     String
+  authorId    String?  // BusinessUser id (for agent messages)
+  authorName  String?
+  createdAt   DateTime @default(now())
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+}
+
+model SupportTicketNote {
+  id          String   @id @default(cuid())
+  ticketId    String
+  businessId  String
+  authorId    String?
+  authorName  String
+  content     String
+  createdAt   DateTime @default(now())
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([businessId])
 }
 
 // ─── Usage & Documents ─────────────────────────────────────────────

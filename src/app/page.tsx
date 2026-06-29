@@ -11,6 +11,7 @@ import { KnowledgeView } from "@/components/dashboard/views/knowledge-view";
 import { ConversationsView } from "@/components/dashboard/views/conversations-view";
 import { LeadsView } from "@/components/dashboard/views/leads-view";
 import { QuotesView } from "@/components/dashboard/views/quotes-view";
+import { TicketsView } from "@/components/dashboard/views/tickets-view";
 import { UsageView } from "@/components/dashboard/views/usage-view";
 import { EmbedView } from "@/components/dashboard/views/embed-view";
 import { SettingsView } from "@/components/dashboard/views/settings-view";
@@ -70,6 +71,7 @@ export default function Home() {
       case "conversations": return <ConversationsView user={user} />;
       case "leads": return <LeadsView user={user} />;
       case "quotes": return <QuotesView user={user} />;
+      case "tickets": return <TicketsView user={user} />;
       case "usage": return <UsageView user={user} />;
       case "embed": return <EmbedView user={user} />;
       case "settings": return <SettingsView user={user} />;

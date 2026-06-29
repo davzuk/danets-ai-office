@@ -16,6 +16,7 @@ import {
   Settings,
   ChevronRight,
   Search,
+  Ticket,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DanetsLogo } from "@/components/dashboard/shared/danets-logo";
@@ -32,6 +33,7 @@ export type ViewId =
   | "conversations"
   | "leads"
   | "quotes"
+  | "tickets"
   | "usage"
   | "embed"
   | "settings";
@@ -48,6 +50,7 @@ const NAV: NavItem[] = [
   { id: "overview", label: "Dashboard", icon: LayoutDashboard, group: "main", desc: "Overview & stats" },
   { id: "conversations", label: "Conversations", icon: MessagesSquare, group: "main", desc: "Chat sessions" },
   { id: "leads", label: "Leads", icon: Users, group: "main", desc: "Captured leads" },
+  { id: "tickets", label: "Support Tickets", icon: Ticket, group: "main", desc: "Customer support" },
   { id: "quotes", label: "Quotes & Proposals", icon: FileText, group: "tools", desc: "AI proposal generator" },
   { id: "usage", label: "AI Usage", icon: BarChart3, group: "tools", desc: "Token & cost logs" },
   { id: "agent", label: "AI Agent", icon: Bot, group: "tools", desc: "Bot configuration" },

@@ -1147,3 +1147,125 @@ MVP was stable and feature-rich. This is Phase 1 of a 6-phase plan to add 14 adv
 - Phase 1 complete: Full CRM with 3 new models, 7 API routes, expanded lead detail dialog (5 tabs), 7-stage pipeline with deal values.
 - All existing functionality preserved (quick-reply, CSV export, search/filter, command palette, etc.).
 - Ready for Phase 2 (AI Support Ticket Assistant) on user's instruction.
+
+---
+Task ID: P2-TICKETS
+Agent: subagent
+Task: Build the Support Tickets view — full ticket management UI with list, detail dialog, AI assistance buttons, and message/note threads.
+
+## Scope
+Created `src/components/dashboard/views/tickets-view.tsx` (single client component, ~2,620 lines, exports `TicketsView({ user })`). All 8 backend routes already existed (`/api/tickets`, `/api/tickets/[id]`, `/api/tickets/[id]/{messages,notes,ai}`, `/api/tickets/{stats,categories}`) and were inspected to confirm response shapes — no backend changes were required.
+
+## File Created
+`src/components/dashboard/views/tickets-view.tsx`
+
+### Top-level exports
+- `TicketsView({ user }: { user: { userId, businessId, name, email, role, businessName } })` — main view component.
+
+### Component hierarchy
+- `TicketsView` (orchestrator) — manages list, stats, categories, filters, dialogs, optimistic mutations.
+  - `StatCard` × 4 — Open (blue/primary), Urgent (rose/destructive), Awaiting Reply (amber), Recently Resolved (emerald). Uses `Skeleton` while loading.
+  - `TicketRowCard` — list-row card with avatar, subject (animated ping dot when status=open), customer name+email, last-message preview, badges (priority/status/category/sentiment), time-ago, kebab menu (quick status changes, delete).
+  - `NewTicketDialog` — Subject* + Description* (textarea) + Category Select + Priority Select + Customer Name/Email/Phone (optional). POSTs to `/api/tickets`, resets on close, ⌘/Ctrl+Enter shortcut.
+  - `TicketDetailDialog` (sm:max-w-3xl) — header with editable subject Input (PATCH-on-blur with Escape-to-revert), priority/status/category/sentiment badges, customer info line.
+    - Tabs: **Messages** | **Notes** | **AI Assistant** | **Details**
+    - `MessagesTab` — chat-bubble thread (customer left, agent right with `brand-gradient` avatar), auto-scroll-to-bottom, agent reply Textarea with ⌘/Ctrl+Enter, posts to `/api/tickets/[id]/messages` with `role="agent"`. Optimistically flips status open→pending (server does the same) and updates `lastMessage`/`lastMessageAt` on both selected ticket and list row.
+    - `NotesTab` — internal-note Textarea (5000 char limit) + list of notes (author avatar, time-ago, content). POSTs to `/api/tickets/[id]/notes`.
+    - `AiAssistantTab` — 4 action buttons in a 2-col grid (Generate Summary, Suggest Reply, Detect Priority, Full Analysis), each shows a per-button spinner. Pre-populated with stored AI values from the ticket. Results sections: AI Summary paragraph, Suggested Reply as editable Textarea with Copy + "Send as reply" buttons (with amber "Review and edit before sending — AI replies are not auto-sent" notice), Detected Priority & Sentiment badges with reason quote and "Differs from current" warning if AI priority ≠ ticket priority, Recommended Next Action paragraph. Calls `/api/tickets/[id]/ai` and merges the returned `result` into local state + syncs the parent `selectedTicket` (and list row for visible AI badges).
+    - `DetailsTab` — Status / Priority / Category Selects (PATCH-on-change), "Mark as Resolved" button (only when not already resolved/closed), customer InfoRows (Name/Category/Email/Phone with mailto:/tel: links), Assignment InfoRow, Timestamps (Created/Updated/Resolved/Last message), original description block, chat-session link hint, delete button (opens AlertDialog).
+- `EmptyState` — dashed empty state with refresh/clear-filters variants.
+- `TicketListSkeleton` — 5-card skeleton placeholder during initial load.
+- `InfoRow`, `AiResultCard`, `PriorityBadge`, `StatusBadge`, `SentimentBadge`, `CategoryBadge` — presentational helpers.
+
+### Badge color system
+- **Status**: open=`bg-primary/10 text-primary` (animated ping dot), pending=`bg-amber-500/15`, in_progress=`bg-violet-500/15`, resolved=`bg-emerald-500/10`, closed=`bg-muted`.
+- **Priority**: urgent=`bg-destructive/10` (with Flame icon), high=`bg-orange-500/15` (AlertCircle), medium=`bg-amber-500/15`, low=`bg-muted`.
+- **Sentiment**: frustrated=`bg-destructive/10` (AlertCircle), negative=`bg-orange-500/15`, positive=`bg-emerald-500/10` (CheckCircle2), neutral=`bg-muted`.
+- **Category**: colored dot using the category's stored `color` hex via inline `style`.
+
+### Behavioral patterns (mirrors leads-view.tsx)
+- **Debounced search** (350ms) — searches subject / customerName / customerEmail via `?q=` query param.
+- **Optimistic updates** for PATCH (status/priority/category/subject) — applies to both `selectedTicket` and list rows, with snapshot-based revert on failure.
+- **Optimistic agent-reply** — appends the returned message, flips status open→pending, updates lastMessage fields, then toasts "Reply sent".
+- **AI results merge** — when an AI action returns, the result fields are merged into both `selectedTicket` (so the dialog reflects the new state) and list rows (for visible AI badges).
+- **Row-level dropdown** for quick status changes (Mark in progress / awaiting reply / resolved / closed) and delete (with AlertDialog confirm).
+- **Dialog delete** also available in the Details tab footer with the same AlertDialog pattern.
+- **Refresh button** in header reloads both list + stats; "Refreshing…" indicator appears when filters change with existing rows.
+- **Footer count** shows total tickets shown, "(filtered)" when filters active, and amber "Limit 200 reached" warning.
+
+## Constraints honored
+- Created ONLY `src/components/dashboard/views/tickets-view.tsx` — no other files modified (worklog append excepted).
+- Uses shadcn/ui: `Card`, `Button`, `Input`, `Textarea`, `Select`, `Badge`, `Dialog`, `Tabs`, `Avatar`, `Separator`, `Label`, `DropdownMenu`, `AlertDialog`, `Skeleton`.
+- `sonner` toasts for all success/error feedback.
+- Relative fetch paths (`/api/tickets`, `/api/tickets/[id]/...`).
+- Brand color classes throughout (`bg-primary`, `bg-primary/10`, `text-primary`, `border-primary/30`, `bg-accent/40`, `text-accent-foreground`, `bg-destructive/10`, `text-destructive`, `brand-gradient` for agent avatar).
+- lucide-react icons (Ticket, Plus, Search, Filter, Send, Copy, Sparkles, AlertCircle, CheckCircle2, Gauge, Wand2, CornerUpLeft, Flame, Hourglass, CheckCheck, MessageCircle, etc.).
+- Same dialog/tabs/optimistic-mutation patterns as `leads-view.tsx`.
+
+## Verification
+- **TypeScript** (`bunx tsc --noEmit`): 0 errors in `tickets-view.tsx`. Remaining tsc errors are all pre-existing in unrelated `examples/` and `skills/` directories.
+- **ESLint** (`bunx eslint src/components/dashboard/views/tickets-view.tsx`): clean (0 errors, 0 warnings).
+
+## Stage Summary
+Phase 2's Support Tickets view is complete: a card-based ticket inbox with stats cards, debounced search, status/priority filters, manual ticket creation, and a full detail dialog featuring chat-style message threads, internal notes, an AI Assistant tab with 4 actionable buttons (Summary / Suggest Reply / Detect Priority / Full Analysis) whose outputs persist on the ticket and re-hydrate on reopen, plus a Details tab for inline status/priority/category management and customer contact info. All AI outputs are reviewable/editable before any customer-facing action — the suggested reply lives in an editable Textarea and the "Send as reply" button is explicit. The view is fully wired to the 8 existing `/api/tickets*` routes and ready for the dashboard router to mount it.
+
+---
+Task ID: PHASE-2
+Agent: main
+Task: AI Support Ticket Assistant — Phase 2 of advanced modules roadmap.
+
+## Current Project Status
+Phase 1 (CRM & Lead Pipeline) was complete. This is Phase 2: a full AI-powered support ticket system with manual creation, chat-to-ticket conversion, AI summary/reply/priority/sentiment detection, internal notes, and message threads.
+
+## Work Log
+
+### Schema Changes (prisma/schema.prisma)
+- **New model: SupportTicketCategory** — id, businessId, name, description, color, createdAt.
+- **New model: SupportTicket** — id, businessId, categoryId, chatSessionId, subject, description, status (open|pending|in_progress|resolved|closed), priority (low|medium|high|urgent), aiSummary, aiPriority, aiSentiment, aiNextAction, aiSuggestedReply, customerName/Email/Phone, assignedTo/assignedName, timestamps, resolvedAt.
+- **New model: SupportTicketMessage** — id, ticketId, role (customer|agent|system), content, authorId, authorName, createdAt.
+- **New model: SupportTicketNote** — id, ticketId, businessId, authorId, authorName, content, createdAt.
+- Added back-relations on Business (ticketCategories, supportTickets) and ChatSession (supportTickets).
+- Ran `bun run db:push` (success).
+
+### API Routes Created (8 new endpoints)
+- `GET/POST /api/tickets` — list (with filters) + create manually.
+- `GET/PATCH/DELETE /api/tickets/[id]` — detail (with messages/notes/category) + update status/priority/category + delete.
+- `GET/POST /api/tickets/[id]/messages` — message thread + add customer/agent reply (auto-sets status to pending on agent reply).
+- `GET/POST /api/tickets/[id]/notes` — internal notes.
+- `POST /api/tickets/[id]/ai` — AI assistance with 4 actions: summary, suggest_reply, detect_priority, full_analysis. Stores results on ticket. Logs usage. Strict JSON parsing for priority/sentiment.
+- `GET/POST /api/tickets/categories` — list + create categories.
+- `GET /api/tickets/stats` — dashboard cards (open, urgent, awaitingReply, recentlyResolved, byStatus, byPriority).
+- `POST /api/tickets/convert` — convert a chat session into a ticket (copies messages, links session).
+
+### UI Created
+- **tickets-view.tsx** (subagent P2-TICKETS, ~2620 lines): Full ticket management UI with:
+  - 4 stat cards (Open, Urgent, Awaiting Reply, Recently Resolved).
+  - Toolbar with debounced search + status/priority filters + New Ticket button.
+  - Card-based ticket list with priority/status/category/sentiment badges, last message preview, time-ago.
+  - New Ticket dialog (subject, description, category, priority, customer info).
+  - Detail dialog (sm:max-w-3xl) with 4 tabs: Messages (chat bubbles + agent reply), Notes (internal), AI Assistant (4 AI buttons + results with Copy/Send), Details (status/priority/category dropdowns, customer info, Mark as Resolved, delete).
+- Wired into app-shell nav (Support Tickets, Ticket icon, "main" group) + page.tsx router + command palette.
+
+### Seed Data
+- Created 5 ticket categories: General Inquiry, Technical Support, Billing, Sales, Bug Report (each with distinct color).
+- Created 3 sample tickets with messages (billing urgent, sales pending, technical high).
+
+## Verification
+- Lint: clean (0 errors).
+- API tests: tickets list ✓ (3 tickets), stats ✓ (open:2, urgent:1, awaiting:1), categories ✓ (5 categories).
+- AI tests: Generate Summary ✓ (produced 2-sentence summary of billing issue), Suggest Reply ✓ (professional empathetic reply addressing specific charge discrepancy).
+- UI: tickets view renders with stats + list + detail dialog with all 4 tabs and AI buttons (VLM confirmed clean).
+- Dev server stable.
+
+## AI Safety Rules Applied
+1. AI never auto-sends replies — suggested replies shown in editable textarea with "Review and edit before sending" notice.
+2. AI outputs are stored on ticket for review but require manual approval.
+3. Copy button lets agents copy suggested reply to clipboard.
+4. "Send as reply" button posts the edited reply as an agent message (not auto-sent).
+5. Fallback: AI prompt instructs to suggest contacting the team if unsure.
+6. All AI usage logged via logUsage().
+
+## Stage Summary
+- Phase 2 complete: Full AI Support Ticket Assistant with 4 new models, 8 API routes, complete UI with 4-tab detail dialog, 4 AI actions (summary, suggest reply, detect priority/sentiment, full analysis), chat-to-ticket conversion, categories, stats.
+- All existing functionality preserved.
+- Ready for Phase 3 (Advanced Proposal Generator + Template Library) on user's instruction.
