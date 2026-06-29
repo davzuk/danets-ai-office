@@ -2380,3 +2380,156 @@ All 14 advanced modules complete (Phases 1-6). This is the first item from the R
 - 1 schema field added, 4 API routes, 1 UI view, conditional nav item.
 - Super admin can: view all businesses, search/filter, suspend/activate, change plans, view per-business details.
 - Ready for Priority 2 (Real Payment Gateway Integration) on user's instruction.
+
+---
+Task ID: P2-SUB
+Agent: subagent
+Task: Upgrade Subscription view with real payment flow (initialize → checkout → verify), invoice history, trial period status, and payment status indicators.
+
+File modified:
+- `src/components/dashboard/views/subscription-view.tsx` — enhanced from 1115 → 2130 lines. TypeScript-clean, ESLint-clean. Existing functionality (current plan card, usage bars, plan comparison grid, security note, skeletons) fully preserved.
+
+Backend dependencies (already created by P2 main task, consumed by this view):
+- `POST /api/payments/initialize` — body `{ planName, provider, billingCycle }`. Returns `{ payment, paymentUrl, note }` (or `{ payment: null, redirected: true, message }` for free plans).
+- `POST /api/payments/verify` — body `{ reference, status }`. Activates subscription, generates invoice, returns `{ payment, subscription, invoice, message }`.
+- `GET /api/invoices` — returns `{ invoices: [...] }` with embedded `payment` summary.
+- Mock checkout page at `/payment-checkout?ref=...&amount=...&provider=...` (auto-verifies via the verify endpoint on click).
+
+What was added (all changes scoped to `subscription-view.tsx`):
+
+### 1. Enhanced Change Plan Dialog (3-step state machine)
+Replaced the old single-step "Confirm" → `PUT /api/subscription` flow with a proper payment flow. New `ChangePlanStep = "form" | "awaiting" | "success"` state machine driven by `useEffect` reset on dialog close.
+- **Form step**: preserves the from→to price-diff summary badge; adds a **Billing Cycle `Tabs` toggle** (Monthly / Annual) — annual uses a 20% discount (`annualPrice(monthly) = monthly × 12 × 0.8` rounded to 2dp), shows the discounted annual total, per-month equivalent, and total savings. Keeps the existing **Payment Method `Select`** (Paystack / Flutterwave / Bank Transfer / Manual). Replaced the old "payment gateway coming soon" amber notice with a primary-tinted flow-aware note (different copy for free vs. paid plans). Both the billing cycle and payment method selects are hidden for free plans.
+- **Proceed button** → `POST /api/payments/initialize`. On success:
+  - Free plan (server returns `payment: null, redirected: true`): jumps straight to success step (subscription already switched server-side).
+  - Paystack / Flutterwave: `window.open(paymentUrl, "_blank")` + `toast.info("Redirecting to payment…")` + transitions to awaiting step.
+  - Bank Transfer / Manual: transitions to awaiting step showing the `BankTransferPanel` inline (no new tab).
+- **Awaiting step**: shows plan + amount + reference summary. For Paystack/Flutterwave, an amber Alert reminds the user to complete payment in the new tab. For manual/bank_transfer, renders the full `BankTransferPanel`. Verify button label is context-aware: "I've Made the Transfer" (manual) vs. "I've Completed Payment" (gateway).
+- **Verify button** → `POST /api/payments/verify` with `{ reference, status: "success" }`. On success, captures `invoice.invoiceNumber` and transitions to success step.
+- **Success step**: emerald CheckCircle2, "Payment Successful!" (or "Switched to X plan" for free), the generated invoice number in a mono-font card, and a "Done" button that closes the dialog and reloads both subscription + invoices.
+
+### 2. Bank Transfer Instructions Panel (`BankTransferPanel`)
+Inline panel rendered inside the change-plan dialog when provider is `bank_transfer` or `manual`. Shows:
+- Bank: **Zenith Bank**
+- Account Name: **Danets TecPro Limited**
+- Account Number: **1012345678** (mono)
+- Reference: server-generated reference with a one-click **Copy** button (uses `navigator.clipboard.writeText`, 2s copied feedback, toast on success/error).
+- Amber Alert: "Use the reference as the transfer description. After transfer, click 'I've Made the Transfer' to confirm."
+Bank details are stored in a `BANK_DETAILS` const so they're easy to update.
+
+### 3. Invoice History Card (new section below plan comparison)
+- New `InvoiceHistory` component fed by `GET /api/invoices` (loaded in parallel with subscription on mount + on refresh + after every successful plan change).
+- Header: `Receipt` icon, "Invoice History" title, count badge.
+- States: loading skeleton (`InvoiceHistorySkeleton`), error Alert with Retry button, empty state ("No invoices yet. Invoices are generated automatically when you make a payment."), and populated `Table`.
+- Table columns: Invoice Number (mono), Date, Amount (right-aligned, 2dp with currency), Status badge, Payment Method (hidden on mobile), and a trailing `ArrowRight` chevron. Rows are clickable.
+- Status badge colors via `INVOICE_STATUS_META`: draft=muted, sent=amber, paid=emerald, void=destructive, overdue=red. Falls back to a muted badge for unknown statuses.
+- Footer note: `Download` icon + "PDF invoice download coming soon."
+
+### 4. Invoice Detail Dialog (`InvoiceDetailDialog`)
+Clicking any invoice row opens a wide (`sm:max-w-lg`) dialog showing:
+- Header with invoice number + status badge.
+- 2×2 grid: Issued (datetime), Paid/Due (datetime or date), Payment Method (label), Payment Status (capitalized).
+- Line items card with `ScrollArea` (max-h-48): description, `Qty × unit price`, line total; falls back to "No line items" for empty arrays. Footer row shows the bold total.
+- Payment reference (mono, in a muted pill) when `invoice.payment` exists.
+- Notes block (when present).
+- Primary-tinted Alert: "PDF invoice download coming soon."
+- Close button footer.
+
+### 5. Trial Status Banner (`TrialBanner`)
+Rendered above the current-plan card when `subscription.status === "trial"` OR `trialEndsAt` is in the future. Computed via a `useMemo` `trialInfo` that uses `daysUntil(trialEndsAt)`. Amber Alert with `Clock` icon, an amber "X days remaining" badge, contextual message ("Your trial ends on {date}. Upgrade now…"), and an amber "Upgrade Now" button that smooth-scrolls to the plan comparison grid via a `useRef` + `scrollIntoView`. The scroll target div has `scroll-mt-6` to clear the sticky header.
+
+### 6. Payment Status Indicator (`PaymentStatusBanner`)
+Inserted as the first child of the `CurrentPlanCard` (above the gradient header), so it spans the full card width and is clipped by the card's `overflow-hidden` + rounded corners. Receives `subscription.status` + an `onReactivate` callback:
+- `past_due` → red-tinted banner with `AlertTriangle`, copy "Your subscription is past due. Please update your payment method.", destructive "Update Payment" button.
+- `canceled` or `expired` → same red banner, copy "Your subscription has expired. Reactivate now.", destructive "Reactivate Now" button.
+- Other statuses → renders `null` (no banner).
+The reactivate/update buttons smooth-scroll to the plan comparison grid so the user can pick a new plan.
+
+### Supporting additions
+- **New types**: `InvoiceItem`, `InvoicePaymentSummary`, `InvoiceRecord`, `InvoicesResponse`, `InitPaymentRecord`, `InitializeResponse`, `VerifyResponse`, `ChangePlanStep`, `InvoiceStatusMeta`. All strictly typed; no `any`.
+- **New constants**: `INVOICE_STATUS_META` (color map), `BANK_DETAILS` (Zenith Bank / Danets TecPro Limited / 1012345678), `ANNUAL_DISCOUNT = 0.2`.
+- **New helpers**: `formatDateTime` (date + time), `daysUntil` (whole-day countdown, clamped to ≥ 0), `formatMoneyWithCurrency` (2-decimal currency formatter, USD-prefix), `annualPrice` / `annualSavings` (rounded to 2dp), `invoiceStatusMeta` (defensive fallback).
+- **New UI imports**: `Tabs`/`TabsList`/`TabsTrigger` (billing-cycle toggle), `Table` family (invoice list), `ScrollArea` (invoice line items), `useRef` (scroll-to-plans). Removed the now-unused `Input` import.
+- **New lucide icons**: `AlertTriangle`, `ArrowRight`, `Building2`, `CheckCircle2`, `Clock`, `Copy`, `Download`, `ExternalLink`, `Receipt`, `X` (added to the existing icon set).
+- **`SubscriptionView` enhancements**: parallel `loadInvoices` (called on mount, on header Refresh, and after every successful plan change); `planComparisonRef` for scroll targeting; `trialInfo` memo; `selectedInvoice` + `invoiceDialogOpen` state for the detail dialog.
+
+### Constraints honoured
+- Modified ONLY `src/components/dashboard/views/subscription-view.tsx` — no other files touched.
+- All existing components preserved unchanged: `CurrentPlanCard` (only added a new prop + banner slot), `MetaItem`, `UsageThisMonth`, `UsageBar`, `PlanComparisonGrid`, `PlanCard`, `LimitRow`, `SecurityNote`, `CurrentPlanSkeleton`, `UsageSkeleton`, `PlansGridSkeleton`.
+- All fetches use relative paths (`/api/payments/initialize`, `/api/payments/verify`, `/api/invoices`, `/api/subscription`).
+- Brand colors only: `bg-primary`, `bg-accent/30`, `text-[#4d7c0f]` (lemon green), `bg-destructive`, plus semantic amber/emerald/red tints for status indicators. No raw indigo/blue.
+- `sonner` toasts for every state transition (initializing, redirecting, verifying, success, error).
+- All formatting helpers are pure functions; defensive against null/NaN; no `Date` mutation.
+
+### Verification
+- `bunx tsc --noEmit` — zero errors in `subscription-view.tsx` (pre-existing unrelated errors in `examples/`, `skills/`, `automations/`, `integrations/`, `page.tsx` remain and are out of scope).
+- `bunx eslint src/components/dashboard/views/subscription-view.tsx` — clean (0 warnings, 0 errors).
+
+Stage Summary:
+- Subscription view upgraded to a real payment workflow: initialize → (checkout page / bank transfer) → verify → success state with invoice number. Invoice history table with detail dialog, trial banner with countdown + scroll-to-plans, and payment status indicators for past_due / canceled / expired are all live. The view now consumes the P2 payment + invoice APIs end-to-end without any new backend changes. Ready for browser testing against the running dev server (login `admin@danetstecpro.com` / `danets123`).
+
+---
+Task ID: NEXT-PHASE-P2
+Agent: main
+Task: Real Payment Gateway Integration — Priority 2 of Recommended Next Development Phase.
+
+## Current Project Status
+Priority 1 (Super Admin Management) complete. This is Priority 2: real payment processing with Paystack/Flutterwave integration structure, invoice generation, and subscription lifecycle management.
+
+## Work Log
+
+### Schema Changes
+- **New model: Payment** — id, businessId, subscriptionId, amount, currency, provider (paystack|flutterwave|bank_transfer|manual), reference (unique), status (pending|success|failed|refunded), providerRef, payerEmail, payerName, metadata, paidAt, verifiedAt, timestamps.
+- **New model: Invoice** — id, businessId, subscriptionId, paymentId, invoiceNumber (unique), amount, currency, status (draft|sent|paid|void|overdue), dueDate, paidAt, items (JSON), notes, timestamps.
+- Added back-relations on Business + BusinessSubscription.
+- Ran `bun run db:push` (success).
+
+### API Routes Created (5 new endpoints)
+- `POST /api/payments/initialize` — initialize a payment: creates Payment record, generates unique reference (DAN-timestamp-random), returns mock checkout URL. Handles free plan (no payment needed). Annual billing = 20% discount.
+- `POST /api/payments/verify` — verify/confirm payment: updates Payment status, activates subscription, generates Invoice with line items, creates notification, logs activity. In production, calls provider's verification API.
+- `POST /api/payments/webhook` — webhook handler for Paystack/Flutterwave callbacks. Handles charge.success/charge.failed events. No auth required (authenticated via provider signature in production).
+- `GET /api/payments/[id]` — payment details.
+- `GET /api/invoices?status=` — list invoices with payment info.
+
+### Mock Checkout Page
+- `src/app/payment-checkout/route.ts` — a realistic mock checkout page that simulates the Paystack/Flutterwave hosted checkout. Shows amount, reference, provider, "Pay" button that calls the verify endpoint. In production, this is replaced by the actual provider's hosted page.
+
+### UI Enhancements
+- **Subscription view upgraded** (subagent P2-SUB, 1115 → 2130 lines):
+  1. **3-step payment flow**: Change Plan dialog → Billing cycle toggle (Monthly/Annual -20%) → Payment method select → Proceed to Payment → Checkout redirect → Success with invoice number.
+  2. **Bank Transfer panel**: Shows bank details (Zenith Bank, Danets TecPro, 1012345678) + reference + "I've Made the Transfer" confirm button.
+  3. **Invoice History card**: Table of all invoices with number, date, amount, status badge, payment method. Click to open detail dialog with line items.
+  4. **Trial status banner**: Amber banner with days remaining countdown for trial subscriptions.
+  5. **Payment status indicators**: Red banners for past_due/canceled/expired subscriptions.
+
+### Environment Variables (for production)
+```
+# Paystack
+PAYSTACK_SECRET_KEY=sk_test_xxx
+PAYSTACK_PUBLIC_KEY=pk_test_xxx
+
+# Flutterwave
+FLUTTERWAVE_SECRET_KEY=FLWSECK_TEST_xxx
+FLUTTERWAVE_PUBLIC_KEY=FLWPUBK_TEST_xxx
+FLUTTERWAVE_SECRET_HASH=your_webhook_hash
+```
+
+### Seed Data
+- Sample payment (DAN-SEED-001, $79, Paystack, success) + invoice (INV-2026-001, paid).
+
+## Verification
+- Lint: clean (0 errors).
+- Payment flow tested end-to-end:
+  1. Opened Subscription → clicked "Upgrade" on Enterprise plan.
+  2. Dialog showed: From Pro ($79) → To Enterprise ($199), +$120/mo, Monthly/Annual toggle, Payment method (Paystack).
+  3. Clicked "Proceed to Payment" → redirected to mock checkout page showing "Pay USD 199.00".
+  4. Clicked "Pay" → payment verified → success page showing invoice number INV-1782776623993-941A.
+  5. Returned to dashboard → Subscription now shows Enterprise $199/mo, Paystack, renewal date next month.
+  6. Invoice History shows 2 invoices (new $199 + seeded $79).
+- Dev server stable.
+
+## Stage Summary
+- Priority 2 (Real Payment Gateway Integration) complete: full payment lifecycle (initialize → checkout → verify → activate subscription → generate invoice), webhook handler for real provider callbacks, invoice history, trial period tracking.
+- 2 new models (Payment, Invoice), 5 new API endpoints, mock checkout page, enhanced subscription view.
+- In production: replace mock checkout URL with real Paystack/Flutterwave API calls, set environment variables, configure webhook URLs in provider dashboards.
+- Ready for Priority 3 (Automation Execution Engine) on user's instruction.

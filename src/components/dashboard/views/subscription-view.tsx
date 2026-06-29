@@ -1,18 +1,28 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
+  AlertTriangle,
+  ArrowRight,
+  Building2,
   CalendarDays,
   Check,
+  CheckCircle2,
+  Clock,
+  Copy,
   CreditCard,
   Crown,
+  Download,
+  ExternalLink,
   Info,
   Loader2,
+  Receipt,
   RefreshCw,
   ShieldCheck,
   Sparkles,
   TrendingUp,
+  X,
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -27,7 +37,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -47,6 +56,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 export interface SubscriptionUser {
   userId: string;
@@ -90,6 +109,65 @@ interface SubscriptionData {
   plan: PlanInfo | null;
   usage: UsageStats;
   allPlans: PlanInfo[];
+}
+
+// ── Payment / Invoice shapes (P2-SUB) ───────────────────────────────────
+interface InvoiceItem {
+  description?: string;
+  quantity?: number;
+  unitPrice?: number;
+  total?: number;
+}
+
+interface InvoicePaymentSummary {
+  id: string;
+  reference: string;
+  provider: string;
+  status: string;
+}
+
+interface InvoiceRecord {
+  id: string;
+  invoiceNumber: string;
+  amount: number;
+  currency: string;
+  status: string;
+  dueDate: string | null;
+  paidAt: string | null;
+  items: InvoiceItem[];
+  notes: string | null;
+  payment: InvoicePaymentSummary | null;
+  createdAt: string;
+}
+
+interface InvoicesResponse {
+  invoices: InvoiceRecord[];
+}
+
+interface InitPaymentRecord {
+  id: string;
+  reference: string;
+  amount: number;
+  currency: string;
+  provider: string;
+  status: string;
+  planName: string;
+  billingCycle: string;
+}
+
+interface InitializeResponse {
+  payment: InitPaymentRecord | null;
+  paymentUrl?: string;
+  note?: string;
+  redirected?: boolean;
+  message?: string;
+}
+
+interface VerifyResponse {
+  payment: unknown;
+  subscription: unknown;
+  invoice?: { id: string; invoiceNumber: string; amount: number };
+  message: string;
 }
 
 // ── Static meta ──────────────────────────────────────────────────────────
@@ -153,6 +231,55 @@ const PAYMENT_OPTIONS: { value: string; label: string }[] = [
   { value: "bank_transfer", label: "Bank Transfer" },
   { value: "manual", label: "Manual" },
 ];
+
+interface InvoiceStatusMeta {
+  label: string;
+  className: string;
+}
+
+const INVOICE_STATUS_META: Record<string, InvoiceStatusMeta> = {
+  draft: {
+    label: "Draft",
+    className: "bg-muted text-muted-foreground border-transparent",
+  },
+  sent: {
+    label: "Sent",
+    className:
+      "bg-amber-100 text-amber-800 border-transparent dark:bg-amber-900/30 dark:text-amber-300",
+  },
+  paid: {
+    label: "Paid",
+    className:
+      "bg-emerald-100 text-emerald-800 border-transparent dark:bg-emerald-900/30 dark:text-emerald-300",
+  },
+  void: {
+    label: "Void",
+    className: "bg-destructive/15 text-destructive border-transparent",
+  },
+  overdue: {
+    label: "Overdue",
+    className:
+      "bg-red-100 text-red-800 border-transparent dark:bg-red-900/30 dark:text-red-300",
+  },
+};
+
+function invoiceStatusMeta(status: string): InvoiceStatusMeta {
+  return (
+    INVOICE_STATUS_META[status] ?? {
+      label: status.charAt(0).toUpperCase() + status.slice(1),
+      className: "bg-muted text-muted-foreground border-transparent",
+    }
+  );
+}
+
+// Bank details for manual / bank_transfer payments (P2-SUB)
+const BANK_DETAILS = {
+  bank: "Zenith Bank",
+  accountName: "Danets TecPro Limited",
+  accountNumber: "1012345678",
+} as const;
+
+const ANNUAL_DISCOUNT = 0.2; // 20% off when paying annually
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -219,6 +346,43 @@ function formatDate(iso: string | null): string | null {
   });
 }
 
+function formatDateTime(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function daysUntil(iso: string | null): number | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const diff = d.getTime() - Date.now();
+  return Math.max(0, Math.ceil(diff / 86_400_000));
+}
+
+function formatMoneyWithCurrency(n: number, currency = "USD"): string {
+  const symbol = currency === "USD" ? "$" : "";
+  return `${symbol}${n.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function annualPrice(monthly: number): number {
+  return Math.round(monthly * 12 * (1 - ANNUAL_DISCOUNT) * 100) / 100;
+}
+
+function annualSavings(monthly: number): number {
+  return Math.round((monthly * 12 - annualPrice(monthly)) * 100) / 100;
+}
+
 function usageBarClass(pct: number): string {
   if (pct > 90) return "[&_[data-slot=progress-indicator]]:bg-destructive";
   if (pct >= 60) return "[&_[data-slot=progress-indicator]]:bg-amber-500";
@@ -250,6 +414,17 @@ export function SubscriptionView({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [targetPlan, setTargetPlan] = useState<PlanInfo | null>(null);
 
+  // Invoice history state (P2-SUB)
+  const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
+  const [invoicesLoading, setInvoicesLoading] = useState(false);
+  const [invoicesError, setInvoicesError] = useState<string | null>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<InvoiceRecord | null>(
+    null,
+  );
+  const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
+
+  const planComparisonRef = useRef<HTMLDivElement | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -273,9 +448,29 @@ export function SubscriptionView({
     }
   }, []);
 
+  const loadInvoices = useCallback(async () => {
+    setInvoicesLoading(true);
+    setInvoicesError(null);
+    try {
+      const res = await fetch("/api/invoices", { cache: "no-store" });
+      if (!res.ok) {
+        setInvoicesError(`Failed to load invoices (${res.status})`);
+        return;
+      }
+      const json = (await res.json()) as InvoicesResponse;
+      setInvoices(json.invoices ?? []);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Network error";
+      setInvoicesError(msg);
+    } finally {
+      setInvoicesLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     load();
-  }, [load]);
+    loadInvoices();
+  }, [load, loadInvoices]);
 
   const currentPlan = useMemo<PlanInfo | null>(() => {
     if (!data) return null;
@@ -284,6 +479,18 @@ export function SubscriptionView({
     return (
       data.allPlans.find((p) => p.name === data.subscription.planName) ?? null
     );
+  }, [data]);
+
+  // Trial detection — status === "trial" OR trialEndsAt is in the future
+  const trialInfo = useMemo(() => {
+    if (!data) return null;
+    const { status, trialEndsAt } = data.subscription;
+    const isTrialStatus = status === "trial";
+    const days = daysUntil(trialEndsAt);
+    const trialActive =
+      isTrialStatus || (trialEndsAt !== null && days !== null && days > 0);
+    if (!trialActive) return null;
+    return { daysRemaining: days ?? 0, trialEndsAt };
   }, [data]);
 
   function openChangeDialog(plan: PlanInfo) {
@@ -295,7 +502,22 @@ export function SubscriptionView({
     setDialogOpen(false);
     setTargetPlan(null);
     load();
+    loadInvoices();
   }
+
+  function scrollToPlans() {
+    planComparisonRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }
+
+  function openInvoice(invoice: InvoiceRecord) {
+    setSelectedInvoice(invoice);
+    setInvoiceDialogOpen(true);
+  }
+
+  const refreshing = loading || invoicesLoading;
 
   return (
     <div className="space-y-6">
@@ -313,11 +535,14 @@ export function SubscriptionView({
         <Button
           variant="outline"
           size="sm"
-          onClick={load}
-          disabled={loading}
+          onClick={() => {
+            load();
+            loadInvoices();
+          }}
+          disabled={refreshing}
           className="gap-2"
         >
-          <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
+          <RefreshCw className={refreshing ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
           Refresh
         </Button>
       </div>
@@ -342,21 +567,42 @@ export function SubscriptionView({
 
       {data && !error && (
         <>
+          {/* Trial banner (P2-SUB) */}
+          {trialInfo && (
+            <TrialBanner
+              daysRemaining={trialInfo.daysRemaining}
+              trialEndsAt={trialInfo.trialEndsAt}
+              onUpgrade={scrollToPlans}
+            />
+          )}
+
           {/* Current plan card */}
           <CurrentPlanCard
             subscription={data.subscription}
             plan={currentPlan}
+            onReactivate={scrollToPlans}
           />
 
           {/* Usage this month */}
           <UsageThisMonth usage={data.usage} plan={currentPlan} />
 
           {/* Plan comparison */}
-          <PlanComparisonGrid
-            plans={data.allPlans}
-            currentPlanName={data.subscription.planName}
-            currentPriceUsd={currentPlan?.priceUsd ?? 0}
-            onSelect={openChangeDialog}
+          <div ref={planComparisonRef} className="scroll-mt-6">
+            <PlanComparisonGrid
+              plans={data.allPlans}
+              currentPlanName={data.subscription.planName}
+              currentPriceUsd={currentPlan?.priceUsd ?? 0}
+              onSelect={openChangeDialog}
+            />
+          </div>
+
+          {/* Invoice history (P2-SUB) */}
+          <InvoiceHistory
+            invoices={invoices}
+            loading={invoicesLoading}
+            error={invoicesError}
+            onRetry={loadInvoices}
+            onSelect={openInvoice}
           />
 
           {/* Security note */}
@@ -372,6 +618,16 @@ export function SubscriptionView({
         currentPlan={currentPlan}
         onConfirm={handleChangeSuccess}
       />
+
+      {/* Invoice detail dialog (P2-SUB) */}
+      <InvoiceDetailDialog
+        invoice={selectedInvoice}
+        open={invoiceDialogOpen}
+        onOpenChange={(o) => {
+          setInvoiceDialogOpen(o);
+          if (!o) setSelectedInvoice(null);
+        }}
+      />
     </div>
   );
 }
@@ -381,9 +637,11 @@ export function SubscriptionView({
 function CurrentPlanCard({
   subscription,
   plan,
+  onReactivate,
 }: {
   subscription: SubscriptionRecord;
   plan: PlanInfo | null;
+  onReactivate: () => void;
 }) {
   const meta = statusMeta(subscription.status);
   const startDate = formatDate(subscription.startDate);
@@ -393,6 +651,11 @@ function CurrentPlanCard({
 
   return (
     <Card className="overflow-hidden border-primary/20">
+      {/* Payment status banner (P2-SUB) */}
+      <PaymentStatusBanner
+        status={subscription.status}
+        onReactivate={onReactivate}
+      />
       <div className="bg-gradient-to-br from-primary/10 via-accent/10 to-transparent">
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div className="flex items-start gap-4 min-w-0">
@@ -799,7 +1062,9 @@ function LimitRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-// ── Change plan dialog ───────────────────────────────────────────────────
+// ── Change plan dialog (P2-SUB enhanced) ────────────────────────────────
+
+type ChangePlanStep = "form" | "awaiting" | "success";
 
 function ChangePlanDialog({
   open,
@@ -814,44 +1079,64 @@ function ChangePlanDialog({
   currentPlan: PlanInfo | null;
   onConfirm: () => void;
 }) {
-  const [paymentMethod, setPaymentMethod] =
-    useState<string>("paystack");
-  const [paymentRef, setPaymentRef] = useState<string>("");
-  const [saving, setSaving] = useState(false);
+  const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">(
+    "monthly",
+  );
+  const [paymentMethod, setPaymentMethod] = useState<string>("paystack");
+  const [step, setStep] = useState<ChangePlanStep>("form");
+  const [initPayment, setInitPayment] = useState<InitPaymentRecord | null>(
+    null,
+  );
+  const [invoiceNumber, setInvoiceNumber] = useState<string | null>(null);
+  const [providerNote, setProviderNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!open) {
       // Reset state when dialog closes
+      setBillingCycle("monthly");
       setPaymentMethod("paystack");
-      setPaymentRef("");
-      setSaving(false);
+      setStep("form");
+      setInitPayment(null);
+      setInvoiceNumber(null);
+      setProviderNote(null);
+      setBusy(false);
     }
   }, [open]);
 
   const fromName = currentPlan ? planLabel(currentPlan.name) : "—";
-  const fromPrice = currentPlan?.priceUsd ?? 0;
+  const fromPriceMonthly = currentPlan?.priceUsd ?? 0;
   const toName = targetPlan ? planLabel(targetPlan.name) : "—";
-  const toPrice = targetPlan?.priceUsd ?? 0;
-  const diff = toPrice - fromPrice;
-  const direction =
-    diff > 0 ? "upgrade" : diff < 0 ? "downgrade" : "switch";
+  const toPriceMonthly = targetPlan?.priceUsd ?? 0;
+  const isFree = toPriceMonthly === 0;
 
-  async function handleConfirm() {
+  const toPrice =
+    billingCycle === "annual" ? annualPrice(toPriceMonthly) : toPriceMonthly;
+  const fromPrice =
+    billingCycle === "annual"
+      ? annualPrice(fromPriceMonthly)
+      : fromPriceMonthly;
+  const diff = toPrice - fromPrice;
+  const direction = diff > 0 ? "upgrade" : diff < 0 ? "downgrade" : "switch";
+
+  const isManualProvider =
+    paymentMethod === "bank_transfer" || paymentMethod === "manual";
+
+  async function handleProceed() {
     if (!targetPlan) return;
-    setSaving(true);
+    setBusy(true);
     try {
-      const res = await fetch("/api/subscription", {
-        method: "PUT",
+      const res = await fetch("/api/payments/initialize", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           planName: targetPlan.name,
-          paymentMethod,
-          paymentRef: paymentRef.trim() || null,
-          status: "active",
+          provider: paymentMethod,
+          billingCycle,
         }),
       });
       if (!res.ok) {
-        let msg = `Failed to update plan (${res.status})`;
+        let msg = `Failed to initialize payment (${res.status})`;
         try {
           const j = await res.json();
           if (j?.error) msg = j.error;
@@ -862,22 +1147,97 @@ function ChangePlanDialog({
         toast.error(msg);
         return;
       }
-      toast.success(`Plan changed to ${planLabel(targetPlan.name)}`, {
-        description:
-          diff > 0
-            ? `+$${formatMoney(diff)}/mo — effective immediately.`
-            : diff < 0
-            ? `-$${formatMoney(Math.abs(diff))}/mo — effective immediately.`
-            : "Your new plan is now active.",
-      });
-      onConfirm();
+      const data: InitializeResponse = await res.json();
+
+      // Free plan — server already switched the subscription
+      if (!data.payment || data.redirected) {
+        setInitPayment(null);
+        setInvoiceNumber(null);
+        setStep("success");
+        toast.success(
+          data.message || `Switched to ${planLabel(targetPlan.name)} plan`,
+        );
+        return;
+      }
+
+      setInitPayment(data.payment);
+      setProviderNote(data.note ?? null);
+
+      // For paystack / flutterwave, open the checkout page in a new tab
+      if (
+        data.paymentUrl &&
+        (paymentMethod === "paystack" || paymentMethod === "flutterwave")
+      ) {
+        window.open(data.paymentUrl, "_blank");
+        toast.info("Redirecting to payment…", {
+          description:
+            "Complete your payment in the new tab, then return here to confirm.",
+        });
+      } else {
+        toast.info("Payment initialized", {
+          description:
+            "Use the reference below to complete your transfer, then confirm.",
+        });
+      }
+
+      setStep("awaiting");
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Network error";
       toast.error(msg);
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   }
+
+  async function handleVerify() {
+    if (!initPayment) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/payments/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reference: initPayment.reference,
+          status: "success",
+        }),
+      });
+      if (!res.ok) {
+        let msg = `Verification failed (${res.status})`;
+        try {
+          const j = await res.json();
+          if (j?.error) msg = j.error;
+          else if (j?.message) msg = j.message;
+        } catch {
+          // ignore parse error
+        }
+        toast.error(msg);
+        return;
+      }
+      const data: VerifyResponse = await res.json();
+      setInvoiceNumber(data.invoice?.invoiceNumber ?? null);
+      setStep("success");
+      toast.success("Payment verified successfully", {
+        description: data.message,
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Network error";
+      toast.error(msg);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleDone() {
+    onConfirm();
+  }
+
+  const proceedLabel = isFree
+    ? "Switch to Free Plan"
+    : direction === "upgrade"
+    ? "Proceed to Payment"
+    : direction === "downgrade"
+    ? "Proceed to Downgrade"
+    : "Proceed to Payment";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -885,27 +1245,30 @@ function ChangePlanDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CreditCard className="h-5 w-5 text-primary" />
-            Change Plan
+            {step === "success" ? "Payment Complete" : "Change Plan"}
           </DialogTitle>
           <DialogDescription>
-            Confirm your plan change and record a payment method.
+            {step === "success"
+              ? "Your subscription has been updated."
+              : "Confirm your plan change and choose a payment method."}
           </DialogDescription>
         </DialogHeader>
 
-        {targetPlan && (
+        {/* ── Step: form ───────────────────────────────────── */}
+        {step === "form" && targetPlan && (
           <div className="space-y-4">
             {/* From → To summary */}
             <div className="rounded-lg border bg-muted/40 p-4 space-y-2">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">From</span>
                 <span className="font-medium">
-                  {fromName} · ${formatMoney(fromPrice)}/mo
+                  {fromName} · ${formatMoney(fromPriceMonthly)}/mo
                 </span>
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">To</span>
                 <span className="font-semibold">
-                  {toName} · ${formatMoney(toPrice)}/mo
+                  {toName} · ${formatMoney(toPriceMonthly)}/mo
                 </span>
               </div>
               <Separator />
@@ -921,83 +1284,735 @@ function ChangePlanDialog({
                   }
                 >
                   {diff > 0
-                    ? `+$${formatMoney(diff)}/mo`
+                    ? `+${formatMoneyWithCurrency(diff)}`
                     : diff < 0
-                    ? `-$${formatMoney(Math.abs(diff))}/mo`
+                    ? `-${formatMoneyWithCurrency(Math.abs(diff))}`
                     : "No change"}
+                  <span className="text-[10px] opacity-80 ml-1">
+                    /{billingCycle === "annual" ? "yr" : "mo"}
+                  </span>
                 </Badge>
               </div>
             </div>
 
+            {/* Billing cycle toggle */}
+            {!isFree && (
+              <div className="space-y-1.5">
+                <Label>Billing cycle</Label>
+                <Tabs
+                  value={billingCycle}
+                  onValueChange={(v) =>
+                    setBillingCycle(v as "monthly" | "annual")
+                  }
+                >
+                  <TabsList className="grid grid-cols-2 w-full">
+                    <TabsTrigger value="monthly">Monthly</TabsTrigger>
+                    <TabsTrigger value="annual" className="gap-1.5">
+                      Annual
+                      <Badge className="bg-accent/30 text-[#4d7c0f] text-[10px] h-4 px-1">
+                        -20%
+                      </Badge>
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+                {billingCycle === "annual" ? (
+                  <p className="text-xs text-muted-foreground">
+                    Billed annually at{" "}
+                    <span className="font-medium text-foreground">
+                      {formatMoneyWithCurrency(toPrice)}
+                    </span>
+                    /yr (
+                    {formatMoneyWithCurrency(toPrice / 12)}/mo equivalent). You
+                    save{" "}
+                    <span className="font-medium text-[#4d7c0f]">
+                      {formatMoneyWithCurrency(annualSavings(toPriceMonthly))}
+                    </span>
+                    /yr.
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Billed monthly at{" "}
+                    <span className="font-medium text-foreground">
+                      {formatMoneyWithCurrency(toPrice)}
+                    </span>
+                    /mo. Switch to annual to save 20%.
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Payment method */}
-            <div className="space-y-1.5">
-              <Label htmlFor="pay-method">Payment method</Label>
-              <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                <SelectTrigger id="pay-method" className="w-full">
-                  <SelectValue placeholder="Choose a provider" />
-                </SelectTrigger>
-                <SelectContent>
-                  {PAYMENT_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {!isFree && (
+              <div className="space-y-1.5">
+                <Label htmlFor="pay-method">Payment method</Label>
+                <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                  <SelectTrigger id="pay-method" className="w-full">
+                    <SelectValue placeholder="Choose a provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAYMENT_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
-            {/* Payment reference */}
-            <div className="space-y-1.5">
-              <Label htmlFor="pay-ref">
-                Payment reference{" "}
-                <span className="text-muted-foreground font-normal">
-                  (optional)
-                </span>
-              </Label>
-              <Input
-                id="pay-ref"
-                placeholder="e.g. txn_abc123, transfer ref, receipt no."
-                value={paymentRef}
-                onChange={(e) => setPaymentRef(e.target.value)}
-                maxLength={200}
-              />
-              <p className="text-xs text-muted-foreground">
-                Used for manual reconciliation. Leave blank if not applicable.
-              </p>
-            </div>
-
-            {/* Manual tracking note */}
-            <Alert className="border-amber-300/60 bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-700/40">
-              <Info className="h-4 w-4" />
-              <AlertTitle>Payment gateway integration is coming soon</AlertTitle>
-              <AlertDescription>
-                For now, plans are changed manually with payment tracking. Our
-                team will verify your payment before activating premium features.
+            {/* Security / flow note */}
+            <Alert className="border-primary/20 bg-primary/5">
+              <ShieldCheck className="h-4 w-4 text-primary" />
+              <AlertDescription className="text-xs">
+                {isFree
+                  ? "No payment is required for the Free plan — your subscription will switch immediately."
+                  : "Payments are processed securely. Paystack/Flutterwave redirect to the provider's checkout; bank transfer shows account details to complete the transfer."}
               </AlertDescription>
             </Alert>
           </div>
         )}
 
+        {/* ── Step: awaiting payment ──────────────────────── */}
+        {step === "awaiting" && targetPlan && initPayment && (
+          <div className="space-y-4">
+            {/* Plan + payment summary */}
+            <div className="rounded-lg border bg-muted/40 p-4 space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Plan</span>
+                <span className="font-semibold">
+                  {toName} ·{" "}
+                  <span className="capitalize">{billingCycle}</span>
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Amount due</span>
+                <span className="font-semibold">
+                  {formatMoneyWithCurrency(
+                    initPayment.amount,
+                    initPayment.currency,
+                  )}
+                </span>
+              </div>
+              <Separator />
+              <div className="flex items-center justify-between text-sm gap-2">
+                <span className="text-muted-foreground">Reference</span>
+                <span className="font-mono text-xs">
+                  {initPayment.reference}
+                </span>
+              </div>
+            </div>
+
+            {/* Bank transfer / manual: show bank details */}
+            {isManualProvider ? (
+              <BankTransferPanel reference={initPayment.reference} />
+            ) : (
+              <Alert className="border-amber-300/60 bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-700/40">
+                <ExternalLink className="h-4 w-4" />
+                <AlertTitle>Complete your payment</AlertTitle>
+                <AlertDescription>
+                  A checkout page has been opened in a new tab. Complete your
+                  payment there, then click the button below to verify and
+                  activate your subscription.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {providerNote && (
+              <p className="text-xs text-muted-foreground italic">
+                {providerNote}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* ── Step: success ───────────────────────────────── */}
+        {step === "success" && targetPlan && (
+          <div className="space-y-4 text-center py-2">
+            <div className="mx-auto h-14 w-14 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+              <CheckCircle2 className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div className="space-y-1">
+              <div className="text-lg font-semibold">
+                {isFree ? `Switched to ${toName} plan` : "Payment Successful!"}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Your {toName} subscription is now active.
+              </p>
+            </div>
+            {invoiceNumber && (
+              <div className="rounded-lg border bg-muted/40 p-3 flex items-center justify-between">
+                <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  <Receipt className="h-3.5 w-3.5" />
+                  Invoice
+                </span>
+                <span className="font-mono text-sm font-semibold">
+                  {invoiceNumber}
+                </span>
+              </div>
+            )}
+            {isFree && (
+              <p className="text-xs text-muted-foreground">
+                No payment was required for this plan.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* ── Footer ──────────────────────────────────────── */}
         <DialogFooter className="gap-2">
+          {step === "form" && (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={busy}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleProceed} disabled={busy || !targetPlan}>
+                {busy ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Initializing…
+                  </>
+                ) : (
+                  <>
+                    <CreditCard className="h-4 w-4" />
+                    {proceedLabel}
+                  </>
+                )}
+              </Button>
+            </>
+          )}
+
+          {step === "awaiting" && (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={busy}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleVerify} disabled={busy}>
+                {busy ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Verifying…
+                  </>
+                ) : isManualProvider ? (
+                  <>
+                    <Check className="h-4 w-4" />
+                    I&rsquo;ve Made the Transfer
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="h-4 w-4" />
+                    I&rsquo;ve Completed Payment
+                  </>
+                )}
+              </Button>
+            </>
+          )}
+
+          {step === "success" && (
+            <Button onClick={handleDone} className="w-full">
+              <Check className="h-4 w-4" />
+              Done
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Trial banner (P2-SUB) ────────────────────────────────────────────────
+
+function TrialBanner({
+  daysRemaining,
+  trialEndsAt,
+  onUpgrade,
+}: {
+  daysRemaining: number;
+  trialEndsAt: string | null;
+  onUpgrade: () => void;
+}) {
+  const endLabel = formatDate(trialEndsAt);
+  return (
+    <Alert className="border-amber-300/60 bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-700/40">
+      <Clock className="h-4 w-4" />
+      <AlertTitle className="flex items-center gap-2">
+        You&rsquo;re on a trial period
+        <Badge className="bg-amber-200 text-amber-900 dark:bg-amber-800 dark:text-amber-100">
+          {daysRemaining} {daysRemaining === 1 ? "day" : "days"} remaining
+        </Badge>
+      </AlertTitle>
+      <AlertDescription className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-1">
+        <span>
+          {endLabel
+            ? `Your trial ends on ${endLabel}. Upgrade now to keep your features.`
+            : "Upgrade now to keep your features after the trial ends."}
+        </span>
+        <Button
+          size="sm"
+          className="bg-amber-600 hover:bg-amber-700 text-white shrink-0 gap-1.5"
+          onClick={onUpgrade}
+        >
+          <TrendingUp className="h-3.5 w-3.5" />
+          Upgrade Now
+        </Button>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+// ── Payment status banner (P2-SUB) ───────────────────────────────────────
+
+function PaymentStatusBanner({
+  status,
+  onReactivate,
+}: {
+  status: string;
+  onReactivate: () => void;
+}) {
+  if (status === "past_due") {
+    return (
+      <div className="bg-destructive/10 border-b border-destructive/30 px-5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div className="flex items-center gap-2.5 text-destructive">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span className="text-sm font-medium">
+            Your subscription is past due. Please update your payment method.
+          </span>
+        </div>
+        <Button
+          size="sm"
+          variant="destructive"
+          onClick={onReactivate}
+          className="gap-1.5 shrink-0"
+        >
+          <CreditCard className="h-3.5 w-3.5" />
+          Update Payment
+        </Button>
+      </div>
+    );
+  }
+  if (status === "canceled" || status === "expired") {
+    return (
+      <div className="bg-destructive/10 border-b border-destructive/30 px-5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div className="flex items-center gap-2.5 text-destructive">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span className="text-sm font-medium">
+            Your subscription has expired. Reactivate now.
+          </span>
+        </div>
+        <Button
+          size="sm"
+          variant="destructive"
+          onClick={onReactivate}
+          className="gap-1.5 shrink-0"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+          Reactivate Now
+        </Button>
+      </div>
+    );
+  }
+  return null;
+}
+
+// ── Bank transfer details panel (P2-SUB) ─────────────────────────────────
+
+function BankTransferPanel({ reference }: { reference: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copyRef() {
+    try {
+      await navigator.clipboard.writeText(reference);
+      setCopied(true);
+      toast.success("Reference copied to clipboard");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Could not copy reference");
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3">
+      <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+        <Building2 className="h-4 w-4" />
+        Bank Transfer Instructions
+      </div>
+      <div className="space-y-2 text-sm">
+        <BankDetailRow label="Bank" value={BANK_DETAILS.bank} />
+        <BankDetailRow
+          label="Account Name"
+          value={BANK_DETAILS.accountName}
+        />
+        <BankDetailRow
+          label="Account Number"
+          value={BANK_DETAILS.accountNumber}
+          mono
+        />
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-muted-foreground">Reference</span>
+          <div className="flex items-center gap-1.5">
+            <span className="font-mono text-xs bg-background px-2 py-1 rounded border">
+              {reference}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 w-7 p-0"
+              onClick={copyRef}
+              type="button"
+            >
+              {copied ? (
+                <Check className="h-3 w-3 text-[#4d7c0f]" />
+              ) : (
+                <Copy className="h-3 w-3" />
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+      <Alert className="border-amber-300/60 bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-700/40">
+        <Info className="h-4 w-4" />
+        <AlertDescription className="text-xs">
+          Use the reference as the transfer description. After transfer, click
+          &ldquo;I&rsquo;ve Made the Transfer&rdquo; to confirm.
+        </AlertDescription>
+      </Alert>
+    </div>
+  );
+}
+
+function BankDetailRow({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={`font-medium ${mono ? "font-mono" : ""}`}>{value}</span>
+    </div>
+  );
+}
+
+// ── Invoice history (P2-SUB) ─────────────────────────────────────────────
+
+function InvoiceHistory({
+  invoices,
+  loading,
+  error,
+  onRetry,
+  onSelect,
+}: {
+  invoices: InvoiceRecord[];
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+  onSelect: (invoice: InvoiceRecord) => void;
+}) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between gap-2">
+        <div>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Receipt className="h-4 w-4 text-primary" />
+            Invoice History
+          </CardTitle>
+          <CardDescription>
+            Invoices are generated automatically when you make a payment.
+          </CardDescription>
+        </div>
+        {invoices.length > 0 && (
+          <Badge variant="secondary" className="shrink-0">
+            {invoices.length} {invoices.length === 1 ? "invoice" : "invoices"}
+          </Badge>
+        )}
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <InvoiceHistorySkeleton />
+        ) : error ? (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="flex items-center justify-between gap-2">
+              <span>{error}</span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onRetry}
+                className="gap-1.5"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Retry
+              </Button>
+            </AlertDescription>
+          </Alert>
+        ) : invoices.length === 0 ? (
+          <div className="py-10 text-center">
+            <div className="mx-auto h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-3">
+              <Receipt className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <p className="text-sm font-medium">No invoices yet</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Invoices are generated automatically when you make a payment.
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-md border overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Invoice</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="hidden sm:table-cell">
+                    Method
+                  </TableHead>
+                  <TableHead className="w-10"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {invoices.map((inv) => {
+                  const sm = invoiceStatusMeta(inv.status);
+                  const methodLabel = inv.payment
+                    ? paymentLabel(inv.payment.provider)
+                    : null;
+                  return (
+                    <TableRow
+                      key={inv.id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => onSelect(inv)}
+                    >
+                      <TableCell className="font-mono text-xs font-medium">
+                        {inv.invoiceNumber}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {formatDate(inv.createdAt) ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-right font-medium tabular-nums text-sm">
+                        {formatMoneyWithCurrency(inv.amount, inv.currency)}
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={sm.className}>{sm.label}</Badge>
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+                        {methodLabel ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+        {invoices.length > 0 && (
+          <p className="text-xs text-muted-foreground mt-3 flex items-center gap-1.5">
+            <Download className="h-3.5 w-3.5" />
+            PDF invoice download coming soon.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function InvoiceHistorySkeleton() {
+  return (
+    <div className="rounded-md border">
+      <div className="h-10 border-b bg-muted/40 flex items-center px-4">
+        <Skeleton className="h-4 w-full" />
+      </div>
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div
+          key={i}
+          className="h-12 border-b last:border-b-0 flex items-center px-4 gap-4"
+        >
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-4 w-20" />
+          <Skeleton className="h-4 w-16 ml-auto" />
+          <Skeleton className="h-5 w-14 rounded-full" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Invoice detail dialog (P2-SUB) ───────────────────────────────────────
+
+function InvoiceDetailDialog({
+  invoice,
+  open,
+  onOpenChange,
+}: {
+  invoice: InvoiceRecord | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  if (!invoice) return null;
+  const sm = invoiceStatusMeta(invoice.status);
+  const created = formatDateTime(invoice.createdAt);
+  const paidAt = formatDateTime(invoice.paidAt);
+  const dueDate = formatDate(invoice.dueDate);
+  const items = Array.isArray(invoice.items) ? invoice.items : [];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Receipt className="h-5 w-5 text-primary" />
+            Invoice {invoice.invoiceNumber}
+          </DialogTitle>
+          <DialogDescription>
+            Invoice details and payment information.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {/* Status + invoice number */}
+          <div className="flex items-center justify-between">
+            <Badge className={sm.className}>{sm.label}</Badge>
+            <span className="text-xs text-muted-foreground font-mono">
+              {invoice.invoiceNumber}
+            </span>
+          </div>
+
+          {/* Key-value grid */}
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <div className="text-xs text-muted-foreground uppercase tracking-wide">
+                Issued
+              </div>
+              <div className="font-medium">{created ?? "—"}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground uppercase tracking-wide">
+                {invoice.status === "paid" ? "Paid" : "Due"}
+              </div>
+              <div className="font-medium">
+                {(invoice.status === "paid" ? paidAt : dueDate) ?? "—"}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground uppercase tracking-wide">
+                Payment method
+              </div>
+              <div className="font-medium">
+                {invoice.payment
+                  ? paymentLabel(invoice.payment.provider)
+                  : "—"}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground uppercase tracking-wide">
+                Payment status
+              </div>
+              <div className="font-medium">
+                {invoice.payment
+                  ? invoice.payment.status.charAt(0).toUpperCase() +
+                    invoice.payment.status.slice(1)
+                  : "—"}
+              </div>
+            </div>
+          </div>
+
+          {/* Line items */}
+          <div className="rounded-lg border">
+            <div className="bg-muted/40 px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Line items
+            </div>
+            <ScrollArea className="max-h-48">
+              <div className="divide-y">
+                {items.length === 0 ? (
+                  <div className="px-3 py-4 text-sm text-muted-foreground text-center">
+                    No line items.
+                  </div>
+                ) : (
+                  items.map((item, i) => (
+                    <div
+                      key={i}
+                      className="px-3 py-2.5 flex items-start justify-between gap-3 text-sm"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-medium truncate">
+                          {item.description ?? "—"}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Qty {item.quantity ?? 1} ×{" "}
+                          {formatMoneyWithCurrency(
+                            item.unitPrice ?? 0,
+                            invoice.currency,
+                          )}
+                        </div>
+                      </div>
+                      <div className="font-semibold tabular-nums shrink-0">
+                        {formatMoneyWithCurrency(
+                          item.total ?? 0,
+                          invoice.currency,
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </ScrollArea>
+            <div className="border-t bg-muted/40 px-3 py-2.5 flex items-center justify-between">
+              <span className="text-sm font-semibold">Total</span>
+              <span className="text-base font-bold tabular-nums">
+                {formatMoneyWithCurrency(invoice.amount, invoice.currency)}
+              </span>
+            </div>
+          </div>
+
+          {/* Payment reference */}
+          {invoice.payment && (
+            <div className="flex items-center justify-between gap-2 text-sm">
+              <span className="text-muted-foreground">Payment reference</span>
+              <span className="font-mono text-xs bg-muted px-2 py-1 rounded">
+                {invoice.payment.reference}
+              </span>
+            </div>
+          )}
+
+          {/* Notes */}
+          {invoice.notes && (
+            <div className="rounded-lg bg-muted/40 p-3 text-xs">
+              <div className="font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                Notes
+              </div>
+              <div className="text-foreground/90">{invoice.notes}</div>
+            </div>
+          )}
+
+          <Alert className="border-primary/20 bg-primary/5">
+            <Download className="h-4 w-4 text-primary" />
+            <AlertDescription className="text-xs">
+              PDF invoice download coming soon.
+            </AlertDescription>
+          </Alert>
+        </div>
+
+        <DialogFooter>
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            disabled={saving}
+            className="w-full"
           >
-            Cancel
-          </Button>
-          <Button onClick={handleConfirm} disabled={saving || !targetPlan}>
-            {saving ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Confirming…
-              </>
-            ) : (
-              <>
-                <Check className="h-4 w-4" />
-                Confirm {direction === "upgrade" ? "Upgrade" : direction === "downgrade" ? "Downgrade" : "Change"}
-              </>
-            )}
+            <X className="h-4 w-4" />
+            Close
           </Button>
         </DialogFooter>
       </DialogContent>

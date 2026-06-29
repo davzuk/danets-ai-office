@@ -45,6 +45,8 @@ model Business {
   automationWorkflows AutomationWorkflow[]
   integrations       Integration[]
   subscription       BusinessSubscription?
+  payments           Payment[]
+  invoices           Invoice[]
 }
 
 model BusinessUser {
@@ -713,8 +715,64 @@ model BusinessSubscription {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  payments Payment[]
+  invoices  Invoice[]
 
   @@index([status])
+}
+
+// ─── Payments & Invoices ──────────────────────────────────────────
+
+model Payment {
+  id              String   @id @default(cuid())
+  businessId      String
+  subscriptionId  String?
+  amount          Float
+  currency        String   @default("USD")
+  provider        String   // paystack | flutterwave | bank_transfer | manual
+  reference       String   @unique // unique transaction reference
+  status          String   @default("pending") // pending | success | failed | refunded
+  providerRef     String?  // provider's transaction reference
+  payerEmail      String?
+  payerName       String?
+  metadata        String?  // JSON for extra data
+  paidAt          DateTime?
+  verifiedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  business      Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  subscription  BusinessSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  invoice       Invoice?
+
+  @@index([businessId])
+  @@index([status])
+  @@index([reference])
+}
+
+model Invoice {
+  id              String   @id @default(cuid())
+  businessId      String
+  subscriptionId  String?
+  paymentId       String?  @unique
+  invoiceNumber   String   @unique
+  amount          Float
+  currency        String   @default("USD")
+  status          String   @default("draft") // draft | sent | paid | void | overdue
+  dueDate        DateTime?
+  paidAt          DateTime?
+  items           String   @default("[]") // JSON array of { description, quantity, unitPrice, total }
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  business      Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  subscription  BusinessSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  payment       Payment?            @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+  @@index([status])
+  @@index([invoiceNumber])
 }
 
