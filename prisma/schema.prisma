@@ -1,0 +1,259 @@
+// Danets AI Automation - Multi-tenant SaaS schema
+// learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Tenancy & Auth ────────────────────────────────────────────────
+
+model Business {
+  id            String   @id @default(cuid())
+  name          String
+  publicKey     String   @unique @default(cuid())
+  industry      String?
+  email         String?
+  phone         String?
+  whatsapp      String?
+  plan          String   @default("free") // free | starter | pro | enterprise
+  status        String   @default("active") // active | suspended
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  users              BusinessUser[]
+  aiAgents           AiAgent[]
+  knowledgeBaseItems KnowledgeBaseItem[]
+  chatSessions       ChatSession[]
+  leads              Lead[]
+  promptTemplates    AiPromptTemplate[]
+  quoteRequests      QuoteRequest[]
+  generatedDocuments GeneratedDocument[]
+  usageLogs          AiUsageLog[]
+  sessions           Session[]
+}
+
+model BusinessUser {
+  id         String   @id @default(cuid())
+  businessId String
+  name       String
+  email      String   @unique
+  password   String // bcrypt hash
+  role       String   @default("admin") // admin | member
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  business  Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  sessions  Session[]
+
+  @@index([businessId])
+}
+
+model Session {
+  id              String   @id @default(cuid())
+  token           String   @unique
+  businessUserId  String
+  businessId      String
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+
+  businessUser BusinessUser @relation(fields: [businessUserId], references: [id], onDelete: Cascade)
+  business     Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([token])
+}
+
+// ─── AI Configuration ──────────────────────────────────────────────
+
+model AiAgent {
+  id              String   @id @default(cuid())
+  businessId      String
+  botName         String   @default("Assistant")
+  businessName    String?
+  industry        String?
+  welcomeMessage  String   @default("Hi! How can I help you today?")
+  fallbackMessage String   @default("I'm not fully sure about that. Please contact our team for confirmation.")
+  handoverMessage String   @default("Let me connect you with our team for further assistance.")
+  tone            String   @default("professional") // professional | friendly | formal
+  contactPhone    String?
+  whatsappNumber  String?
+  email           String?
+  brandColor      String   @default("#1d4ed8")
+  status          String   @default("active") // active | inactive
+  leadCaptureEnabled Boolean @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  business      Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  chatSessions  ChatSession[]
+
+  @@index([businessId])
+}
+
+model KnowledgeBaseItem {
+  id         String   @id @default(cuid())
+  businessId String
+  title      String
+  content    String
+  category   String   @default("General")
+  sourceType String   @default("manual") // manual | faq | doc | url
+  status     String   @default("active") // active | draft | archived
+  views      Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([status])
+}
+
+model AiPromptTemplate {
+  id         String   @id @default(cuid())
+  businessId String
+  name       String
+  type       String   @default("custom") // chat_system | suggested_reply | quote | summary | custom
+  content    String
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+// ─── Chat & Leads ──────────────────────────────────────────────────
+
+model ChatSession {
+  id           String   @id @default(cuid())
+  businessId   String
+  agentId      String?
+  visitorName  String?
+  visitorEmail String?
+  visitorPhone String?
+  visitorId    String?  // anonymous browser id
+  status       String   @default("active") // active | ended | handover
+  summary      String?
+  leadQuality  String?  // low | medium | high
+  nextAction   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  business Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  agent    AiAgent?      @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  messages ChatMessage[]
+  lead     Lead?
+
+  @@index([businessId])
+  @@index([status])
+}
+
+model ChatMessage {
+  id         String   @id @default(cuid())
+  sessionId  String
+  role       String   // user | assistant | system
+  content    String
+  tokensUsed Int      @default(0)
+  meta       String?  // JSON string for extra data
+  createdAt  DateTime @default(now())
+
+  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+}
+
+model Lead {
+  id          String   @id @default(cuid())
+  businessId  String
+  sessionId   String?  @unique
+  name        String
+  email       String?
+  phone       String?
+  service     String?
+  message     String?
+  quality     String   @default("medium") // low | medium | high
+  status      String   @default("new") // new | contacted | qualified | won | lost
+  source      String   @default("chatbot")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  session  ChatSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+  @@index([status])
+}
+
+// ─── Usage & Documents ─────────────────────────────────────────────
+
+model AiUsageLog {
+  id         String   @id @default(cuid())
+  businessId String
+  feature    String   // chat | suggested_reply | quote | summary
+  promptTokens  Int   @default(0)
+  completionTokens Int @default(0)
+  totalTokens   Int   @default(0)
+  costUsd     Float    @default(0)
+  status      String   @default("success") // success | error
+  error       String?
+  createdAt   DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([feature])
+}
+
+model QuoteRequest {
+  id           String   @id @default(cuid())
+  businessId   String
+  clientName   String
+  companyName  String?
+  service      String
+  requirements String
+  budgetRange  String?
+  timeline     String?
+  notes        String?
+  status       String   @default("draft") // draft | generated | sent
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  business Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  documents GeneratedDocument[]
+
+  @@index([businessId])
+}
+
+model GeneratedDocument {
+  id            String   @id @default(cuid())
+  businessId    String
+  quoteRequestId String?
+  type          String   @default("proposal") // proposal | summary | quote
+  title         String
+  content       String
+  createdAt     DateTime @default(now())
+
+  business     Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  quoteRequest QuoteRequest? @relation(fields: [quoteRequestId], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+}
+
+model SubscriptionPlan {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  priceUsd    Float    @default(0)
+  chatLimit   Int      @default(100)
+  leadLimit   Int      @default(50)
+  kbLimit     Int      @default(25)
+  features    String   @default("[]") // JSON array
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

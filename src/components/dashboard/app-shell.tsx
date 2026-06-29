@@ -1,0 +1,272 @@
+"use client";
+
+import { useState } from "react";
+import {
+  LayoutDashboard,
+  Bot,
+  BookOpen,
+  MessagesSquare,
+  Users,
+  FileText,
+  BarChart3,
+  LogOut,
+  Menu,
+  X,
+  Code2,
+  Settings,
+  ChevronRight,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { DanetsLogo } from "@/components/dashboard/shared/danets-logo";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+
+export type ViewId =
+  | "overview"
+  | "agent"
+  | "knowledge"
+  | "conversations"
+  | "leads"
+  | "quotes"
+  | "usage"
+  | "embed"
+  | "settings";
+
+interface NavItem {
+  id: ViewId;
+  label: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  group: "main" | "tools" | "system";
+  desc?: string;
+}
+
+const NAV: NavItem[] = [
+  { id: "overview", label: "Dashboard", icon: LayoutDashboard, group: "main", desc: "Overview & stats" },
+  { id: "conversations", label: "Conversations", icon: MessagesSquare, group: "main", desc: "Chat sessions" },
+  { id: "leads", label: "Leads", icon: Users, group: "main", desc: "Captured leads" },
+  { id: "quotes", label: "Quotes & Proposals", icon: FileText, group: "tools", desc: "AI proposal generator" },
+  { id: "usage", label: "AI Usage", icon: BarChart3, group: "tools", desc: "Token & cost logs" },
+  { id: "agent", label: "AI Agent", icon: Bot, group: "tools", desc: "Bot configuration" },
+  { id: "knowledge", label: "Knowledge Base", icon: BookOpen, group: "tools", desc: "KB articles" },
+  { id: "embed", label: "Widget Embed", icon: Code2, group: "system", desc: "Install instructions" },
+  { id: "settings", label: "Settings", icon: Settings, group: "system", desc: "Business settings" },
+];
+
+export function AppShell({
+  user,
+  active,
+  onNavigate,
+  onLogout,
+  children,
+}: {
+  user: {
+    name: string;
+    email: string;
+    businessName: string;
+    businessId: string;
+  };
+  active: ViewId;
+  onNavigate: (v: ViewId) => void;
+  onLogout: () => void;
+  children: React.ReactNode;
+}) {
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const groups: { key: NavItem["group"]; label: string }[] = [
+    { key: "main", label: "Workspace" },
+    { key: "tools", label: "AI Tools" },
+    { key: "system", label: "System" },
+  ];
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    toast.success("Signed out");
+    onLogout();
+  }
+
+  const activeItem = NAV.find((n) => n.id === active);
+
+  return (
+    <div className="min-h-screen flex bg-muted/30">
+      {/* Sidebar - desktop */}
+      <aside className="hidden lg:flex w-64 flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border shrink-0">
+        <SidebarContent
+          active={active}
+          onNavigate={(v) => {
+            onNavigate(v);
+            setMobileOpen(false);
+          }}
+          groups={groups}
+        />
+        <SidebarFooter user={user} onLogout={logout} />
+      </aside>
+
+      {/* Sidebar - mobile drawer */}
+      {mobileOpen && (
+        <div className="lg:hidden fixed inset-0 z-50 flex">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setMobileOpen(false)}
+          />
+          <aside className="relative w-72 max-w-[80%] bg-sidebar text-sidebar-foreground flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-sidebar-border">
+              <DanetsLogo size="sm" />
+              <Button
+                size="icon"
+                variant="ghost"
+                className="text-sidebar-foreground hover:bg-sidebar-accent"
+                onClick={() => setMobileOpen(false)}
+              >
+                <X size={18} />
+              </Button>
+            </div>
+            <SidebarContent
+              active={active}
+              onNavigate={(v) => {
+                onNavigate(v);
+                setMobileOpen(false);
+              }}
+              groups={groups}
+            />
+            <SidebarFooter user={user} onLogout={logout} />
+          </aside>
+        </div>
+      )}
+
+      {/* Main */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Top bar */}
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-background/80 backdrop-blur px-4 lg:px-6">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="lg:hidden"
+            onClick={() => setMobileOpen(true)}
+          >
+            <Menu size={20} />
+          </Button>
+          <div className="lg:hidden">
+            <DanetsLogo size="sm" variant="icon" />
+          </div>
+          <div className="hidden sm:flex items-center gap-1.5 text-sm text-muted-foreground">
+            <span>Danets AI</span>
+            <ChevronRight size={14} />
+            <span className="font-medium text-foreground">
+              {activeItem?.label}
+            </span>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <div className="hidden md:flex items-center gap-2 rounded-full bg-accent/20 px-3 py-1 text-xs font-medium text-accent-foreground">
+              <span className="h-2 w-2 rounded-full bg-accent animate-pulse" />
+              Agent online
+            </div>
+            <div className="text-right hidden sm:block">
+              <div className="text-xs font-medium leading-tight">{user.name}</div>
+              <div className="text-[11px] text-muted-foreground leading-tight">
+                {user.businessName}
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Content */}
+        <main className="flex-1 p-4 lg:p-6 overflow-x-hidden">
+          {children}
+        </main>
+
+        {/* Footer */}
+        <footer className="mt-auto border-t bg-background px-4 lg:px-6 py-3 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <DanetsLogo size="sm" variant="icon" />
+            <span>© {new Date().getFullYear()} Danets TecPro Limited</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <span>Software · Cloud · AI · Cybersecurity</span>
+          </div>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+function SidebarContent({
+  active,
+  onNavigate,
+  groups,
+}: {
+  active: ViewId;
+  onNavigate: (v: ViewId) => void;
+  groups: { key: NavItem["group"]; label: string }[];
+}) {
+  return (
+    <div className="flex-1 flex flex-col overflow-y-auto scroll-thin">
+      <div className="p-4 border-b border-sidebar-border">
+        <DanetsLogo size="md" />
+      </div>
+      <nav className="flex-1 p-3 space-y-5">
+        {groups.map((g) => (
+          <div key={g.key} className="space-y-1">
+            <div className="px-2 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/50">
+              {g.label}
+            </div>
+            {NAV.filter((n) => n.group === g.key).map((item) => {
+              const Icon = item.icon;
+              const isActive = active === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => onNavigate(item.id)}
+                  className={cn(
+                    "w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors group",
+                    isActive
+                      ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  )}
+                >
+                  <Icon size={18} className="shrink-0" />
+                  <span className="flex-1 text-left">{item.label}</span>
+                  {isActive && <ChevronRight size={14} />}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+function SidebarFooter({
+  user,
+  onLogout,
+}: {
+  user: { name: string; email: string };
+  onLogout: () => void;
+}) {
+  return (
+    <div className="p-3 border-t border-sidebar-border">
+      <div className="flex items-center gap-3 rounded-lg p-2">
+        <div className="h-9 w-9 rounded-full brand-gradient flex items-center justify-center text-white text-sm font-bold shrink-0">
+          {user.name.charAt(0).toUpperCase()}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-sidebar-foreground truncate">
+            {user.name}
+          </div>
+          <div className="text-xs text-sidebar-foreground/60 truncate">
+            {user.email}
+          </div>
+        </div>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="text-sidebar-foreground/70 hover:bg-sidebar-accent shrink-0"
+          onClick={onLogout}
+          title="Sign out"
+        >
+          <LogOut size={16} />
+        </Button>
+      </div>
+    </div>
+  );
+}
