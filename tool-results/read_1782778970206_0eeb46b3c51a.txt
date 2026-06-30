@@ -1,0 +1,1213 @@
+     1→     1→"use client";
+     2→     2→
+     3→     3→import { useCallback, useEffect, useState } from "react";
+     4→     4→import { toast } from "sonner";
+     5→     5→import {
+     6→     6→  Cpu,
+     7→     7→  MessageCircle,
+     8→     8→  Mail,
+     9→     9→  Smartphone,
+    10→    10→  CreditCard,
+    11→    11→  Webhook,
+    12→    12→  Code2,
+    13→    13→  Loader2,
+    14→    14→  RefreshCw,
+    15→    15→  Trash2,
+    16→    16→  Save,
+    17→    17→  Settings,
+    18→    18→  ShieldCheck,
+    19→    19→  KeyRound,
+    20→    20→  Plug,
+    21→    21→  Check,
+    22→    22→  Info,
+    23→    23→  Phone,
+    24→    24→  Send,
+    25→    25→  type LucideIcon,
+    26→    26→} from "lucide-react";
+    27→    27→
+    28→    28→import { Button } from "@/components/ui/button";
+    29→    29→import {
+    30→    30→  Card,
+    31→    31→  CardContent,
+    32→    32→  CardDescription,
+    33→    33→  CardHeader,
+    34→    34→  CardTitle,
+    35→    35→} from "@/components/ui/card";
+    36→    36→import { Input } from "@/components/ui/input";
+    37→    37→import { Textarea } from "@/components/ui/textarea";
+    38→    38→import { Label } from "@/components/ui/label";
+    39→    39→import { Badge } from "@/components/ui/badge";
+    40→    40→import { Separator } from "@/components/ui/separator";
+    41→    41→import { Skeleton } from "@/components/ui/skeleton";
+    42→    42→import {
+    43→    43→  Alert,
+    44→    44→  AlertDescription,
+    45→    45→  AlertTitle,
+    46→    46→} from "@/components/ui/alert";
+    47→    47→import {
+    48→    48→  Select,
+    49→    49→  SelectContent,
+    50→    50→  SelectItem,
+    51→    51→  SelectTrigger,
+    52→    52→  SelectValue,
+    53→    53→} from "@/components/ui/select";
+    54→    54→import {
+    55→    55→  Dialog,
+    56→    56→  DialogContent,
+    57→    57→  DialogDescription,
+    58→    58→  DialogFooter,
+    59→    59→  DialogHeader,
+    60→    60→  DialogTitle,
+    61→    61→} from "@/components/ui/dialog";
+    62→    62→import {
+    63→    63→  AlertDialog,
+    64→    64→  AlertDialogAction,
+    65→    65→  AlertDialogCancel,
+    66→    66→  AlertDialogContent,
+    67→    67→  AlertDialogDescription,
+    68→    68→  AlertDialogFooter,
+    69→    69→  AlertDialogHeader,
+    70→    70→  AlertDialogTitle,
+    71→    71→} from "@/components/ui/alert-dialog";
+    72→    72→import { cn } from "@/lib/utils";
+    73→    73→
+    74→    74→// ─── Types ────────────────────────────────────────────────────────────
+    75→    75→
+    76→    76→interface IntegrationsUser {
+    77→    77→  userId: string;
+    78→    78→  businessId: string;
+    79→    79→  name: string;
+    80→    80→  email: string;
+    81→    81→  role: string;
+    82→    82→  businessName: string;
+    83→    83→}
+    84→    84→
+    85→    85→type Category =
+    86→    86→  | "ai_provider"
+    87→    87→  | "whatsapp"
+    88→    88→  | "email"
+    89→    89→  | "sms"
+    90→    90→  | "payment"
+    91→    91→  | "crm"
+    92→    92→  | "website_widget";
+    93→    93→
+    94→    94→type Status = "active" | "inactive" | "testing" | "error";
+    95→    95→
+    96→    96→interface IntegrationConfig {
+    97→    97→  apiKeyMasked?: string | null;
+    98→    98→  hasApiKey?: boolean;
+    99→    99→  webhookUrl?: string;
+   100→   100→  phoneNumber?: string;
+   101→   101→  fromEmail?: string;
+   102→   102→  smtpHost?: string;
+   103→   103→  senderId?: string;
+   104→   104→  model?: string;
+   105→   105→  [k: string]: unknown;
+   106→   106→}
+   107→   107→
+   108→   108→interface Integration {
+   109→   109→  id: string;
+   110→   110→  category: Category;
+   111→   111→  provider: string;
+   112→   112→  name: string;
+   113→   113→  status: Status;
+   114→   114→  config: IntegrationConfig | null;
+   115→   115→  lastTestedAt: string | null;
+   116→   116→  notes: string | null;
+   117→   117→  createdAt: string;
+   118→   118→}
+   119→   119→
+   120→   120→// ─── Category configuration ───────────────────────────────────────────
+   121→   121→
+   122→   122→interface CategoryConfig {
+   123→   123→  icon: LucideIcon;
+   124→   124→  label: string;
+   125→   125→  description: string;
+   126→   126→  iconBg: string;
+   127→   127→  iconText: string;
+   128→   128→  builtIn?: boolean;
+   129→   129→}
+   130→   130→
+   131→   131→const CATEGORY_CONFIG: Record<Category, CategoryConfig> = {
+   132→   132→  ai_provider: {
+   133→   133→    icon: Cpu,
+   134→   134→    label: "AI Provider",
+   135→   135→    description: "AI model used for chat, drafts, and document Q&A.",
+   136→   136→    iconBg: "bg-violet-500/15",
+   137→   137→    iconText: "text-violet-600 dark:text-violet-400",
+   138→   138→  },
+   139→   139→  whatsapp: {
+   140→   140→    icon: MessageCircle,
+   141→   141→    label: "WhatsApp",
+   142→   142→    description: "Send follow-ups and templates via WhatsApp.",
+   143→   143→    iconBg: "bg-emerald-500/15",
+   144→   144→    iconText: "text-emerald-600 dark:text-emerald-400",
+   145→   145→  },
+   146→   146→  email: {
+   147→   147→    icon: Mail,
+   148→   148→    label: "Email",
+   149→   149→    description: "Transactional email delivery provider.",
+   150→   150→    iconBg: "bg-blue-500/15",
+   151→   151→    iconText: "text-blue-600 dark:text-blue-400",
+   152→   152→  },
+   153→   153→  sms: {
+   154→   154→    icon: Smartphone,
+   155→   155→    label: "SMS",
+   156→   156→    description: "SMS gateway for text notifications.",
+   157→   157→    iconBg: "bg-amber-500/15",
+   158→   158→    iconText: "text-amber-600 dark:text-amber-400",
+   159→   159→  },
+   160→   160→  payment: {
+   161→   161→    icon: CreditCard,
+   162→   162→    label: "Payment",
+   163→   163→    description: "Online payment and invoice collection.",
+   164→   164→    iconBg: "bg-rose-500/15",
+   165→   165→    iconText: "text-rose-600 dark:text-rose-400",
+   166→   166→  },
+   167→   167→  crm: {
+   168→   168→    icon: Webhook,
+   169→   169→    label: "CRM",
+   170→   170→    description: "Push leads and events to your CRM.",
+   171→   171→    iconBg: "bg-cyan-500/15",
+   172→   172→    iconText: "text-cyan-600 dark:text-cyan-400",
+   173→   173→  },
+   174→   174→  website_widget: {
+   175→   175→    icon: Code2,
+   176→   176→    label: "Website Widget",
+   177→   177→    description: "Danets chatbot widget embedded on your site.",
+   178→   178→    iconBg: "bg-primary/15",
+   179→   179→    iconText: "text-primary",
+   180→   180→    builtIn: true,
+   181→   181→  },
+   182→   182→};
+   183→   183→
+   184→   184→const CATEGORIES: Category[] = [
+   185→   185→  "ai_provider",
+   186→   186→  "whatsapp",
+   187→   187→  "email",
+   188→   188→  "sms",
+   189→   189→  "payment",
+   190→   190→  "crm",
+   191→   191→  "website_widget",
+   192→   192→];
+   193→   193→
+   194→   194→// ─── Provider options per category ────────────────────────────────────
+   195→   195→
+   196→   196→interface ProviderOption {
+   197→   197→  value: string;
+   198→   198→  label: string;
+   199→   199→  needsApiKey: boolean;
+   200→   200→}
+   201→   201→
+   202→   202→const PROVIDER_OPTIONS: Record<Category, ProviderOption[]> = {
+   203→   203→  ai_provider: [
+   204→   204→    { value: "zai", label: "ZAI", needsApiKey: false },
+   205→   205→    { value: "openai", label: "OpenAI", needsApiKey: true },
+   206→   206→    { value: "anthropic", label: "Anthropic", needsApiKey: true },
+   207→   207→    { value: "other", label: "Other", needsApiKey: true },
+   208→   208→  ],
+   209→   209→  whatsapp: [
+   210→   210→    { value: "manual", label: "Manual Link", needsApiKey: false },
+   211→   211→    { value: "meta_cloud_api", label: "Meta Cloud API", needsApiKey: true },
+   212→   212→    { value: "twilio", label: "Twilio", needsApiKey: true },
+   213→   213→    { value: "termii", label: "Termii", needsApiKey: true },
+   214→   214→  ],
+   215→   215→  email: [
+   216→   216→    { value: "smtp", label: "SMTP", needsApiKey: true },
+   217→   217→    { value: "sendgrid", label: "SendGrid", needsApiKey: true },
+   218→   218→    { value: "mailgun", label: "Mailgun", needsApiKey: true },
+   219→   219→    { value: "other", label: "Other", needsApiKey: true },
+   220→   220→  ],
+   221→   221→  sms: [
+   222→   222→    { value: "twilio", label: "Twilio", needsApiKey: true },
+   223→   223→    { value: "termii", label: "Termii", needsApiKey: true },
+   224→   224→    { value: "other", label: "Other", needsApiKey: true },
+   225→   225→  ],
+   226→   226→  payment: [
+   227→   227→    { value: "paystack", label: "Paystack", needsApiKey: true },
+   228→   228→    { value: "flutterwave", label: "Flutterwave", needsApiKey: true },
+   229→   229→    { value: "bank_transfer", label: "Bank Transfer", needsApiKey: false },
+   230→   230→    { value: "manual", label: "Manual", needsApiKey: false },
+   231→   231→  ],
+   232→   232→  crm: [
+   233→   233→    { value: "webhook", label: "Webhook", needsApiKey: false },
+   234→   234→    { value: "custom", label: "Custom", needsApiKey: false },
+   235→   235→  ],
+   236→   236→  website_widget: [
+   237→   237→    { value: "danets_widget", label: "Danets Widget (built-in)", needsApiKey: false },
+   238→   238→  ],
+   239→   239→};
+   240→   240→
+   241→   241→// ─── Helpers ──────────────────────────────────────────────────────────
+   242→   242→
+   243→   243→function formatRelativeTime(iso: string | null): string | null {
+   244→   244→  if (!iso) return null;
+   245→   245→  const then = new Date(iso).getTime();
+   246→   246→  if (Number.isNaN(then)) return null;
+   247→   247→  const diff = Date.now() - then;
+   248→   248→  const sec = Math.round(diff / 1000);
+   249→   249→  if (sec < 60) return "just now";
+   250→   250→  const min = Math.round(sec / 60);
+   251→   251→  if (min < 60) return `${min}m ago`;
+   252→   252→  const hr = Math.round(min / 60);
+   253→   253→  if (hr < 24) return `${hr}h ago`;
+   254→   254→  const day = Math.round(hr / 24);
+   255→   255→  if (day < 30) return `${day}d ago`;
+   256→   256→  return new Date(iso).toLocaleDateString();
+   257→   257→}
+   258→   258→
+   259→   259→function providerLabel(category: Category, value: string): string {
+   260→   260→  const opt = PROVIDER_OPTIONS[category]?.find((o) => o.value === value);
+   261→   261→  return opt?.label || value;
+   262→   262→}
+   263→   263→
+   264→   264→// ─── Status badge ─────────────────────────────────────────────────────
+   265→   265→
+   266→   266→function StatusBadge({ status, builtIn }: { status: Status; builtIn?: boolean }) {
+   267→   267→  if (builtIn) {
+   268→   268→    return (
+   269→   269→      <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 gap-1">
+   270→   270→        <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+   271→   271→        Built-in · Active
+   272→   272→      </Badge>
+   273→   273→    );
+   274→   274→  }
+   275→   275→  switch (status) {
+   276→   276→    case "active":
+   277→   277→      return (
+   278→   278→        <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 gap-1">
+   279→   279→          <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+   280→   280→          Active
+   281→   281→        </Badge>
+   282→   282→      );
+   283→   283→    case "testing":
+   284→   284→      return (
+   285→   285→        <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/20 gap-1">
+   286→   286→          <span className="size-1.5 rounded-full bg-amber-500" />
+   287→   287→          Testing
+   288→   288→        </Badge>
+   289→   289→      );
+   290→   290→    case "error":
+   291→   291→      return (
+   292→   292→        <Badge className="bg-rose-500/15 text-rose-700 dark:text-rose-400 border-rose-500/20 gap-1">
+   293→   293→          <span className="size-1.5 rounded-full bg-rose-500" />
+   294→   294→          Error
+   295→   295→        </Badge>
+   296→   296→      );
+   297→   297→    default:
+   298→   298→      return (
+   299→   299→        <Badge variant="secondary" className="gap-1">
+   300→   300→          <span className="size-1.5 rounded-full bg-muted-foreground" />
+   301→   301→          Inactive
+   302→   302→        </Badge>
+   303→   303→      );
+   304→   304→  }
+   305→   305→}
+   306→   306→
+   307→   307→// ─── Category Card ────────────────────────────────────────────────────
+   308→   308→
+   309→   309→function CategoryCard({
+   310→   310→  category,
+   311→   311→  integration,
+   312→   312→  onConfigure,
+   313→   313→}: {
+   314→   314→  category: Category;
+   315→   315→  integration?: Integration;
+   316→   316→  onConfigure: () => void;
+   317→   317→}) {
+   318→   318→  const cfg = CATEGORY_CONFIG[category];
+   319→   319→  const Icon = cfg.icon;
+   320→   320→  const isBuiltIn = !!cfg.builtIn;
+   321→   321→  const provider = integration?.provider;
+   322→   322→  const providerText = isBuiltIn
+   323→   323→    ? "Danets Widget"
+   324→   324→    : provider
+   325→   325→      ? providerLabel(category, provider)
+   326→   326→      : "Not configured";
+   327→   327→
+   328→   328→  return (
+   329→   329→    <Card
+   330→   330→      className={cn(
+   331→   331→        "relative overflow-hidden transition-shadow hover:shadow-md flex flex-col",
+   332→   332→        integration?.status === "active" && !isBuiltIn && "border-emerald-500/30",
+   333→   333→        isBuiltIn && "border-primary/30"
+   334→   334→      )}
+   335→   335→    >
+   336→   336→      <CardHeader className="pb-3">
+   337→   337→        <div className="flex items-start justify-between gap-3">
+   338→   338→          <div className="flex items-center gap-3">
+   339→   339→            <div className={cn("size-10 rounded-lg flex items-center justify-center", cfg.iconBg)}>
+   340→   340→              <Icon className={cn("size-5", cfg.iconText)} />
+   341→   341→            </div>
+   342→   342→            <div>
+   343→   343→              <CardTitle className="text-base leading-tight">{cfg.label}</CardTitle>
+   344→   344→              <CardDescription className="text-xs mt-0.5 line-clamp-1">
+   345→   345→                {cfg.description}
+   346→   346→              </CardDescription>
+   347→   347→            </div>
+   348→   348→          </div>
+   349→   349→        </div>
+   350→   350→      </CardHeader>
+   351→   351→      <CardContent className="flex-1 flex flex-col gap-3">
+   352→   352→        <div className="space-y-1.5">
+   353→   353→          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+   354→   354→            Provider
+   355→   355→          </div>
+   356→   356→          <div
+   357→   357→            className={cn(
+   358→   358→              "text-sm font-medium truncate",
+   359→   359→              !provider && !isBuiltIn && "text-muted-foreground italic"
+   360→   360→            )}
+   361→   361→          >
+   362→   362→            {providerText}
+   363→   363→          </div>
+   364→   364→        </div>
+   365→   365→
+   366→   366→        <div className="flex items-center justify-between gap-2">
+   367→   367→          <StatusBadge
+   368→   368→            status={integration?.status ?? "inactive"}
+   369→   369→            builtIn={isBuiltIn}
+   370→   370→          />
+   371→   371→          {integration?.lastTestedAt ? (
+   372→   372→            <span className="text-[11px] text-muted-foreground">
+   373→   373→              Tested {formatRelativeTime(integration.lastTestedAt)}
+   374→   374→            </span>
+   375→   375→          ) : null}
+   376→   376→        </div>
+   377→   377→
+   378→   378→        <Separator />
+   379→   379→
+   380→   380→        <Button
+   381→   381→          variant={isBuiltIn ? "outline" : "default"}
+   382→   382→          className="w-full"
+   383→   383→          onClick={onConfigure}
+   384→   384→        >
+   385→   385→          <Settings className="size-4" />
+   386→   386→          {isBuiltIn ? "View Embed Code" : "Configure"}
+   387→   387→        </Button>
+   388→   388→      </CardContent>
+   389→   389→    </Card>
+   390→   390→  );
+   391→   391→}
+   392→   392→
+   393→   393→// ─── Config Dialog ────────────────────────────────────────────────────
+   394→   394→
+   395→   395→interface ConfigDialogProps {
+   396→   396→  category: Category;
+   397→   397→  integration?: Integration;
+   398→   398→  open: boolean;
+   399→   399→  onOpenChange: (v: boolean) => void;
+   400→   400→  onSaved: (integration: Integration) => void;
+   401→   401→  onDeleted: (id: string) => void;
+   402→   402→}
+   403→   403→
+   404→   404→function ConfigDialog({
+   405→   405→  category,
+   406→   406→  integration,
+   407→   407→  open,
+   408→   408→  onOpenChange,
+   409→   409→  onSaved,
+   410→   410→  onDeleted,
+   411→   411→}: ConfigDialogProps) {
+   412→   412→  const cfg = CATEGORY_CONFIG[category];
+   413→   413→  const options = PROVIDER_OPTIONS[category];
+   414→   414→
+   415→   415→  const [provider, setProvider] = useState<string>(integration?.provider ?? options[0].value);
+   416→   416→  const [apiKey, setApiKey] = useState("");
+   417→   417→  const [webhookUrl, setWebhookUrl] = useState(integration?.config?.webhookUrl ?? "");
+   418→   418→  const [phoneNumber, setPhoneNumber] = useState(integration?.config?.phoneNumber ?? "");
+   419→   419→  const [fromEmail, setFromEmail] = useState(integration?.config?.fromEmail ?? "");
+   420→   420→  const [smtpHost, setSmtpHost] = useState(integration?.config?.smtpHost ?? "");
+   421→   421→  const [senderId, setSenderId] = useState(integration?.config?.senderId ?? "");
+   422→   422→  const [model, setModel] = useState(integration?.config?.model ?? "");
+   423→   423→  const [notes, setNotes] = useState(integration?.notes ?? "");
+   424→   424→
+   425→   425→  const [saving, setSaving] = useState(false);
+   426→   426→  const [testing, setTesting] = useState(false);
+   427→   427→  const [deleteOpen, setDeleteOpen] = useState(false);
+   428→   428→  const [deleting, setDeleting] = useState(false);
+   429→   429→
+   430→   430→  // Reset state whenever the dialog opens (re-seed from integration).
+   431→   431→  useEffect(() => {
+   432→   432→    if (!open) return;
+   433→   433→    setProvider(integration?.provider ?? options[0].value);
+   434→   434→    setApiKey("");
+   435→   435→    setWebhookUrl(integration?.config?.webhookUrl ?? "");
+   436→   436→    setPhoneNumber(integration?.config?.phoneNumber ?? "");
+   437→   437→    setFromEmail(integration?.config?.fromEmail ?? "");
+   438→   438→    setSmtpHost(integration?.config?.smtpHost ?? "");
+   439→   439→    setSenderId(integration?.config?.senderId ?? "");
+   440→   440→    setModel(integration?.config?.model ?? "");
+   441→   441→    setNotes(integration?.notes ?? "");
+   442→   442→  }, [open, category, integration?.id]);
+   443→   443→
+   444→   444→  const providerOpt = options.find((o) => o.value === provider);
+   445→   445→  const needsApiKey = !!providerOpt?.needsApiKey;
+   446→   446→  const hasApiKey = !!integration?.config?.hasApiKey;
+   447→   447→
+   448→   448→  // Category-specific field visibility
+   449→   449→  const showPhone = category === "whatsapp";
+   450→   450→  const showFromEmail = category === "email";
+   451→   451→  const showSmtpHost = category === "email" && provider === "smtp";
+   452→   452→  const showSenderId = category === "sms";
+   453→   453→  const showWebhook = category === "crm" || (category === "whatsapp" && provider !== "manual");
+   454→   454→  const showModel = category === "ai_provider";
+   455→   455→
+   456→   456→  function buildConfig(): Record<string, unknown> | undefined {
+   457→   457→    const c: Record<string, unknown> = {};
+   458→   458→    if (apiKey.trim()) c.apiKey = apiKey.trim();
+   459→   459→    if (showWebhook) c.webhookUrl = webhookUrl.trim();
+   460→   460→    if (showPhone) c.phoneNumber = phoneNumber.trim();
+   461→   461→    if (showFromEmail) c.fromEmail = fromEmail.trim();
+   462→   462→    if (showSmtpHost) c.smtpHost = smtpHost.trim();
+   463→   463→    if (showSenderId) c.senderId = senderId.trim();
+   464→   464→    if (showModel && model.trim()) c.model = model.trim();
+   465→   465→    return c;
+   466→   466→  }
+   467→   467→
+   468→   468→  async function handleSave() {
+   469→   469→    if (!provider) {
+   470→   470→      toast.error("Please select a provider");
+   471→   471→      return;
+   472→   472→    }
+   473→   473→    setSaving(true);
+   474→   474→    try {
+   475→   475→      const config = buildConfig();
+   476→   476→      const payload: Record<string, unknown> = {
+   477→   477→        category,
+   478→   478→        provider,
+   479→   479→        name: providerLabel(category, provider),
+   480→   480→        status: integration?.status === "active" ? "active" : "inactive",
+   481→   481→        config,
+   482→   482→        notes: notes.trim() || null,
+   483→   483→      };
+   484→   484→      const res = await fetch("/api/integrations", {
+   485→   485→        method: "POST",
+   486→   486→        headers: { "Content-Type": "application/json" },
+   487→   487→        body: JSON.stringify(payload),
+   488→   488→      });
+   489→   489→      const data = await res.json();
+   490→   490→      if (!res.ok) throw new Error(data.error || "Failed to save integration");
+   491→   491→
+   492→   492→      // Refetch to get the masked config back
+   493→   493→      const listRes = await fetch("/api/integrations", { method: "GET" });
+   494→   494→      const listData = await listRes.json();
+   495→   495→      const fresh = (listData.integrations as Integration[])?.find(
+   496→   496→        (i) => i.category === category
+   497→   497→      );
+   498→   498→      if (fresh) onSaved(fresh);
+   499→   499→
+   500→   500→      toast.success("Integration saved", {
+   501→   501→        description: `${cfg.label} configured with ${providerLabel(category, provider)}.`,
+   502→   502→      });
+   503→   503→      onOpenChange(false);
+   504→   504→    } catch (e: unknown) {
+   505→   505→      const msg = e instanceof Error ? e.message : "Save failed";
+   506→   506→      toast.error("Save failed", { description: msg });
+   507→   507→    } finally {
+   508→   508→      setSaving(false);
+   509→   509→    }
+   510→   510→  }
+   511→   511→
+   512→   512→  async function handleTest() {
+   513→   513→    if (!integration) {
+   514→   514→      toast.error("Save the integration first to test the connection.");
+   515→   515→      return;
+   516→   516→    }
+   517→   517→    setTesting(true);
+   518→   518→    try {
+   519→   519→      const res = await fetch(`/api/integrations/${integration.id}`, {
+   520→   520→        method: "POST",
+   521→   521→      });
+   522→   522→      const data = await res.json();
+   523→   523→      if (!res.ok) throw new Error(data.error || "Test failed");
+   524→   524→
+   525→   525→      onSaved({
+   526→   526→        ...integration,
+   527→   527→        status: "active",
+   528→   528→        lastTestedAt: data.lastTestedAt ?? new Date().toISOString(),
+   529→   529→      });
+   530→   530→      toast.success("Connection test passed", {
+   531→   531→        description: data.message || `${cfg.label} is now marked as active.`,
+   532→   532→      });
+   533→   533→    } catch (e: unknown) {
+   534→   534→      const msg = e instanceof Error ? e.message : "Test failed";
+   535→   535→      toast.error("Connection test failed", { description: msg });
+   536→   536→      onSaved({ ...integration, status: "error" });
+   537→   537→    } finally {
+   538→   538→      setTesting(false);
+   539→   539→    }
+   540→   540→  }
+   541→   541→
+   542→   542→  async function handleDelete() {
+   543→   543→    if (!integration) return;
+   544→   544→    setDeleting(true);
+   545→   545→    try {
+   546→   546→      const res = await fetch(`/api/integrations/${integration.id}`, {
+   547→   547→        method: "DELETE",
+   548→   548→      });
+   549→   549→      const data = await res.json();
+   550→   550→      if (!res.ok) throw new Error(data.error || "Delete failed");
+   551→   551→      onDeleted(integration.id);
+   552→   552→      toast.success("Integration removed", {
+   553→   553→        description: `${cfg.label} configuration has been deleted.`,
+   554→   554→      });
+   555→   555→      setDeleteOpen(false);
+   556→   556→      onOpenChange(false);
+   557→   557→    } catch (e: unknown) {
+   558→   558→      const msg = e instanceof Error ? e.message : "Delete failed";
+   559→   559→      toast.error("Delete failed", { description: msg });
+   560→   560→    } finally {
+   561→   561→      setDeleting(false);
+   562→   562→    }
+   563→   563→  }
+   564→   564→
+   565→   565→  return (
+   566→   566→    <Dialog open={open} onOpenChange={onOpenChange}>
+   567→   567→      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto scroll-thin">
+   568→   568→        <DialogHeader>
+   569→   569→          <DialogTitle className="flex items-center gap-2">
+   570→   570→            <div className={cn("size-7 rounded-md flex items-center justify-center", cfg.iconBg)}>
+   571→   571→              <cfg.icon className={cn("size-4", cfg.iconText)} />
+   572→   572→            </div>
+   573→   573→            Configure {cfg.label}
+   574→   574→          </DialogTitle>
+   575→   575→          <DialogDescription>{cfg.description}</DialogDescription>
+   576→   576→        </DialogHeader>
+   577→   577→
+   578→   578→        <div className="space-y-4 py-2">
+   579→   579→          {/* Provider */}
+   580→   580→          <div className="space-y-2">
+   581→   581→            <Label htmlFor="int-provider">Provider</Label>
+   582→   582→            <Select value={provider} onValueChange={setProvider}>
+   583→   583→              <SelectTrigger id="int-provider">
+   584→   584→                <SelectValue placeholder="Select a provider" />
+   585→   585→              </SelectTrigger>
+   586→   586→              <SelectContent>
+   587→   587→                {options.map((o) => (
+   588→   588→                  <SelectItem key={o.value} value={o.value}>
+   589→   589→                    {o.label}
+   590→   590→                  </SelectItem>
+   591→   591→                ))}
+   592→   592→              </SelectContent>
+   593→   593→            </Select>
+   594→   594→          </div>
+   595→   595→
+   596→   596→          {/* API Key */}
+   597→   597→          {needsApiKey ? (
+   598→   598→            <div className="space-y-2">
+   599→   599→              <Label htmlFor="int-apikey" className="flex items-center gap-1.5">
+   600→   600→                <KeyRound className="size-3.5" />
+   601→   601→                API Key
+   602→   602→              </Label>
+   603→   603→              <Input
+   604→   604→                id="int-apikey"
+   605→   605→                type="password"
+   606→   606→                autoComplete="off"
+   607→   607→                placeholder={
+   608→   608→                  hasApiKey
+   609→   609→                    ? "•••••••• (stored)"
+   610→   610→                    : "Paste your API key"
+   611→   611→                }
+   612→   612→                value={apiKey}
+   613→   613→                onChange={(e) => setApiKey(e.target.value)}
+   614→   614→              />
+   615→   615→              {hasApiKey ? (
+   616→   616→                <p className="text-xs text-muted-foreground flex items-start gap-1.5">
+   617→   617→                  <Info className="size-3.5 mt-0.5 shrink-0" />
+   618→   618→                  <span>
+   619→   619→                    A key is already stored
+   620→   620→                    {integration?.config?.apiKeyMasked ? (
+   621→   621→                      <> — <code className="font-mono">{integration.config.apiKeyMasked}</code></>
+   622→   622→                    ) : null}
+   623→   623→                    . Enter a new key to replace it.
+   624→   624→                  </span>
+   625→   625→                </p>
+   626→   626→              ) : (
+   627→   627→                <p className="text-xs text-muted-foreground">
+   628→   628→                  Stored server-side only — never exposed to the frontend.
+   629→   629→                </p>
+   630→   630→              )}
+   631→   631→            </div>
+   632→   632→          ) : null}
+   633→   633→
+   634→   634→          {/* WhatsApp / Phone */}
+   635→   635→          {showPhone ? (
+   636→   636→            <div className="space-y-2">
+   637→   637→              <Label htmlFor="int-phone" className="flex items-center gap-1.5">
+   638→   638→                <Phone className="size-3.5" />
+   639→   639→                Phone Number
+   640→   640→              </Label>
+   641→   641→              <Input
+   642→   642→                id="int-phone"
+   643→   643→                type="tel"
+   644→   644→                placeholder="+234 801 234 5678"
+   645→   645→                value={phoneNumber}
+   646→   646→                onChange={(e) => setPhoneNumber(e.target.value)}
+   647→   647→              />
+   648→   648→              <p className="text-xs text-muted-foreground">
+   649→   649→                Business WhatsApp number in international format.
+   650→   650→              </p>
+   651→   651→            </div>
+   652→   652→          ) : null}
+   653→   653→
+   654→   654→          {/* Email / From Email */}
+   655→   655→          {showFromEmail ? (
+   656→   656→            <div className="space-y-2">
+   657→   657→              <Label htmlFor="int-fromemail" className="flex items-center gap-1.5">
+   658→   658→                <Mail className="size-3.5" />
+   659→   659→                From Email
+   660→   660→              </Label>
+   661→   661→              <Input
+   662→   662→                id="int-fromemail"
+   663→   663→                type="email"
+   664→   664→                placeholder="noreply@yourbusiness.com"
+   665→   665→                value={fromEmail}
+   666→   666→                onChange={(e) => setFromEmail(e.target.value)}
+   667→   667→              />
+   668→   668→            </div>
+   669→   669→          ) : null}
+   670→   670→
+   671→   671→          {/* Email SMTP / Host */}
+   672→   672→          {showSmtpHost ? (
+   673→   673→            <div className="space-y-2">
+   674→   674→              <Label htmlFor="int-smtphost">SMTP Host</Label>
+   675→   675→              <Input
+   676→   676→                id="int-smtphost"
+   677→   677→                placeholder="smtp.gmail.com:587"
+   678→   678→                value={smtpHost}
+   679→   679→                onChange={(e) => setSmtpHost(e.target.value)}
+   680→   680→              />
+   681→   681→              <p className="text-xs text-muted-foreground">
+   682→   682→                Include the port (e.g. <code className="font-mono">:587</code> for TLS).
+   683→   683→              </p>
+   684→   684→            </div>
+   685→   685→          ) : null}
+   686→   686→
+   687→   687→          {/* SMS / Sender ID */}
+   688→   688→          {showSenderId ? (
+   689→   689→            <div className="space-y-2">
+   690→   690→              <Label htmlFor="int-senderid">Sender ID</Label>
+   691→   691→              <Input
+   692→   692→                id="int-senderid"
+   693→   693→                placeholder="DANETS"
+   694→   694→                maxLength={11}
+   695→   695→                value={senderId}
+   696→   696→                onChange={(e) => setSenderId(e.target.value)}
+   697→   697→              />
+   698→   698→              <p className="text-xs text-muted-foreground">
+   699→   699→                Up to 11 characters; shown as the sender on outbound SMS.
+   700→   700→              </p>
+   701→   701→            </div>
+   702→   702→          ) : null}
+   703→   703→
+   704→   704→          {/* Webhook URL (CRM + WhatsApp non-manual) */}
+   705→   705→          {showWebhook ? (
+   706→   706→            <div className="space-y-2">
+   707→   707→              <Label htmlFor="int-webhook" className="flex items-center gap-1.5">
+   708→   708→                <Webhook className="size-3.5" />
+   709→   709→                Webhook URL
+   710→   710→              </Label>
+   711→   711→              <Input
+   712→   712→                id="int-webhook"
+   713→   713→                type="url"
+   714→   714→                placeholder="https://api.example.com/webhooks/danets"
+   715→   715→                value={webhookUrl}
+   716→   716→                onChange={(e) => setWebhookUrl(e.target.value)}
+   717→   717→              />
+   718→   718→              <p className="text-xs text-muted-foreground">
+   719→   719→                {category === "crm"
+   720→   720→                  ? "Danets will POST lead and event payloads to this URL."
+   721→   721→                  : "Inbound webhook URL for delivery receipts and replies."}
+   722→   722→              </p>
+   723→   723→            </div>
+   724→   724→          ) : null}
+   725→   725→
+   726→   726→          {/* AI / Model */}
+   727→   727→          {showModel ? (
+   728→   728→            <div className="space-y-2">
+   729→   729→              <Label htmlFor="int-model">Model <span className="text-muted-foreground">(optional)</span></Label>
+   730→   730→              <Input
+   731→   731→                id="int-model"
+   732→   732→                placeholder="e.g. glm-4.6, gpt-4o-mini, claude-3-5-sonnet"
+   733→   733→                value={model}
+   734→   734→                onChange={(e) => setModel(e.target.value)}
+   735→   735→              />
+   736→   736→              <p className="text-xs text-muted-foreground">
+   737→   737→                Leave blank to use the server default for this provider.
+   738→   738→              </p>
+   739→   739→            </div>
+   740→   740→          ) : null}
+   741→   741→
+   742→   742→          <Separator />
+   743→   743→
+   744→   744→          {/* Notes */}
+   745→   745→          <div className="space-y-2">
+   746→   746→            <Label htmlFor="int-notes">Notes <span className="text-muted-foreground">(optional)</span></Label>
+   747→   747→            <Textarea
+   748→   748→              id="int-notes"
+   749→   749→              rows={3}
+   750→   750→              maxLength={2000}
+   751→   751→              placeholder="Internal notes — account ID, who to contact, expiry date, etc."
+   752→   752→              value={notes}
+   753→   753→              onChange={(e) => setNotes(e.target.value)}
+   754→   754→            />
+   755→   755→            <p className="text-xs text-muted-foreground text-right">
+   756→   756→              {notes.length}/2000
+   757→   757→            </p>
+   758→   758→          </div>
+   759→   759→
+   760→   760→          {/* Status / Last tested summary */}
+   761→   761→          {integration ? (
+   762→   762→            <div className="rounded-lg border bg-muted/30 px-3 py-2.5 flex items-center justify-between gap-2">
+   763→   763→              <div className="space-y-0.5">
+   764→   764→                <div className="text-xs text-muted-foreground">Current status</div>
+   765→   765→                <StatusBadge status={integration.status} />
+   766→   766→              </div>
+   767→   767→              {integration.lastTestedAt ? (
+   768→   768→                <div className="text-right space-y-0.5">
+   769→   769→                  <div className="text-xs text-muted-foreground">Last tested</div>
+   770→   770→                  <div className="text-xs font-medium">
+   771→   771→                    {formatRelativeTime(integration.lastTestedAt)}
+   772→   772→                  </div>
+   773→   773→                </div>
+   774→   774→              ) : (
+   775→   775→                <div className="text-xs text-muted-foreground italic">Not tested yet</div>
+   776→   776→              )}
+   777→   777→            </div>
+   778→   778→          ) : (
+   779→   779→            <Alert className="border-primary/20 bg-primary/5">
+   780→   780→              <Info className="size-4 text-primary" />
+   781→   781→              <AlertDescription className="text-xs">
+   782→   782→                No integration configured for {cfg.label} yet. Fill in the details and
+   783→   783→                click <strong>Save</strong> to create one.
+   784→   784→              </AlertDescription>
+   785→   785→            </Alert>
+   786→   786→          )}
+   787→   787→
+   788→   788→          {/* Security note */}
+   789→   789→          <div className="flex items-start gap-2 rounded-lg bg-accent/20 px-3 py-2.5 text-xs text-accent-foreground">
+   790→   790→            <ShieldCheck className="size-4 mt-0.5 shrink-0" />
+   791→   791→            <span>
+   792→   792→              API keys are stored server-side only and are never exposed to the
+   793→   793→              frontend. The masked preview shows only the first and last 4 characters.
+   794→   794→            </span>
+   795→   795→          </div>
+   796→   796→        </div>
+   797→   797→
+   798→   798→        <DialogFooter className="gap-2 sm:gap-2 flex-wrap sm:flex-nowrap">
+   799→   799→          {integration ? (
+   800→   800→            <Button
+   801→   801→              variant="destructive"
+   802→   802→              onClick={() => setDeleteOpen(true)}
+   803→   803→              className="mr-auto"
+   804→   804→              disabled={saving || testing || deleting}
+   805→   805→            >
+   806→   806→              <Trash2 className="size-4" />
+   807→   807→              Delete
+   808→   808→            </Button>
+   809→   809→          ) : null}
+   810→   810→          <Button
+   811→   811→            variant="outline"
+   812→   812→            onClick={() => onOpenChange(false)}
+   813→   813→            disabled={saving || testing || deleting}
+   814→   814→          >
+   815→   815→            Cancel
+   816→   816→          </Button>
+   817→   817→          <Button
+   818→   818→            variant="secondary"
+   819→   819→            onClick={handleTest}
+   820→   820→            disabled={!integration || saving || testing || deleting}
+   821→   821→            title={integration ? "Test connection" : "Save the integration first to test"}
+   822→   822→          >
+   823→   823→            {testing ? (
+   824→   824→              <Loader2 className="size-4 animate-spin" />
+   825→   825→            ) : (
+   826→   826→              <Send className="size-4" />
+   827→   827→            )}
+   828→   828→            Test
+   829→   829→          </Button>
+   830→   830→          <Button onClick={handleSave} disabled={saving || testing || deleting}>
+   831→   831→            {saving ? (
+   832→   832→              <Loader2 className="size-4 animate-spin" />
+   833→   833→            ) : (
+   834→   834→              <Save className="size-4" />
+   835→   835→            )}
+   836→   836→            Save
+   837→   837→          </Button>
+   838→   838→        </DialogFooter>
+   839→   839→
+   840→   840→        {/* Delete confirmation */}
+   841→   841→        <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+   842→   842→          <AlertDialogContent>
+   843→   843→            <AlertDialogHeader>
+   844→   844→              <AlertDialogTitle>Delete this integration?</AlertDialogTitle>
+   845→   845→              <AlertDialogDescription>
+   846→   846→                This will permanently remove the {cfg.label} integration
+   847→   847→                {integration ? (
+   848→   848→                  <>
+   849→   849→                    {" "}(<strong>{providerLabel(category, integration.provider)}</strong>)
+   850→   850→                  </>
+   851→   851→                ) : null}
+   852→   852→                {" "}and any stored API key. This action cannot be undone.
+   853→   853→              </AlertDialogDescription>
+   854→   854→            </AlertDialogHeader>
+   855→   855→            <AlertDialogFooter>
+   856→   856→              <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+   857→   857→              <AlertDialogAction
+   858→   858→                onClick={(e) => {
+   859→   859→                  e.preventDefault();
+   860→   860→                  handleDelete();
+   861→   861→                }}
+   862→   862→                disabled={deleting}
+   863→   863→                className="bg-destructive text-white hover:bg-destructive/90"
+   864→   864→              >
+   865→   865→                {deleting ? (
+   866→   866→                  <Loader2 className="size-4 animate-spin" />
+   867→   867→                ) : (
+   868→   868→                  <Trash2 className="size-4" />
+   869→   869→                )}
+   870→   870→                Delete
+   871→   871→              </AlertDialogAction>
+   872→   872→            </AlertDialogFooter>
+   873→   873→          </AlertDialogContent>
+   874→   874→        </AlertDialog>
+   875→   875→      </DialogContent>
+   876→   876→    </Dialog>
+   877→   877→  );
+   878→   878→}
+   879→   879→
+   880→   880→// ─── Built-in Dialog (website_widget) ─────────────────────────────────
+   881→   881→
+   882→   882→function BuiltInDialog({
+   883→   883→  open,
+   884→   884→  onOpenChange,
+   885→   885→}: {
+   886→   886→  open: boolean;
+   887→   887→  onOpenChange: (v: boolean) => void;
+   888→   888→}) {
+   889→   889→  const [publicKey, setPublicKey] = useState<string>("");
+   890→   890→  const [loaded, setLoaded] = useState(false);
+   891→   891→  const [copied, setCopied] = useState<false | "script" | "iframe">(false);
+   892→   892→
+   893→   893→  useEffect(() => {
+   894→   894→    let cancelled = false;
+   895→   895→    fetch("/api/business")
+   896→   896→      .then((r) => r.json())
+   897→   897→      .then((d) => {
+   898→   898→        if (!cancelled) setPublicKey(d.business?.publicKey || "");
+   899→   899→      })
+   900→   900→      .catch(() => {
+   901→   901→        if (!cancelled) setPublicKey("");
+   902→   902→      })
+   903→   903→      .finally(() => {
+   904→   904→        if (!cancelled) setLoaded(true);
+   905→   905→      });
+   906→   906→    return () => {
+   907→   907→      cancelled = true;
+   908→   908→    };
+   909→   909→  }, []);
+   910→   910→
+   911→   911→  const loading = !loaded;
+   912→   912→
+   913→   913→  const origin =
+   914→   914→    typeof window !== "undefined"
+   915→   915→      ? window.location.origin
+   916→   916→      : "https://ai.danetstecpro.com";
+   917→   917→  const embedScript = `<script src="${origin}/widget.js?pk=${publicKey}" async></script>`;
+   918→   918→  const iframeSnippet = `<iframe src="${origin}/widget-demo?pk=${publicKey}" width="380" height="560" frameborder="0"></iframe>`;
+   919→   919→
+   920→   920→  async function copy(text: string, label: "script" | "iframe") {
+   921→   921→    try {
+   922→   922→      await navigator.clipboard.writeText(text);
+   923→   923→      setCopied(label);
+   924→   924→      toast.success(`${label === "script" ? "Embed script" : "Iframe snippet"} copied`);
+   925→   925→      setTimeout(() => setCopied(false), 2000);
+   926→   926→    } catch {
+   927→   927→      toast.error("Copy failed");
+   928→   928→    }
+   929→   929→  }
+   930→   930→
+   931→   931→  return (
+   932→   932→    <Dialog open={open} onOpenChange={onOpenChange}>
+   933→   933→      <DialogContent className="sm:max-w-lg">
+   934→   934→        <DialogHeader>
+   935→   935→          <DialogTitle className="flex items-center gap-2">
+   936→   936→            <div className="size-7 rounded-md flex items-center justify-center bg-primary/15">
+   937→   937→              <Code2 className="size-4 text-primary" />
+   938→   938→            </div>
+   939→   939→            Website Widget
+   940→   940→          </DialogTitle>
+   941→   941→          <DialogDescription>
+   942→   942→            The Danets chatbot widget is built-in and requires no configuration.
+   943→   943→          </DialogDescription>
+   944→   944→        </DialogHeader>
+   945→   945→
+   946→   946→        <div className="space-y-4 py-2">
+   947→   947→          <Alert className="border-emerald-500/20 bg-emerald-500/5">
+   948→   948→            <Check className="size-4 text-emerald-600 dark:text-emerald-400" />
+   949→   949→            <AlertTitle className="text-emerald-700 dark:text-emerald-400">
+   950→   950→              Always active
+   951→   951→            </AlertTitle>
+   952→   952→            <AlertDescription className="text-xs">
+   953→   953→              The widget runs on every plan and is ready to embed on your website — no
+   954→   954→              API key or backend setup needed.
+   955→   955→            </AlertDescription>
+   956→   956→          </Alert>
+   957→   957→
+   958→   958→          <div className="space-y-2">
+   959→   959→            <Label className="flex items-center gap-1.5">
+   960→   960→              <Code2 className="size-3.5" />
+   961→   961→              Embed script
+   962→   962→            </Label>
+   963→   963→            <div className="relative rounded-lg bg-zinc-950 text-zinc-50 p-3 text-xs font-mono overflow-x-auto">
+   964→   964→              <pre className="whitespace-pre-wrap break-all pr-8">
+   965→   965→                {loading ? "Loading…" : embedScript}
+   966→   966→              </pre>
+   967→   967→              <Button
+   968→   968→                size="icon"
+   969→   969→                variant="ghost"
+   970→   970→                className="absolute top-1.5 right-1.5 text-zinc-400 hover:text-white hover:bg-white/10 size-7"
+   971→   971→                onClick={() => copy(embedScript, "script")}
+   972→   972→                disabled={loading || !publicKey}
+   973→   973→              >
+   974→   974→                {copied === "script" ? (
+   975→   975→                  <Check className="size-3.5" />
+   976→   976→                ) : (
+   977→   977→                  <Code2 className="size-3.5" />
+   978→   978→                )}
+   979→   979→              </Button>
+   980→   980→            </div>
+   981→   981→            <p className="text-xs text-muted-foreground">
+   982→   982→              Paste this snippet before the closing <code className="font-mono">&lt;/body&gt;</code> tag
+   983→   983→              on every page where you want the chatbot to appear.
+   984→   984→            </p>
+   985→   985→          </div>
+   986→   986→
+   987→   987→          <div className="space-y-2">
+   988→   988→            <Label>Iframe preview <span className="text-muted-foreground">(optional)</span></Label>
+   989→   989→            <div className="relative rounded-lg bg-zinc-950 text-zinc-50 p-3 text-xs font-mono overflow-x-auto">
+   990→   990→              <pre className="whitespace-pre-wrap break-all pr-8">
+   991→   991→                {loading ? "Loading…" : iframeSnippet}
+   992→   992→              </pre>
+   993→   993→              <Button
+   994→   994→                size="icon"
+   995→   995→                variant="ghost"
+   996→   996→                className="absolute top-1.5 right-1.5 text-zinc-400 hover:text-white hover:bg-white/10 size-7"
+   997→   997→                onClick={() => copy(iframeSnippet, "iframe")}
+   998→   998→                disabled={loading || !publicKey}
+   999→   999→              >
+  1000→  1000→                {copied === "iframe" ? (
+  1001→  1001→                  <Check className="size-3.5" />
+  1002→  1002→                ) : (
+  1003→  1003→                  <Code2 className="size-3.5" />
+  1004→  1004→                )}
+  1005→  1005→              </Button>
+  1006→  1006→            </div>
+  1007→  1007→          </div>
+  1008→  1008→
+  1009→  1009→          <div className="flex items-start gap-2 rounded-lg bg-accent/20 px-3 py-2.5 text-xs text-accent-foreground">
+  1010→  1010→            <ShieldCheck className="size-4 mt-0.5 shrink-0" />
+  1011→  1011→            <span>
+  1012→  1012→              Your public key (<code className="font-mono">{publicKey || "…"}</code>) is safe to
+  1013→  1013→              expose — it only identifies your business publicly.
+  1014→  1014→            </span>
+  1015→  1015→          </div>
+  1016→  1016→        </div>
+  1017→  1017→
+  1018→  1018→        <DialogFooter>
+  1019→  1019→          <Button variant="outline" onClick={() => onOpenChange(false)}>
+  1020→  1020→            Close
+  1021→  1021→          </Button>
+  1022→  1022→        </DialogFooter>
+  1023→  1023→      </DialogContent>
+  1024→  1024→    </Dialog>
+  1025→  1025→  );
+  1026→  1026→}
+  1027→  1027→
+  1028→  1028→// ─── Main view ────────────────────────────────────────────────────────
+  1029→  1029→
+  1030→  1030→export function IntegrationsView({ user }: { user: IntegrationsUser }) {
+  1031→  1031→  const [integrations, setIntegrations] = useState<Integration[]>([]);
+  1032→  1032→  const [loading, setLoading] = useState(true);
+  1033→  1033→  const [refreshing, setRefreshing] = useState(false);
+  1034→  1034→  const [activeCategory, setActiveCategory] = useState<Category | null>(null);
+  1035→  1035→  const [builtInOpen, setBuiltInOpen] = useState(false);
+  1036→  1036→
+  1037→  1037→  const load = useCallback(async (silent = false) => {
+  1038→  1038→    if (!silent) setLoading(true);
+  1039→  1039→    setRefreshing(true);
+  1040→  1040→    try {
+  1041→  1041→      const res = await fetch("/api/integrations", { method: "GET" });
+  1042→  1042→      const data = await res.json();
+  1043→  1043→      if (!res.ok) throw new Error(data.error || "Failed to load integrations");
+  1044→  1044→      setIntegrations((data.integrations as Integration[]) ?? []);
+  1045→  1045→    } catch (e: unknown) {
+  1046→  1046→      const msg = e instanceof Error ? e.message : "Failed to load integrations";
+  1047→  1047→      toast.error("Failed to load integrations", { description: msg });
+  1048→  1048→    } finally {
+  1049→  1049→      setLoading(false);
+  1050→  1050→      setRefreshing(false);
+  1051→  1051→    }
+  1052→  1052→  }, []);
+  1053→  1053→
+  1054→  1054→  useEffect(() => {
+  1055→  1055→    load();
+  1056→  1056→  }, [load]);
+  1057→  1057→
+  1058→  1058→  const integrationByCategory = (cat: Category) =>
+  1059→  1059→    integrations.find((i) => i.category === cat);
+  1060→  1060→
+  1061→  1061→  const activeCount = integrations.filter((i) => i.status === "active").length + 1; // +1 for built-in widget
+  1062→  1062→  const configuredCount = integrations.length + 1;
+  1063→  1063→
+  1064→  1064→  function handleSaved(updated: Integration) {
+  1065→  1065→    setIntegrations((prev) => {
+  1066→  1066→      const idx = prev.findIndex((i) => i.id === updated.id);
+  1067→  1067→      if (idx >= 0) {
+  1068→  1068→        const next = [...prev];
+  1069→  1069→        next[idx] = updated;
+  1070→  1070→        return next;
+  1071→  1071→      }
+  1072→  1072→      return [...prev, updated];
+  1073→  1073→    });
+  1074→  1074→  }
+  1075→  1075→
+  1076→  1076→  function handleDeleted(id: string) {
+  1077→  1077→    setIntegrations((prev) => prev.filter((i) => i.id !== id));
+  1078→  1078→  }
+  1079→  1079→
+  1080→  1080→  return (
+  1081→  1081→    <div className="space-y-6">
+  1082→  1082→      {/* Header */}
+  1083→  1083→      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+  1084→  1084→        <div className="space-y-1">
+  1085→  1085→          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+  1086→  1086→            <span className="size-8 rounded-lg bg-primary/10 flex items-center justify-center">
+  1087→  1087→              <Plug className="size-4.5 text-primary" />
+  1088→  1088→            </span>
+  1089→  1089→            Integrations
+  1090→  1090→          </h1>
+  1091→  1091→          <p className="text-sm text-muted-foreground">
+  1092→  1092→            Connect third-party providers and services.
+  1093→  1093→          </p>
+  1094→  1094→        </div>
+  1095→  1095→        <Button
+  1096→  1096→          variant="outline"
+  1097→  1097→          size="sm"
+  1098→  1098→          onClick={() => load(true)}
+  1099→  1099→          disabled={refreshing}
+  1100→  1100→          className="shrink-0"
+  1101→  1101→        >
+  1102→  1102→          <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
+  1103→  1103→          Refresh
+  1104→  1104→        </Button>
+  1105→  1105→      </div>
+  1106→  1106→
+  1107→  1107→      {/* Security note */}
+  1108→  1108→      <Alert className="border-primary/20 bg-primary/5">
+  1109→  1109→        <ShieldCheck className="size-4 text-primary" />
+  1110→  1110→        <AlertDescription className="text-sm">
+  1111→  1111→          <strong className="text-foreground">Security:</strong> API keys are stored
+  1112→  1112→          server-side only and never exposed to the frontend. Masked previews show only
+  1113→  1113→          the first and last 4 characters.
+  1114→  1114→        </AlertDescription>
+  1115→  1115→      </Alert>
+  1116→  1116→
+  1117→  1117→      {/* Summary strip */}
+  1118→  1118→      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+  1119→  1119→        <Card className="p-3">
+  1120→  1120→          <div className="text-xs text-muted-foreground">Configured</div>
+  1121→  1121→          <div className="text-xl font-semibold mt-0.5">{configuredCount} / {CATEGORIES.length}</div>
+  1122→  1122→        </Card>
+  1123→  1123→        <Card className="p-3">
+  1124→  1124→          <div className="text-xs text-muted-foreground">Active</div>
+  1125→  1125→          <div className="text-xl font-semibold mt-0.5 text-emerald-600 dark:text-emerald-400">
+  1126→  1126→            {activeCount}
+  1127→  1127→          </div>
+  1128→  1128→        </Card>
+  1129→  1129→        <Card className="p-3">
+  1130→  1130→          <div className="text-xs text-muted-foreground">Categories</div>
+  1131→  1131→          <div className="text-xl font-semibold mt-0.5">{CATEGORIES.length}</div>
+  1132→  1132→        </Card>
+  1133→  1133→        <Card className="p-3">
+  1134→  1134→          <div className="text-xs text-muted-foreground">Business</div>
+  1135→  1135→          <div className="text-sm font-semibold mt-0.5 truncate" title={user.businessName}>
+  1136→  1136→            {user.businessName}
+  1137→  1137→          </div>
+  1138→  1138→        </Card>
+  1139→  1139→      </div>
+  1140→  1140→
+  1141→  1141→      {/* Categories grid */}
+  1142→  1142→      {loading ? (
+  1143→  1143→        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+  1144→  1144→          {Array.from({ length: CATEGORIES.length }).map((_, i) => (
+  1145→  1145→            <Card key={i} className="p-5">
+  1146→  1146→              <div className="flex items-center gap-3">
+  1147→  1147→                <Skeleton className="size-10 rounded-lg" />
+  1148→  1148→                <div className="space-y-1.5 flex-1">
+  1149→  1149→                  <Skeleton className="h-4 w-28" />
+  1150→  1150→                  <Skeleton className="h-3 w-40" />
+  1151→  1151→                </div>
+  1152→  1152→              </div>
+  1153→  1153→              <Skeleton className="h-3 w-20 mt-4" />
+  1154→  1154→              <Skeleton className="h-5 w-32 mt-3" />
+  1155→  1155→              <Separator className="my-4" />
+  1156→  1156→              <Skeleton className="h-9 w-full" />
+  1157→  1157→            </Card>
+  1158→  1158→          ))}
+  1159→  1159→        </div>
+  1160→  1160→      ) : (
+  1161→  1161→        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+  1162→  1162→          {CATEGORIES.map((cat) => (
+  1163→  1163→            <CategoryCard
+  1164→  1164→              key={cat}
+  1165→  1165→              category={cat}
+  1166→  1166→              integration={integrationByCategory(cat)}
+  1167→  1167→              onConfigure={() => {
+  1168→  1168→                if (CATEGORY_CONFIG[cat].builtIn) {
+  1169→  1169→                  setBuiltInOpen(true);
+  1170→  1170→                } else {
+  1171→  1171→                  setActiveCategory(cat);
+  1172→  1172→                }
+  1173→  1173→              }}
+  1174→  1174→            />
+  1175→  1175→          ))}
+  1176→  1176→        </div>
+  1177→  1177→      )}
+  1178→  1178→
+  1179→  1179→      {/* Empty / footer notice */}
+  1180→  1180→      {!loading && integrations.length === 0 ? (
+  1181→  1181→        <div className="rounded-lg border border-dashed p-6 text-center">
+  1182→  1182→          <Plug className="size-6 mx-auto text-muted-foreground" />
+  1183→  1183→          <p className="mt-2 text-sm font-medium">No integrations configured yet</p>
+  1184→  1184→          <p className="text-xs text-muted-foreground mt-1">
+  1185→  1185→            Click <strong>Configure</strong> on any category card above to set up your
+  1186→  1186→            first integration.
+  1187→  1187→          </p>
+  1188→  1188→        </div>
+  1189→  1189→      ) : null}
+  1190→  1190→
+  1191→  1191→      {/* Config dialog */}
+  1192→  1192→      {activeCategory ? (
+  1193→  1193→        <ConfigDialog
+  1194→  1194→          category={activeCategory}
+  1195→  1195→          integration={integrationByCategory(activeCategory)}
+  1196→  1196→          open={!!activeCategory}
+  1197→  1197→          onOpenChange={(v) => {
+  1198→  1198→            if (!v) setActiveCategory(null);
+  1199→  1199→          }}
+  1200→  1200→          onSaved={handleSaved}
+  1201→  1201→          onDeleted={handleDeleted}
+  1202→  1202→        />
+  1203→  1203→      ) : null}
+  1204→  1204→
+  1205→  1205→      {/* Built-in dialog (website_widget) */}
+  1206→  1206→      <BuiltInDialog
+  1207→  1207→        open={builtInOpen}
+  1208→  1208→        onOpenChange={setBuiltInOpen}
+  1209→  1209→      />
+  1210→  1210→    </div>
+  1211→  1211→  );
+  1212→  1212→}
+  1213→  1213→

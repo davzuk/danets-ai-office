@@ -2582,3 +2582,112 @@ Priorities 1-2 complete (Super Admin, Payment Gateway). This is Priority 3: maki
 - 7 action types fully implemented (create_task, send_notification, generate_ai_followup, add_lead_note, change_lead_status, create_ticket, create_proposal_reminder).
 - All actions are internal-only — no external messages sent without manual approval (per the AI safety rules).
 - Ready for Priority 4 (Email Notification Delivery) on user's instruction.
+
+---
+Task ID: P4-EMAIL-UI
+Agent: subagent
+Task: Add Notification Preferences card to Settings view + Email Test button to Integrations view (email category config dialog).
+
+Files modified:
+- `src/components/dashboard/views/settings-view.tsx`
+- `src/components/dashboard/views/integrations-view.tsx`
+
+Work Log:
+
+### settings-view.tsx
+- Added imports: `Switch` (shadcn/ui), `Bell` + `Mail` (lucide-react).
+- Added `NotificationPreference` interface (`{ type, label, inApp, email }`).
+- Added state: `prefs`, `prefsLoading`, `prefsSaving`.
+- Added `useEffect` on mount → `GET /api/notifications/preferences` → `setPrefs(d.preferences ?? [])`. On fetch failure shows a sonner error toast and clears loading.
+- Added `updatePref(type, channel, value)` — updates a single toggle in local state (inApp/email).
+- Added `savePreferences()` → `PUT /api/notifications/preferences` with `{ preferences: [{ type, inApp, email }] }` (all rows). Toast on success / error. Disables Save button while in-flight.
+- Added a new **Notification Preferences** card in the left column (after the Team Members card, before the right column closing `</div>`):
+  - Title "Notification Preferences" with a `Bell` icon.
+  - Description: "Choose which notifications you receive in-app and via email."
+  - Loading skeleton (5 rows of `h-9` Skeleton) while `prefsLoading` is true.
+  - Header row (`grid-cols-[1fr_auto_auto]`): "Notification Type" | "In-App" | "Email".
+  - One row per preference (10 types from the API: New Lead Captured, New Support Ticket, Urgent Ticket, Proposal Generated, Proposal Accepted, Follow-up Reminder, High Quality Lead, AI Usage Warning, Subscription Expiry, Integration Failed) — each with a `Switch` for In-App and Email.
+  - Note in a muted box with a `Mail` icon: "Email notifications require an email provider to be configured in Integrations."
+  - "Save Preferences" button (right-aligned, `Loader2` spinner while saving, `Save` icon otherwise).
+
+### integrations-view.tsx
+- Extended `ConfigDialogProps` with an optional `userEmail?: string` prop and wired it through the destructure.
+- Passed `userEmail={user.email}` from the main `IntegrationsView` to `<ConfigDialog>` (the `user` prop is already typed on the view via `IntegrationsUser`).
+- Added state in `ConfigDialog`: `testEmail` (initialised from `userEmail`) and `sendingTestEmail`.
+- Extended the open-reset `useEffect` to also reset `testEmail` back to `userEmail` and clear `sendingTestEmail` each time the dialog opens (added `userEmail` to the dependency array).
+- Added `handleSendTestEmail()` → `POST /api/email/test` with `{ email }`. On `data.success` → success toast with `data.message`; otherwise → error toast with `data.message`. Network/HTTP errors → error toast. Disables the button while in-flight.
+- Added a new **"Send a Test Email"** section in the dialog, rendered only when `category === "email"`. Placed below the existing `DialogFooter` (so it sits literally below the Save button) and above the delete-confirmation `AlertDialog`:
+  - Heading row with a `Send` icon: "Send a Test Email".
+  - Note: "Test email verifies your email provider configuration."
+  - A row with an email `Input` (pre-filled with `userEmail`, editable) and a `variant="secondary"` "Send Test Email" button (`Mail` icon at rest, `Loader2` spinner while sending; disabled while sending or when the email field is empty).
+- All existing functionality (provider select, API key, from-email, SMTP host, webhook, sender ID, model, notes, status summary, security note, Save/Test/Delete footer, delete confirmation) preserved unchanged.
+
+Conventions honoured:
+- Only the two assigned files were modified.
+- Used shadcn/ui components already present in the project: `Card`, `Switch`, `Button`, `Input`, `Label`, `Skeleton`, `Separator` (no new dependencies).
+- Used `sonner` toasts, relative fetch paths (`/api/notifications/preferences`, `/api/email/test`), and brand color classes (`bg-primary`, `bg-muted`, `text-muted-foreground`, etc.) — no raw indigo/blue.
+- Used lucide icons (`Bell`, `Mail`, `Send`, `Loader2`, `Save`) per the spec.
+- The settings card was inserted in the left column (after Team Members) so the right column (Plan / Account Data / Security) is untouched.
+
+Verification:
+- `bunx tsc --noEmit` — zero errors in `src/components/dashboard/views/settings-view.tsx` and `src/components/dashboard/views/integrations-view.tsx`. (Pre-existing unrelated errors remain in `src/app/api/automations/route.ts`, `src/app/api/integrations/route.ts`, and `src/app/page.tsx` — not touched by this task.)
+- `bunx eslint` on the two files — clean (0 errors / 0 warnings).
+
+Stage Summary:
+- Settings view now lets each user pick in-app + email toggles per notification type (10 types) and persist them via the existing `PUT /api/notifications/preferences` endpoint.
+- Integrations email config dialog now has a "Send a Test Email" row that calls the existing `POST /api/email/test` endpoint and surfaces the provider's response via sonner — verifying SMTP/SendGrid/Mailgun/Other credentials without leaving the dialog.
+- Both UIs are multi-tenant safe (the underlying APIs already scope to `user.businessId` / `user.userId`) and ready to render live data.
+
+---
+Task ID: NEXT-PHASE-P4
+Agent: main
+Task: Email Notification Delivery — Priority 4 of Recommended Next Development Phase.
+
+## Current Project Status
+Priorities 1-3 complete (Super Admin, Payment Gateway, Automation Engine). This is Priority 4: email delivery for notifications with per-user preferences.
+
+## Work Log
+
+### Email Service Library (src/lib/email.ts)
+- 8 email templates with branded HTML (gradient header, details table, CTA button): new_lead, high_quality_lead, new_ticket, urgent_ticket, proposal_accepted, ai_usage_warning, subscription_expiry, payment_success.
+- `sendEmailNotification(businessId, type, data)` — checks each business user's notification preferences, sends email only to users who opted in for that type. Respects EMAIL_PROVIDER env var.
+- `sendTestEmail(to)` — sends a branded test email to verify configuration.
+- Provider abstraction: supports `smtp` (Nodemailer) and `sendgrid` (SendGrid SDK). In development mode (no provider), emails are logged but not sent.
+- Environment variables: EMAIL_PROVIDER, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM, SENDGRID_API_KEY, SENDGRID_FROM.
+
+### Integration with createNotification
+- Updated `src/lib/activity.ts` `createNotification()` to dynamically import and call `sendEmailNotification()` after creating the in-app notification. Email sending is non-blocking and catches errors silently (never breaks the parent operation).
+
+### API Routes Created
+- `POST /api/email/test` — send a test email to verify provider configuration. Returns { success, message }.
+- Existing `GET/PUT /api/notifications/preferences` — already supports in-app/email toggles per notification type.
+
+### UI Changes (subagent P4-EMAIL-UI)
+- **Settings view**: Added "Notification Preferences" card with a grid of 10 notification types, each with In-App and Email toggles (Switch). Save button calls PUT. Note about email provider requirement.
+- **Integrations view**: Added "Send Test Email" section in the email category config dialog. Pre-fills with user's email, calls POST /api/email/test, shows toast with result.
+
+## Verification
+- Lint: clean (0 errors).
+- Preferences API: 10 types returned with correct defaults (in-app on, email off) ✓.
+- Preference update: enabled email for new_lead → verified persisted ✓.
+- Test email: correctly returns "No email provider configured" (expected in dev) ✓.
+- Dev server stable.
+
+## Environment Variables (for production)
+```
+EMAIL_PROVIDER=smtp  # or sendgrid or none
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your@email.com
+SMTP_PASS=your_app_password
+SMTP_FROM=noreply@danetstecpro.com
+# OR
+SENDGRID_API_KEY=SG.xxx
+SENDGRID_FROM=noreply@danetstecpro.com
+```
+
+## Stage Summary
+- Priority 4 (Email Notification Delivery) complete: branded email templates, per-user preference enforcement, provider abstraction (SMTP/SendGrid), test email verification, notification preferences UI in Settings, email test in Integrations.
+- 1 new lib (email.ts), 1 new API endpoint (/api/email/test), 2 UI files enhanced.
+- In production: install nodemailer or @sendgrid/mail, set env vars, emails will send automatically when notifications are created and users have email enabled for that type.
+- Ready for Priority 5 (Document File Upload Extraction) on user's instruction.

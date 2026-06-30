@@ -399,6 +399,7 @@ interface ConfigDialogProps {
   onOpenChange: (v: boolean) => void;
   onSaved: (integration: Integration) => void;
   onDeleted: (id: string) => void;
+  userEmail?: string;
 }
 
 function ConfigDialog({
@@ -408,6 +409,7 @@ function ConfigDialog({
   onOpenChange,
   onSaved,
   onDeleted,
+  userEmail,
 }: ConfigDialogProps) {
   const cfg = CATEGORY_CONFIG[category];
   const options = PROVIDER_OPTIONS[category];
@@ -426,6 +428,8 @@ function ConfigDialog({
   const [testing, setTesting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [testEmail, setTestEmail] = useState(userEmail ?? "");
+  const [sendingTestEmail, setSendingTestEmail] = useState(false);
 
   // Reset state whenever the dialog opens (re-seed from integration).
   useEffect(() => {
@@ -439,7 +443,9 @@ function ConfigDialog({
     setSenderId(integration?.config?.senderId ?? "");
     setModel(integration?.config?.model ?? "");
     setNotes(integration?.notes ?? "");
-  }, [open, category, integration?.id]);
+    setTestEmail(userEmail ?? "");
+    setSendingTestEmail(false);
+  }, [open, category, integration?.id, userEmail]);
 
   const providerOpt = options.find((o) => o.value === provider);
   const needsApiKey = !!providerOpt?.needsApiKey;
@@ -559,6 +565,34 @@ function ConfigDialog({
       toast.error("Delete failed", { description: msg });
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function handleSendTestEmail() {
+    const email = testEmail.trim();
+    if (!email) {
+      toast.error("Enter an email address to send the test to.");
+      return;
+    }
+    setSendingTestEmail(true);
+    try {
+      const res = await fetch("/api/email/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Test email failed");
+      if (data.success) {
+        toast.success("Test email sent", { description: data.message });
+      } else {
+        toast.error("Test email failed", { description: data.message });
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Test email failed";
+      toast.error("Test email failed", { description: msg });
+    } finally {
+      setSendingTestEmail(false);
     }
   }
 
@@ -836,6 +870,44 @@ function ConfigDialog({
             Save
           </Button>
         </DialogFooter>
+
+        {/* Send Test Email — only for email category (below the Save button) */}
+        {category === "email" ? (
+          <div className="space-y-3 pt-4 border-t mt-2">
+            <div className="space-y-1">
+              <div className="text-sm font-medium flex items-center gap-1.5">
+                <Send className="size-3.5" />
+                Send a Test Email
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Test email verifies your email provider configuration.
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Input
+                type="email"
+                placeholder="you@example.com"
+                value={testEmail}
+                onChange={(e) => setTestEmail(e.target.value)}
+                className="flex-1"
+                disabled={sendingTestEmail}
+              />
+              <Button
+                variant="secondary"
+                onClick={handleSendTestEmail}
+                disabled={sendingTestEmail || !testEmail.trim()}
+                className="shrink-0"
+              >
+                {sendingTestEmail ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Mail className="size-4" />
+                )}
+                Send Test Email
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         {/* Delete confirmation */}
         <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
@@ -1199,6 +1271,7 @@ export function IntegrationsView({ user }: { user: IntegrationsUser }) {
           }}
           onSaved={handleSaved}
           onDeleted={handleDeleted}
+          userEmail={user.email}
         />
       ) : null}
 

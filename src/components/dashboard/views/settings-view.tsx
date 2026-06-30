@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, Save, Building2, ShieldCheck, KeyRound, Database } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Loader2, Save, Building2, ShieldCheck, KeyRound, Database, Bell, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { TeamMembers } from "@/components/dashboard/views/team-members";
 
@@ -29,11 +30,21 @@ interface BusinessInfo {
   counts: { agents: number; kbItems: number; sessions: number; leads: number };
 }
 
+interface NotificationPreference {
+  type: string;
+  label: string;
+  inApp: boolean;
+  email: boolean;
+}
+
 export function SettingsView({ user }: { user: any }) {
   const [info, setInfo] = useState<BusinessInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ name: "", industry: "", email: "", phone: "", whatsapp: "" });
+  const [prefs, setPrefs] = useState<NotificationPreference[]>([]);
+  const [prefsLoading, setPrefsLoading] = useState(true);
+  const [prefsSaving, setPrefsSaving] = useState(false);
 
   useEffect(() => {
     fetch("/api/business")
@@ -49,6 +60,14 @@ export function SettingsView({ user }: { user: any }) {
         });
       })
       .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/notifications/preferences")
+      .then((r) => r.json())
+      .then((d) => setPrefs(d.preferences ?? []))
+      .catch(() => toast.error("Failed to load notification preferences"))
+      .finally(() => setPrefsLoading(false));
   }, []);
 
   async function save() {
@@ -74,6 +93,30 @@ export function SettingsView({ user }: { user: any }) {
     if (!info?.business?.publicKey) return;
     await navigator.clipboard.writeText(info.business.publicKey);
     toast.success("Public key copied");
+  }
+
+  function updatePref(type: string, channel: "inApp" | "email", value: boolean) {
+    setPrefs((prev) => prev.map((p) => (p.type === type ? { ...p, [channel]: value } : p)));
+  }
+
+  async function savePreferences() {
+    setPrefsSaving(true);
+    try {
+      const res = await fetch("/api/notifications/preferences", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          preferences: prefs.map((p) => ({ type: p.type, inApp: p.inApp, email: p.email })),
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Failed to save preferences");
+      toast.success("Notification preferences saved");
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setPrefsSaving(false);
+    }
   }
 
   if (loading) {
@@ -161,6 +204,73 @@ export function SettingsView({ user }: { user: any }) {
               currentUserId={user.userId}
             />
           )}
+
+          {/* Notification preferences */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Bell size={16} /> Notification Preferences
+              </CardTitle>
+              <CardDescription>
+                Choose which notifications you receive in-app and via email.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {prefsLoading ? (
+                <div className="space-y-2">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Skeleton key={i} className="h-9 w-full" />
+                  ))}
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-[1fr_auto_auto] gap-4 items-center pb-2 border-b text-xs text-muted-foreground uppercase tracking-wide">
+                    <div>Notification Type</div>
+                    <div className="text-center w-16">In-App</div>
+                    <div className="text-center w-16">Email</div>
+                  </div>
+                  <div className="space-y-3">
+                    {prefs.map((p) => (
+                      <div
+                        key={p.type}
+                        className="grid grid-cols-[1fr_auto_auto] gap-4 items-center"
+                      >
+                        <div className="text-sm font-medium">{p.label}</div>
+                        <div className="flex justify-center w-16">
+                          <Switch
+                            checked={p.inApp}
+                            onCheckedChange={(v) => updatePref(p.type, "inApp", v)}
+                          />
+                        </div>
+                        <div className="flex justify-center w-16">
+                          <Switch
+                            checked={p.email}
+                            onCheckedChange={(v) => updatePref(p.type, "email", v)}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-start gap-2 text-xs text-muted-foreground rounded-lg bg-muted/40 px-3 py-2.5">
+                    <Mail size={14} className="mt-0.5 shrink-0" />
+                    <span>
+                      Email notifications require an email provider to be configured in Integrations.
+                    </span>
+                  </div>
+                  <div className="flex justify-end pt-1">
+                    <Button onClick={savePreferences} disabled={prefsSaving}>
+                      {prefsSaving ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="mr-2 h-4 w-4" />
+                      )}
+                      Save Preferences
+                    </Button>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         {/* Right column: plan + usage + security */}

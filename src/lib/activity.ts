@@ -66,6 +66,11 @@ export async function createNotification(params: {
         data: params.data ? JSON.stringify(params.data) : null,
       },
     });
+
+    // Send email notification (respects user preferences + provider config)
+    // Dynamic import to avoid circular dependency
+    const { sendEmailNotification } = await import("@/lib/email");
+    sendEmailNotification(params.businessId, params.type, params.data || {}).catch(() => {});
   } catch (e) {
     console.error("[createNotification] failed:", e);
   }
