@@ -23,6 +23,9 @@ import {
   Info,
   X,
   FileType2,
+  Upload,
+  Type,
+  Check,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -70,6 +73,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 
 interface DocUser {
@@ -226,10 +230,45 @@ function formatBytes(bytes: number | null) {
 
 function SourceBadge({ sourceType }: { sourceType: SourceType }) {
   const opt = SOURCE_TYPE_OPTIONS.find((o) => o.value === sourceType);
-  const Icon = opt?.icon || FileText;
   const label = opt?.label || sourceType;
+
+  // Icon + color coding per spec:
+  // - PDF:  red badge, FileText icon
+  // - DOCX: blue badge, FileText icon
+  // - TXT:  muted badge, FileText icon
+  // - text (manual): primary badge, Type icon
+  const styles: Record<
+    SourceType,
+    { icon: React.ComponentType<{ className?: string }>; className: string }
+  > = {
+    pdf: {
+      icon: FileText,
+      className:
+        "border-red-300/70 bg-red-500/5 text-red-600 dark:border-red-900/60 dark:text-red-400",
+    },
+    docx: {
+      icon: FileText,
+      className:
+        "border-blue-300/70 bg-blue-500/5 text-blue-600 dark:border-blue-900/60 dark:text-blue-400",
+    },
+    txt: {
+      icon: FileText,
+      className: "border-muted bg-muted/40 text-muted-foreground",
+    },
+    text: {
+      icon: Type,
+      className:
+        "border-primary/30 bg-primary/5 text-primary",
+    },
+  };
+  const cfg = styles[sourceType] || styles.text;
+  const Icon = cfg.icon;
+
   return (
-    <Badge variant="outline" className="gap-1 text-muted-foreground font-normal">
+    <Badge
+      variant="outline"
+      className={cn("gap-1 font-medium", cfg.className)}
+    >
       <Icon className="size-3" />
       {label}
     </Badge>
@@ -286,6 +325,9 @@ export function DocumentsView({ user: _user }: { user: DocUser }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [creating, setCreating] = useState(false);
+
+  // Upload dialog (file → extract → auto-chunks)
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   // Detail dialog
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -447,6 +489,15 @@ export function DocumentsView({ user: _user }: { user: DocUser }) {
             <RefreshCw
               className={cn("size-4", refreshing && "animate-spin")}
             />
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setUploadOpen(true)}
+            className="gap-2 border-primary/40 bg-primary/5 text-primary hover:bg-primary/10 hover:text-primary"
+            title="Upload a PDF, DOCX, or TXT file — text is extracted automatically"
+          >
+            <Upload className="size-4" />
+            Upload File
           </Button>
           <Button
             onClick={() => {
@@ -671,8 +722,11 @@ export function DocumentsView({ user: _user }: { user: DocUser }) {
             <div className="rounded-lg border bg-amber-50/60 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900 p-3 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2">
               <Info className="size-3.5 mt-0.5 shrink-0" />
               <span>
-                For PDF/DOCX files, paste the extracted text here. Direct file
-                upload extraction coming soon.
+                Tip: use the{" "}
+                <span className="font-medium">Upload File</span> button to
+                auto-extract text from PDF, DOCX, or TXT files. Otherwise,
+                paste the text below and the AI will still split it into
+                searchable chunks.
               </span>
             </div>
           </div>
@@ -696,6 +750,16 @@ export function DocumentsView({ user: _user }: { user: DocUser }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Upload dialog (file → extract → auto-chunks) */}
+      <UploadDialog
+        open={uploadOpen}
+        onOpenChange={setUploadOpen}
+        onUploaded={(newId) => {
+          setDetailId(newId);
+        }}
+        onListRefresh={() => loadDocuments({ silent: true })}
+      />
 
       {/* Detail dialog */}
       <DocumentDetailDialog
@@ -1667,6 +1731,503 @@ function EmptyState({
         </Button>
       </CardContent>
     </Card>
+  );
+}
+
+/* ───────────────────────────── Upload Dialog ───────────────────────────── */
+
+const UPLOAD_ACCEPTED_EXTS = ["pdf", "docx", "txt"] as const;
+const UPLOAD_ACCEPT_ATTR = ".pdf,.docx,.txt";
+const UPLOAD_MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+
+type UploadStage = {
+  label: string;
+  /** Progress value the bar settles at when this stage becomes active. */
+  progress: number;
+};
+
+function buildUploadStages(ext: string): UploadStage[] {
+  const extractLabel =
+    ext === "pdf"
+      ? "Extracting text from PDF…"
+      : ext === "docx"
+        ? "Extracting text from DOCX…"
+        : ext === "txt"
+          ? "Reading text file…"
+          : "Extracting text…";
+  return [
+    { label: "Uploading file…", progress: 15 },
+    { label: extractLabel, progress: 55 },
+    { label: "Splitting into chunks…", progress: 85 },
+  ];
+}
+
+function getFileKind(
+  file: File
+): "pdf" | "docx" | "txt" | "unknown" {
+  const ext = file.name.split(".").pop()?.toLowerCase() || "";
+  if (ext === "pdf") return "pdf";
+  if (ext === "docx") return "docx";
+  if (ext === "txt") return "txt";
+  return "unknown";
+}
+
+function FileKindIcon({ kind, className }: { kind: string; className?: string }) {
+  // PDF=red, DOCX=blue, TXT=muted, fallback=muted
+  const colorClass =
+    kind === "pdf"
+      ? "bg-red-500/10 text-red-600 dark:text-red-400"
+      : kind === "docx"
+        ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+        : "bg-muted text-muted-foreground";
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-center rounded-md",
+        colorClass,
+        className
+      )}
+    >
+      <FileText className="size-5" />
+    </div>
+  );
+}
+
+function UploadDialog({
+  open,
+  onOpenChange,
+  onUploaded,
+  onListRefresh,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onUploaded: (docId: string) => void;
+  onListRefresh: () => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [title, setTitle] = useState("");
+  const [category, setCategory] = useState("General");
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+
+  // Progress simulation
+  const [stageIndex, setStageIndex] = useState(0);
+  const [progress, setProgress] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const stageTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const progressInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Reset state when the dialog closes
+  useEffect(() => {
+    if (!open) {
+      // cancel any pending timers/intervals
+      stageTimers.current.forEach(clearTimeout);
+      stageTimers.current = [];
+      if (progressInterval.current) {
+        clearInterval(progressInterval.current);
+        progressInterval.current = null;
+      }
+      setFile(null);
+      setTitle("");
+      setCategory("General");
+      setUploading(false);
+      setError(null);
+      setDragOver(false);
+      setStageIndex(0);
+      setProgress(0);
+    }
+  }, [open]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stageTimers.current.forEach(clearTimeout);
+      if (progressInterval.current) clearInterval(progressInterval.current);
+    };
+  }, []);
+
+  function validateFile(f: File): string | null {
+    const ext = f.name.split(".").pop()?.toLowerCase() || "";
+    if (!UPLOAD_ACCEPTED_EXTS.includes(ext as any)) {
+      return `Unsupported file type: .${ext || "unknown"}. Supported: PDF, DOCX, TXT.`;
+    }
+    if (f.size > UPLOAD_MAX_SIZE) {
+      return "File too large. Maximum size is 10MB.";
+    }
+    if (f.size === 0) {
+      return "The selected file is empty.";
+    }
+    return null;
+  }
+
+  function handleFileSelect(f: File | null) {
+    if (!f) return;
+    setError(null);
+    const err = validateFile(f);
+    if (err) {
+      setError(err);
+      return;
+    }
+    setFile(f);
+    // Auto-fill title from filename (without extension) only if the user
+    // hasn't typed one yet.
+    setTitle((prev) =>
+      prev.trim() ? prev : f.name.replace(/\.[^.]+$/, "")
+    );
+  }
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+    if (uploading) return;
+    const f = e.dataTransfer.files?.[0];
+    if (f) handleFileSelect(f);
+  }
+
+  function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (uploading) return;
+    setDragOver(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+  }
+
+  function handleBrowseClick() {
+    if (uploading) return;
+    fileInputRef.current?.click();
+  }
+
+  function clearSelectedFile() {
+    setFile(null);
+    setError(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  async function handleUpload() {
+    if (!file) {
+      setError("Please select a file to upload.");
+      return;
+    }
+    if (title.trim().length < 2) {
+      setError("Title must be at least 2 characters.");
+      return;
+    }
+    if (!category.trim()) {
+      setError("Category is required.");
+      return;
+    }
+
+    setError(null);
+    setUploading(true);
+
+    const ext = file.name.split(".").pop()?.toLowerCase() || "";
+    const stages = buildUploadStages(ext);
+    setStageIndex(0);
+    setProgress(stages[0].progress);
+
+    // Schedule transitions between stages to give visual feedback while the
+    // backend is busy extracting and chunking.
+    stageTimers.current.push(
+      setTimeout(() => {
+        setStageIndex(1);
+        setProgress(stages[1].progress);
+      }, 700)
+    );
+    stageTimers.current.push(
+      setTimeout(() => {
+        setStageIndex(2);
+        setProgress(stages[2].progress);
+      }, 2000)
+    );
+    // Gentle progress bump every 250ms so the bar feels alive up to ~95%.
+    progressInterval.current = setInterval(() => {
+      setProgress((p) => (p >= 95 ? p : Math.min(95, p + 1)));
+    }, 250);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("title", title.trim());
+      formData.append("category", category.trim());
+
+      const res = await fetch("/api/documents/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(
+          (data as any)?.error || "Failed to upload document"
+        );
+      }
+
+      const doc = (data as any)?.document;
+      const contentLength: number | undefined = doc?.contentLength;
+      const chunkCount: number | undefined = doc?.chunkCount;
+
+      // Complete the progress bar before closing.
+      if (progressInterval.current) {
+        clearInterval(progressInterval.current);
+        progressInterval.current = null;
+      }
+      setProgress(100);
+
+      toast.success("Document uploaded", {
+        description: `Extracted ${
+          typeof contentLength === "number"
+            ? contentLength.toLocaleString()
+            : "—"
+        } characters, ${chunkCount ?? 0} chunks`,
+      });
+
+      const newId: string | undefined = doc?.id;
+      onOpenChange(false);
+      onListRefresh();
+      if (newId) onUploaded(newId);
+    } catch (e: any) {
+      // Cancel scheduled stages
+      stageTimers.current.forEach(clearTimeout);
+      stageTimers.current = [];
+      if (progressInterval.current) {
+        clearInterval(progressInterval.current);
+        progressInterval.current = null;
+      }
+      setProgress(0);
+      setStageIndex(0);
+      setError(e?.message || "Could not upload document");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  const kind = file ? getFileKind(file) : "unknown";
+  const stageExt =
+    kind === "pdf" ? "pdf" : kind === "docx" ? "docx" : "txt";
+  const stageLabel = buildUploadStages(stageExt)[
+    Math.min(stageIndex, 2)
+  ]?.label;
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (uploading) return; // don't allow closing mid-upload
+        onOpenChange(o);
+      }}
+    >
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Upload className="size-5 text-primary" />
+            Upload File
+          </DialogTitle>
+          <DialogDescription>
+            Drop a PDF, DOCX, or TXT file — we&apos;ll extract the text and
+            split it into searchable chunks automatically.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-4">
+          {/* Drop zone / file preview */}
+          {!file ? (
+            <div
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onClick={handleBrowseClick}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleBrowseClick();
+                }
+              }}
+              className={cn(
+                "relative flex flex-col items-center justify-center text-center gap-2 rounded-lg border-2 border-dashed p-8 transition-colors cursor-pointer",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
+                dragOver
+                  ? "border-primary bg-primary/5"
+                  : "border-muted-foreground/30 hover:border-primary/50 hover:bg-primary/[0.03]",
+                uploading && "pointer-events-none opacity-60"
+              )}
+            >
+              <div className="h-12 w-12 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                <Upload className="size-5" />
+              </div>
+              <p className="text-sm font-medium">
+                Drag &amp; drop a file here, or click to browse
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Maximum 10MB. Supported: PDF, DOCX, TXT.
+              </p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={UPLOAD_ACCEPT_ATTR}
+                className="sr-only"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleFileSelect(f);
+                }}
+              />
+            </div>
+          ) : (
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <div className="flex items-start gap-3">
+                <FileKindIcon kind={kind} className="size-10 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm font-medium truncate" title={file.name}>
+                      {file.name}
+                    </p>
+                    {!uploading && (
+                      <button
+                        onClick={clearSelectedFile}
+                        className="text-muted-foreground hover:text-foreground rounded p-0.5 -mt-0.5"
+                        aria-label="Remove file"
+                        title="Remove file"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "gap-1 font-medium uppercase",
+                        kind === "pdf" &&
+                          "border-red-300/70 bg-red-500/5 text-red-600 dark:border-red-900/60 dark:text-red-400",
+                        kind === "docx" &&
+                          "border-blue-300/70 bg-blue-500/5 text-blue-600 dark:border-blue-900/60 dark:text-blue-400",
+                        kind === "txt" &&
+                          "border-muted bg-muted/40 text-muted-foreground"
+                      )}
+                    >
+                      {kind}
+                    </Badge>
+                    <span>{formatBytes(file.size)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Accepted file types as badges */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-xs text-muted-foreground">Accepts:</span>
+            {[
+              { ext: "PDF", cls: "border-red-300/60 bg-red-500/5 text-red-600 dark:text-red-400" },
+              { ext: "DOCX", cls: "border-blue-300/60 bg-blue-500/5 text-blue-600 dark:text-blue-400" },
+              { ext: "TXT", cls: "border-muted bg-muted/40 text-muted-foreground" },
+            ].map((t) => (
+              <Badge
+                key={t.ext}
+                variant="outline"
+                className={cn("gap-1 text-[10px] font-medium", t.cls)}
+              >
+                <FileText className="size-2.5" />
+                {t.ext}
+              </Badge>
+            ))}
+            <span className="text-xs text-muted-foreground ml-auto">
+              Max 10MB
+            </span>
+          </div>
+
+          {/* Title */}
+          <div className="grid gap-1.5">
+            <Label htmlFor="upload-title">
+              Title <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="upload-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Auto-filled from file name — edit if needed"
+              disabled={uploading}
+            />
+          </div>
+
+          {/* Category */}
+          <div className="grid gap-1.5">
+            <Label htmlFor="upload-category">
+              Category <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="upload-category"
+              list="upload-category-options"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              placeholder="General"
+              disabled={uploading}
+            />
+            <datalist id="upload-category-options">
+              {CATEGORY_SUGGESTIONS.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+            <p className="text-xs text-muted-foreground">
+              Type or pick a suggested category.
+            </p>
+          </div>
+
+          {/* Progress */}
+          {uploading && (
+            <div className="space-y-2 rounded-lg border bg-primary/[0.03] border-primary/20 p-3">
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="inline-flex items-center gap-1.5 text-primary font-medium">
+                  <Loader2 className="size-3.5 animate-spin" />
+                  {stageLabel}
+                </span>
+                <span className="tabular-nums text-muted-foreground">
+                  {Math.round(progress)}%
+                </span>
+              </div>
+              <Progress value={progress} className="h-2" />
+            </div>
+          )}
+
+          {/* Error */}
+          {error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive flex items-start gap-2">
+              <Info className="size-4 mt-0.5 shrink-0" />
+              <span className="whitespace-pre-wrap break-words">{error}</span>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={uploading}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleUpload}
+            disabled={uploading || !file}
+            className="gap-2"
+          >
+            {uploading ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Check className="size-4" />
+            )}
+            {uploading ? "Processing…" : "Upload & Process"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
