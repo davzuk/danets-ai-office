@@ -2533,3 +2533,52 @@ FLUTTERWAVE_SECRET_HASH=your_webhook_hash
 - 2 new models (Payment, Invoice), 5 new API endpoints, mock checkout page, enhanced subscription view.
 - In production: replace mock checkout URL with real Paystack/Flutterwave API calls, set environment variables, configure webhook URLs in provider dashboards.
 - Ready for Priority 3 (Automation Execution Engine) on user's instruction.
+
+---
+Task ID: NEXT-PHASE-P3
+Agent: main
+Task: Automation Execution Engine — Priority 3 of Recommended Next Development Phase.
+
+## Current Project Status
+Priorities 1-2 complete (Super Admin, Payment Gateway). This is Priority 3: making the automation workflows actually fire when triggers occur.
+
+## Work Log
+
+### Automation Engine Library (src/lib/automation.ts)
+- `fireTrigger(triggerType, ctx)` — the main entry point. Finds all active workflows matching the trigger type for the business, then executes each one's action.
+- `executeWorkflow()` — parses action config, calls the action executor, logs the run to AutomationRun, increments runCount + updates lastRunAt.
+- `executeAction()` — 7 action executors:
+  1. `create_task` — creates a LeadTask on the lead.
+  2. `send_notification` — creates a Notification record.
+  3. `generate_ai_followup` — creates a lead note placeholder (avoids expensive AI calls during automation; admin generates the actual draft from the UI).
+  4. `add_lead_note` — creates a LeadNote with the configured content.
+  5. `change_lead_status` — updates the lead's status + logs a LeadActivity.
+  6. `create_ticket` — converts the lead into a SupportTicket with a customer message.
+  7. `create_proposal_reminder` — creates a ProposalFollowup note.
+- All actions are internal-only (no external messages sent). Errors are caught and logged without breaking the parent operation.
+
+### Trigger Integration (4 routes modified)
+- `POST /api/public/lead` — fires `new_lead` trigger after lead creation + notification.
+- `POST /api/tickets` — fires `new_ticket` trigger after ticket creation + notification.
+- `POST /api/quotes/[id]/accept` — fires `proposal_accepted` trigger when a proposal is accepted.
+- `PATCH /api/leads/[id]` — fires `lead_status_changed` trigger when a lead's status changes.
+
+### API Route Created
+- `GET /api/automations/runs` — list automation run history with workflow name, trigger/action type, status, error, timestamps. Supports ?workflowId= and ?status= filters.
+
+## Verification
+- Lint: clean (0 errors).
+- End-to-end test:
+  1. Captured a lead via the widget API ("Automation Test Lead").
+  2. "New Lead Auto-Task" workflow fired (trigger: new_lead → action: create_task).
+  3. AutomationRun logged with status "success".
+  4. Workflow runCount incremented to 1, lastRunAt updated.
+  5. LeadTask "Follow up with new lead within 24 hours" created on the lead.
+- Dev server stable.
+
+## Stage Summary
+- Priority 3 (Automation Execution Engine) complete: workflows now fire automatically when triggers occur.
+- 1 new lib file (automation.ts), 1 new API endpoint (runs), 4 routes modified with trigger calls.
+- 7 action types fully implemented (create_task, send_notification, generate_ai_followup, add_lead_note, change_lead_status, create_ticket, create_proposal_reminder).
+- All actions are internal-only — no external messages sent without manual approval (per the AI safety rules).
+- Ready for Priority 4 (Email Notification Delivery) on user's instruction.

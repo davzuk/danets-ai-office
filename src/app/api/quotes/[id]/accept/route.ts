@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { logActivity, createNotification } from "@/lib/activity";
+import { fireTrigger } from "@/lib/automation";
 
 const acceptSchema = z.object({
   acceptedByName: z.string().min(2).max(100).optional(),
@@ -63,6 +64,13 @@ export async function POST(req: NextRequest, { params }: RouteCtx) {
       title: "Proposal accepted! 🎉",
       message: `${quote.clientName} accepted the proposal for ${quote.service}`,
       data: { quoteId: id },
+    });
+
+    // Fire automation trigger
+    await fireTrigger("proposal_accepted", {
+      businessId: user.businessId,
+      proposalId: id,
+      proposalClientName: quote.clientName,
     });
   }
 

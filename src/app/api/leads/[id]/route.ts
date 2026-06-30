@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
 import { logActivity } from "@/lib/activity";
+import { fireTrigger } from "@/lib/automation";
 
 const LEAD_STATUSES = [
   "new", "contacted", "qualified", "proposal_sent", "negotiation", "won", "lost",
@@ -179,6 +180,13 @@ export function PATCH(req: NextRequest, { params }: RouteCtx) {
         module: "leads",
         description: `Lead "${lead.name}": ${activities[0].description}`,
         metadata: { leadId: lead.id },
+      });
+
+      // Fire automation trigger for lead status change
+      await fireTrigger("lead_status_changed", {
+        businessId: user.businessId,
+        leadId: lead.id,
+        leadName: lead.name,
       });
     }
 

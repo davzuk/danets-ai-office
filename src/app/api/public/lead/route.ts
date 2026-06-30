@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { createNotification } from "@/lib/activity";
+import { fireTrigger } from "@/lib/automation";
 
 const leadSchema = z.object({
   pk: z.string().min(1),
@@ -104,6 +105,13 @@ export async function POST(req: NextRequest) {
     title: quality === "high" ? "High quality lead captured!" : "New lead captured",
     message: `${name}${service ? ` — ${service}` : ""} (${quality} quality)`,
     data: { leadId: lead.id, quality, source: lead.source },
+  });
+
+  // Fire automation triggers
+  await fireTrigger("new_lead", {
+    businessId: business.id,
+    leadId: lead.id,
+    leadName: lead.name,
   });
 
   return NextResponse.json({ leadId: lead.id, quality: lead.quality });

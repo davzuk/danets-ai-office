@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
 import { logActivity, createNotification } from "@/lib/activity";
+import { fireTrigger } from "@/lib/automation";
 
 const VALID_STATUSES = ["open", "pending", "in_progress", "resolved", "closed"];
 const VALID_PRIORITIES = ["low", "medium", "high", "urgent"];
@@ -126,6 +127,13 @@ export function POST(req: NextRequest) {
       title: notifType === "urgent_ticket" ? "Urgent ticket created" : "New support ticket",
       message: `"${d.subject.trim()}" — ${d.priority} priority${d.customerName ? ` from ${d.customerName}` : ""}`,
       data: { ticketId: ticket.id },
+    });
+
+    // Fire automation trigger
+    await fireTrigger("new_ticket", {
+      businessId: user.businessId,
+      ticketId: ticket.id,
+      ticketSubject: ticket.subject,
     });
 
     return { ticket };
