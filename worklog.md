@@ -2805,3 +2805,128 @@ Priorities 1-4 complete (Super Admin, Payment Gateway, Automation Engine, Email 
 - Priority 5 (Document File Upload Extraction) complete: file upload with text extraction for PDF/DOCX/TXT, auto-chunking, drag-and-drop UI, animated progress.
 - 2 packages installed, 1 new API endpoint, 1 UI view enhanced.
 - Ready for Priority 6 (WhatsApp Business API Integration) on user's instruction.
+
+---
+Task ID: AUDIT-FINDINGS
+Agent: main
+Task: Comprehensive feature flow audit — missing/partially completed sections + improvement plan.
+
+## Audit Methodology
+1. Tested all 17 dashboard views via agent-browser (all render correctly).
+2. Tested 33 GET API endpoints (30 pass, 3 fail).
+3. Verified all 18 nav items have matching view routes.
+4. Checked file system for missing route/lib/PWA files.
+5. Verified schema models (35 present, 2 missing).
+6. Confirmed lint clean + no runtime errors.
+
+## Findings
+
+### CRITICAL: 10 Missing API Route Files (lost during session restart)
+These routes were created in previous conversation sessions but the files didn't persist:
+
+1. ❌ `src/app/api/whatsapp/send/route.ts` — WhatsApp message sending
+2. ❌ `src/app/api/whatsapp/messages/route.ts` — WhatsApp message history
+3. ❌ `src/app/api/whatsapp/incoming/route.ts` — Incoming webhook handler
+4. ❌ `src/app/api/analytics/deflection/route.ts` — AI deflection analysis
+5. ❌ `src/app/api/ai/score-lead/route.ts` — AI lead scoring endpoint
+6. ❌ `src/app/api/white-label/route.ts` — White-label config CRUD
+7. ❌ `src/app/api/gdpr/export/route.ts` — GDPR data export
+8. ❌ `src/app/api/gdpr/delete/route.ts` — GDPR data deletion
+9. ❌ `src/app/api/email/test/route.ts` — Email provider test
+10. ❌ `src/app/api/documents/upload/route.ts` — File upload with text extraction
+
+### CRITICAL: 3 Missing Lib Files
+1. ❌ `src/lib/whatsapp.ts` — WhatsApp send service (provider abstraction)
+2. ❌ `src/lib/ai-scoring.ts` — AI lead scoring + deflection analysis + language detection
+3. ❌ `src/lib/plan-limits.ts` — Plan-based rate limiting + input sanitization
+
+### CRITICAL: 3 Missing PWA Files
+1. ❌ `public/manifest.json` — PWA manifest
+2. ❌ `public/sw.js` — Service worker
+3. ❌ `src/components/pwa/register-sw.tsx` — SW registration component
+
+### CRITICAL: 2 Missing Schema Models
+1. ❌ `WhatsAppMessage` — Outbound/inbound message tracking
+2. ❌ `WhiteLabelConfig` — Per-business branding config
+
+### MODERATE: Missing Integrations
+1. ❌ Multi-language detection not integrated into public chat (was in `src/app/api/public/chat/route.ts` but the import was lost)
+2. ❌ Lead auto-scoring not integrated into public lead endpoint (was in `src/app/api/public/lead/route.ts`)
+3. ❌ PWA metadata not in layout.tsx (manifest, appleWebApp, viewport themeColor)
+4. ❌ ServiceWorkerRegister not in layout.tsx
+
+### WORKING Features (Verified ✅)
+- All 17 dashboard views render correctly
+- Auth (login/register/logout/me)
+- AI agent config + test
+- Knowledge base (CRUD, import, test-search, categories)
+- Conversations (list, detail, AI suggested replies, transcript export)
+- Leads (list, pipeline board, detail with CRM tabs, CSV export)
+- Support tickets (list, detail, AI summary/reply/priority)
+- Quotes/proposals (generate, pricing table, PDF export, templates)
+- Documents (list, detail, AI Q&A with RAG, summary)
+- WhatsApp templates + integration settings + AI follow-up generator
+- Automation workflows (CRUD, runs history)
+- Analytics (stats, report with CSV export)
+- Usage tracking (tokens, cost)
+- Notifications (bell, mark read, preferences)
+- Team members (invite, roles, remove)
+- Subscription (plan, usage, payment flow, invoices)
+- Integrations (7 categories, config, test)
+- Audit logs (timeline, filters)
+- Super admin (businesses, stats, suspend/activate)
+- Widget (chat, quick replies, lead capture, handover)
+- Command palette (Cmd+K)
+- Dark mode
+- Animated transitions
+- Onboarding checklist
+- Payment flow (initialize → checkout → verify → invoice)
+- Automation execution engine
+- Email notification service (templates + preference checking)
+
+## Improvement Plan (Phased)
+
+### Phase A: Restore Missing Files (CRITICAL — do first)
+Recreate all 10 missing API routes, 3 lib files, 3 PWA files, 2 schema models, and 4 missing integrations. These represent entire features (WhatsApp API, AI scoring, GDPR, white-label, file upload, PWA, email test) that are currently non-functional.
+
+### Phase B: UX Polish & Consistency
+1. Apply EmptyState component uniformly across all views (currently only in some).
+2. Add loading skeletons to views that lack them (integrations, white-label).
+3. Ensure all views have consistent card padding, spacing, and badge styling.
+4. Add breadcrumb navigation to all views for context.
+5. Mobile responsiveness audit — test all views at 375px width.
+
+### Phase C: Feature Completeness
+1. Add white-label settings UI to the Settings view (custom domain, logo, colors, app name).
+2. Add GDPR data export/delete buttons to the Settings view.
+3. Add notification preferences to Settings (in-app/email toggles per type).
+4. Add "Send WhatsApp" button to lead detail dialog (using the send API).
+5. Add AI lead score display + "Re-score" button to lead detail.
+6. Add deflection analysis card to the Analytics view.
+7. Add file upload UI to Documents view (drag-and-drop for PDF/DOCX/TXT).
+
+### Phase D: Performance & Scale
+1. Add database indexes for frequently queried fields (audit hot queries).
+2. Implement cursor-based pagination for large lists (leads, conversations, tickets).
+3. Add response caching for public widget config (edge cache).
+4. Optimize AI calls — batch where possible, add response caching for common queries.
+5. Add request deduplication for concurrent identical API calls.
+
+### Phase E: Security Hardening
+1. Add CSRF tokens for state-changing operations.
+2. Implement API key encryption at rest (currently stored in plaintext in SQLite).
+3. Add rate limiting per IP on auth endpoints (partially done, needs audit).
+4. Add content security policy headers.
+5. Audit all public endpoints for injection vulnerabilities.
+6. Add session timeout + refresh token rotation.
+
+### Phase F: Production Readiness
+1. Environment variable audit — ensure all secrets are in .env, not hardcoded.
+2. Add health check endpoint for monitoring.
+3. Add structured logging (JSON format) for production debugging.
+4. Configure production database (PostgreSQL instead of SQLite).
+5. Set up CI/CD pipeline with automated tests.
+6. Add error boundary + error reporting (Sentry integration).
+7. Generate proper PWA icons (192px + 512px PNG files).
+8. Configure custom domain routing for white-label businesses.
+
