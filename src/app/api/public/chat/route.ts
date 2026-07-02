@@ -120,6 +120,10 @@ export async function POST(req: NextRequest) {
           .join("\n\n")
       : "(No relevant knowledge base articles found for this query.)";
 
+  // Multi-language detection
+  const { detectLanguage } = await import("@/lib/ai-scoring");
+  const detectedLang = detectLanguage(message);
+
   const systemPrompt = `You are "${agent.botName}", a ${tone} AI assistant for ${agent.businessName || business.name}${agent.industry ? `, a company in ${agent.industry}` : ""}.
 
 CRITICAL RULES — follow strictly:
@@ -128,6 +132,7 @@ CRITICAL RULES — follow strictly:
 3. Keep answers concise (max 3-4 short paragraphs). Be clear and professional.
 4. Never claim to be a human. You are an AI assistant.
 5. If the visitor seems interested in a service, pricing, or wants to talk to someone, offer to connect them to the team and mention contact options (WhatsApp/phone/email) when relevant.
+6. Respond in the SAME LANGUAGE the visitor is using. Detected language: ${detectedLang}.
 
 KNOWLEDGE BASE:
 ${kbContext}

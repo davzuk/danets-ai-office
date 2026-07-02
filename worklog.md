@@ -2930,3 +2930,52 @@ Recreate all 10 missing API routes, 3 lib files, 3 PWA files, 2 schema models, a
 7. Generate proper PWA icons (192px + 512px PNG files).
 8. Configure custom domain routing for white-label businesses.
 
+
+---
+Task ID: PHASE-A-RESTORE
+Agent: main
+Task: Restore all 18 missing files identified in the comprehensive audit.
+
+## Summary
+Recreated all 18 files that were lost during previous dev server restarts. All 33 API endpoints now pass (was 30/33 before).
+
+## Files Restored
+
+### Schema (2 models)
+- `WhatsAppMessage` — outbound/inbound message tracking
+- `WhiteLabelConfig` — per-business branding config
+
+### Lib Files (3)
+- `src/lib/whatsapp.ts` — WhatsApp send service (provider abstraction + phone normalization + message logging)
+- `src/lib/ai-scoring.ts` — AI lead scoring + deflection analysis + multi-language detection
+- `src/lib/plan-limits.ts` — Plan-based rate limiting + input sanitization
+
+### API Routes (10)
+- `src/app/api/whatsapp/send/route.ts` — send WhatsApp message
+- `src/app/api/whatsapp/messages/route.ts` — list message history
+- `src/app/api/whatsapp/incoming/route.ts` — incoming webhook handler
+- `src/app/api/analytics/deflection/route.ts` — AI deflection analysis
+- `src/app/api/ai/score-lead/route.ts` — AI lead scoring
+- `src/app/api/white-label/route.ts` — white-label config GET/PUT
+- `src/app/api/gdpr/export/route.ts` — GDPR data export (JSON download)
+- `src/app/api/gdpr/delete/route.ts` — GDPR data deletion (with confirmation)
+- `src/app/api/email/test/route.ts` — email provider test
+- `src/app/api/documents/upload/route.ts` — file upload with PDF/DOCX/TXT extraction
+
+### PWA Files (3)
+- `public/manifest.json` — PWA manifest (name, icons, shortcuts, theme)
+- `public/sw.js` — service worker (offline cache, push notifications)
+- `src/components/pwa/register-sw.tsx` — SW registration component
+
+### Integrations Restored (4)
+1. Multi-language detection in `src/app/api/public/chat/route.ts` — system prompt includes language detection
+2. Lead auto-scoring in `src/app/api/public/lead/route.ts` — non-blocking AI scoring on lead capture
+3. PWA metadata in `src/app/layout.tsx` — manifest, appleWebApp, viewport themeColor
+4. ServiceWorkerRegister in `src/app/layout.tsx` — SW registration in production
+
+## Verification
+- Lint: clean (0 errors).
+- Full endpoint test: **33/33 passed** (was 30/33 before).
+- All 10 previously-broken endpoints now return 200.
+- PWA manifest + service worker accessible (200).
+- Dev server stable.

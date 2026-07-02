@@ -3,6 +3,7 @@ import { Inter, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { ThemeProvider } from "@/components/theme-provider";
+import { ServiceWorkerRegister } from "@/components/pwa/register-sw";
 
 const inter = Inter({
   variable: "--font-geist-sans",
@@ -29,6 +30,8 @@ export const metadata: Metadata = {
     "SaaS",
   ],
   authors: [{ name: "Danets TecPro Limited" }],
+  manifest: "/manifest.json",
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "Danets AI" },
   openGraph: {
     title: "Danets AI Automation",
     description:
@@ -42,6 +45,13 @@ export const metadata: Metadata = {
     description:
       "AI-powered website chat, lead capture and proposal generation for businesses.",
   },
+};
+
+export const viewport = {
+  themeColor: "#1d4ed8",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
 };
 
 export default function RootLayout({
@@ -62,6 +72,7 @@ export default function RootLayout({
         >
           {children}
           <Toaster />
+          <ServiceWorkerRegister />
         </ThemeProvider>
       </body>
     </html>

@@ -114,5 +114,10 @@ export async function POST(req: NextRequest) {
     leadName: lead.name,
   });
 
+  // Auto-score the lead using AI (non-blocking)
+  import("@/lib/ai-scoring")
+    .then(({ scoreLead }) => scoreLead(lead.id, business.id))
+    .catch(() => {});
+
   return NextResponse.json({ leadId: lead.id, quality: lead.quality });
 }
