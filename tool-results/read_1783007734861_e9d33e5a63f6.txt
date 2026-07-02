@@ -1,0 +1,874 @@
+     1→"use client";
+     2→
+     3→import * as React from "react";
+     4→import { toast } from "sonner";
+     5→import {
+     6→  Area,
+     7→  AreaChart,
+     8→  Bar,
+     9→  BarChart,
+    10→  CartesianGrid,
+    11→  Cell,
+    12→  ResponsiveContainer,
+    13→  Tooltip as RechartsTooltip,
+    14→  XAxis,
+    15→  YAxis,
+    16→} from "recharts";
+    17→import {
+    18→  BarChart3,
+    19→  CalendarDays,
+    20→  DollarSign,
+    21→  Download,
+    22→  MessagesSquare,
+    23→  RefreshCw,
+    24→  Ticket as TicketIcon,
+    25→  TrendingUp,
+    26→  Users,
+    27→  Zap,
+    28→} from "lucide-react";
+    29→import {
+    30→  Card,
+    31→  CardContent,
+    32→  CardDescription,
+    33→  CardHeader,
+    34→  CardTitle,
+    35→} from "@/components/ui/card";
+    36→import { Button } from "@/components/ui/button";
+    37→import { Input } from "@/components/ui/input";
+    38→import { Badge } from "@/components/ui/badge";
+    39→import { Separator } from "@/components/ui/separator";
+    40→import { Skeleton } from "@/components/ui/skeleton";
+    41→
+    42→// ─── Types ────────────────────────────────────────────────────────────
+    43→
+    44→interface AnalyticsUser {
+    45→  userId: string;
+    46→  businessId: string;
+    47→  name: string;
+    48→  email: string;
+    49→  role: string;
+    50→  businessName: string;
+    51→}
+    52→
+    53→interface ReportSummary {
+    54→  totalChats: number;
+    55→  totalLeads: number;
+    56→  totalTickets: number;
+    57→  totalProposals: number;
+    58→  aiRequests: number;
+    59→  aiTokens: number;
+    60→  aiCostUsd: number;
+    61→  conversionRate: number;
+    62→}
+    63→
+    64→interface SourceItem {
+    65→  source: string;
+    66→  count: number;
+    67→}
+    68→interface StatusItem {
+    69→  status: string;
+    70→  count: number;
+    71→}
+    72→interface FeatureItem {
+    73→  feature: string;
+    74→  count: number;
+    75→  tokens: number;
+    76→}
+    77→interface TrendItem {
+    78→  month: string;
+    79→  chats: number;
+    80→  leads: number;
+    81→}
+    82→
+    83→interface Report {
+    84→  period: { from: string; to: string };
+    85→  summary: ReportSummary;
+    86→  leadsBySource: SourceItem[];
+    87→  leadsByStatus: StatusItem[];
+    88→  ticketsByStatus: StatusItem[];
+    89→  aiByFeature: FeatureItem[];
+    90→  monthlyTrend: TrendItem[];
+    91→}
+    92→
+    93→// ─── Date helpers ─────────────────────────────────────────────────────
+    94→
+    95→function pad(n: number): string {
+    96→  return String(n).padStart(2, "0");
+    97→}
+    98→function toISODate(d: Date): string {
+    99→  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+   100→}
+   101→function todayStr(): string {
+   102→  return toISODate(new Date());
+   103→}
+   104→function firstOfMonthStr(): string {
+   105→  const d = new Date();
+   106→  return toISODate(new Date(d.getFullYear(), d.getMonth(), 1));
+   107→}
+   108→function daysAgoStr(days: number): string {
+   109→  const d = new Date();
+   110→  d.setDate(d.getDate() - days);
+   111→  return toISODate(d);
+   112→}
+   113→function formatMonthLabel(ym: string): string {
+   114→  const [y, m] = ym.split("-");
+   115→  const d = new Date(Number(y), Number(m) - 1, 1);
+   116→  return d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+   117→}
+   118→
+   119→function formatNumber(n: number): string {
+   120→  return new Intl.NumberFormat("en-US").format(n);
+   121→}
+   122→function formatCost(n: number): string {
+   123→  return n.toLocaleString("en-US", {
+   124→    minimumFractionDigits: 2,
+   125→    maximumFractionDigits: 2,
+   126→  });
+   127→}
+   128→function prettify(s: string): string {
+   129→  return s
+   130→    .replace(/_/g, " ")
+   131→    .replace(/\b\w/g, (c) => c.toUpperCase());
+   132→}
+   133→
+   134→// ─── Color palettes ───────────────────────────────────────────────────
+   135→
+   136→const BRAND_BLUE = "#1d4ed8";
+   137→const BRAND_GREEN = "#84cc16";
+   138→
+   139→const SOURCE_COLORS: Record<string, string> = {
+   140→  chatbot: BRAND_BLUE,
+   141→  website: "#0ea5e9",
+   142→  manual: "#f59e0b",
+   143→  whatsapp: BRAND_GREEN,
+   144→  referral: "#8b5cf6",
+   145→  email: "#06b6d4",
+   146→  phone: "#ec4899",
+   147→  other: "#64748b",
+   148→};
+   149→
+   150→const STATUS_COLORS: Record<string, string> = {
+   151→  new: BRAND_BLUE,
+   152→  contacted: "#06b6d4",
+   153→  qualified: "#6366f1",
+   154→  proposal_sent: "#f59e0b",
+   155→  negotiation: "#8b5cf6",
+   156→  won: "#10b981",
+   157→  lost: "#ef4444",
+   158→};
+   159→
+   160→const TICKET_BADGE: Record<string, string> = {
+   161→  open: "bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30",
+   162→  pending:
+   163→    "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30",
+   164→  in_progress:
+   165→    "bg-violet-500/15 text-violet-700 dark:text-violet-300 border-violet-500/30",
+   166→  resolved:
+   167→    "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30",
+   168→  closed:
+   169→    "bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-500/30",
+   170→};
+   171→
+   172→const FEATURE_COLORS: Record<string, string> = {
+   173→  chat: BRAND_BLUE,
+   174→  suggested_reply: BRAND_GREEN,
+   175→  quote: "#0ea5e9",
+   176→  summary: "#f59e0b",
+   177→};
+   178→
+   179→function sourceColor(s: string): string {
+   180→  return SOURCE_COLORS[s] || "#64748b";
+   181→}
+   182→function statusColor(s: string): string {
+   183→  return STATUS_COLORS[s] || "#64748b";
+   184→}
+   185→function featureColor(s: string): string {
+   186→  return FEATURE_COLORS[s] || "#64748b";
+   187→}
+   188→function ticketBadgeClass(s: string): string {
+   189→  return (
+   190→    TICKET_BADGE[s] || "bg-muted text-muted-foreground border-border"
+   191→  );
+   192→}
+   193→
+   194→// ─── Main component ───────────────────────────────────────────────────
+   195→
+   196→export function AnalyticsView({ user: _user }: { user: AnalyticsUser }) {
+   197→  const [from, setFrom] = React.useState<string>(firstOfMonthStr());
+   198→  const [to, setTo] = React.useState<string>(todayStr());
+   199→  const [appliedFrom, setAppliedFrom] = React.useState<string>(from);
+   200→  const [appliedTo, setAppliedTo] = React.useState<string>(to);
+   201→
+   202→  const [report, setReport] = React.useState<Report | null>(null);
+   203→  const [loading, setLoading] = React.useState<boolean>(true);
+   204→  const [error, setError] = React.useState<string | null>(null);
+   205→
+   206→  const load = React.useCallback(async (f: string, t: string) => {
+   207→    setLoading(true);
+   208→    setError(null);
+   209→    try {
+   210→      const url = `/api/analytics/report?from=${encodeURIComponent(
+   211→        f
+   212→      )}&to=${encodeURIComponent(t)}`;
+   213→      const res = await fetch(url, { cache: "no-store" });
+   214→      if (!res.ok) {
+   215→        if (res.status === 401) {
+   216→          setError("Unauthorized. Please sign in again.");
+   217→        } else {
+   218→          setError(`Failed to load report (${res.status})`);
+   219→        }
+   220→        return;
+   221→      }
+   222→      const json = (await res.json()) as Report;
+   223→      setReport(json);
+   224→    } catch (e: unknown) {
+   225→      const msg = e instanceof Error ? e.message : "Network error";
+   226→      setError(msg);
+   227→    } finally {
+   228→      setLoading(false);
+   229→    }
+   230→  }, []);
+   231→
+   232→  React.useEffect(() => {
+   233→    load(appliedFrom, appliedTo);
+   234→  }, [appliedFrom, appliedTo, load]);
+   235→
+   236→  function applyFilters() {
+   237→    if (!from || !to) {
+   238→      toast.error("Please select both dates");
+   239→      return;
+   240→    }
+   241→    if (from > to) {
+   242→      toast.error("From date must be before To date");
+   243→      return;
+   244→    }
+   245→    setAppliedFrom(from);
+   246→    setAppliedTo(to);
+   247→    toast.success("Report updated", {
+   248→      description: `${from} → ${to}`,
+   249→    });
+   250→  }
+   251→
+   252→  function applyQuickRange(range: "month" | "30" | "90") {
+   253→    const t = todayStr();
+   254→    let f: string;
+   255→    if (range === "month") f = firstOfMonthStr();
+   256→    else if (range === "30") f = daysAgoStr(30);
+   257→    else f = daysAgoStr(90);
+   258→    setFrom(f);
+   259→    setTo(t);
+   260→    setAppliedFrom(f);
+   261→    setAppliedTo(t);
+   262→    toast.success("Range applied", {
+   263→      description: `${f} → ${t}`,
+   264→    });
+   265→  }
+   266→
+   267→  function exportCsv() {
+   268→    const url = `/api/analytics/report?from=${encodeURIComponent(
+   269→      appliedFrom
+   270→    )}&to=${encodeURIComponent(appliedTo)}&format=csv`;
+   271→    window.open(url, "_blank");
+   272→    toast.success("CSV export started", {
+   273→      description: `${appliedFrom} → ${appliedTo}`,
+   274→    });
+   275→  }
+   276→
+   277→  const summary = report?.summary;
+   278→  const trend = report?.monthlyTrend ?? [];
+   279→  const sources = report?.leadsBySource ?? [];
+   280→  const leadStatuses = report?.leadsByStatus ?? [];
+   281→  const ticketStatuses = report?.ticketsByStatus ?? [];
+   282→  const features = report?.aiByFeature ?? [];
+   283→
+   284→  return (
+   285→    <div className="space-y-6">
+   286→      {/* Header */}
+   287→      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+   288→        <div>
+   289→          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+   290→            <BarChart3 className="h-6 w-6 text-primary" />
+   291→            Analytics &amp; Reporting
+   292→          </h1>
+   293→          <p className="text-sm text-muted-foreground mt-1">
+   294→            Comprehensive business insights and performance metrics.
+   295→          </p>
+   296→        </div>
+   297→        <Button
+   298→          variant="outline"
+   299→          size="sm"
+   300→          onClick={() => load(appliedFrom, appliedTo)}
+   301→          disabled={loading}
+   302→          className="gap-2"
+   303→        >
+   304→          <RefreshCw
+   305→            className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"}
+   306→          />
+   307→          Refresh
+   308→        </Button>
+   309→      </div>
+   310→
+   311→      {/* Date Filter Toolbar */}
+   312→      <Card>
+   313→        <CardContent className="space-y-3">
+   314→          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+   315→            <div className="flex flex-wrap items-end gap-3">
+   316→              <div className="space-y-1.5">
+   317→                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+   318→                  <CalendarDays className="h-3 w-3" /> From
+   319→                </label>
+   320→                <Input
+   321→                  type="date"
+   322→                  value={from}
+   323→                  onChange={(e) => setFrom(e.target.value)}
+   324→                  className="w-[170px]"
+   325→                  max={to || undefined}
+   326→                />
+   327→              </div>
+   328→              <div className="space-y-1.5">
+   329→                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+   330→                  <CalendarDays className="h-3 w-3" /> To
+   331→                </label>
+   332→                <Input
+   333→                  type="date"
+   334→                  value={to}
+   335→                  onChange={(e) => setTo(e.target.value)}
+   336→                  className="w-[170px]"
+   337→                  min={from || undefined}
+   338→                />
+   339→              </div>
+   340→              <Button
+   341→                onClick={applyFilters}
+   342→                disabled={loading}
+   343→                className="gap-2"
+   344→              >
+   345→                <RefreshCw
+   346→                  className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"}
+   347→                />
+   348→                Apply
+   349→              </Button>
+   350→              <div className="flex flex-wrap gap-1.5">
+   351→                <Button
+   352→                  variant="outline"
+   353→                  size="sm"
+   354→                  onClick={() => applyQuickRange("month")}
+   355→                  disabled={loading}
+   356→                >
+   357→                  This Month
+   358→                </Button>
+   359→                <Button
+   360→                  variant="outline"
+   361→                  size="sm"
+   362→                  onClick={() => applyQuickRange("30")}
+   363→                  disabled={loading}
+   364→                >
+   365→                  Last 30 Days
+   366→                </Button>
+   367→                <Button
+   368→                  variant="outline"
+   369→                  size="sm"
+   370→                  onClick={() => applyQuickRange("90")}
+   371→                  disabled={loading}
+   372→                >
+   373→                  Last 90 Days
+   374→                </Button>
+   375→              </div>
+   376→            </div>
+   377→            <Button
+   378→              onClick={exportCsv}
+   379→              variant="default"
+   380→              className="gap-2 shrink-0"
+   381→            >
+   382→              <Download className="h-4 w-4" />
+   383→              Export CSV
+   384→            </Button>
+   385→          </div>
+   386→
+   387→          <Separator />
+   388→
+   389→          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-muted-foreground">
+   390→            <span>
+   391→              Showing data for{" "}
+   392→              <strong className="text-foreground tabular-nums">
+   393→                {appliedFrom}
+   394→              </strong>{" "}
+   395→              →{" "}
+   396→              <strong className="text-foreground tabular-nums">
+   397→                {appliedTo}
+   398→              </strong>
+   399→            </span>
+   400→            {summary ? (
+   401→              <span className="tabular-nums">
+   402→                {formatNumber(summary.totalChats)} chats ·{" "}
+   403→                {formatNumber(summary.totalLeads)} leads ·{" "}
+   404→                {formatNumber(summary.totalTickets)} tickets
+   405→              </span>
+   406→            ) : null}
+   407→          </div>
+   408→        </CardContent>
+   409→      </Card>
+   410→
+   411→      {error ? (
+   412→        <Card className="border-destructive/40">
+   413→          <CardContent className="py-6 text-sm text-destructive">
+   414→            {error}
+   415→          </CardContent>
+   416→        </Card>
+   417→      ) : null}
+   418→
+   419→      {/* Summary Stat Cards */}
+   420→      {loading && !report ? (
+   421→        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+   422→          {Array.from({ length: 6 }).map((_, i) => (
+   423→            <Card key={i}>
+   424→              <CardContent className="space-y-2">
+   425→                <Skeleton className="h-9 w-9 rounded-lg" />
+   426→                <Skeleton className="h-7 w-20" />
+   427→                <Skeleton className="h-3 w-16" />
+   428→              </CardContent>
+   429→            </Card>
+   430→          ))}
+   431→        </div>
+   432→      ) : (
+   433→        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+   434→          <SummaryCard
+   435→            icon={MessagesSquare}
+   436→            label="Total Chats"
+   437→            value={formatNumber(summary?.totalChats ?? 0)}
+   438→            tint="bg-primary/10 text-primary"
+   439→          />
+   440→          <SummaryCard
+   441→            icon={Users}
+   442→            label="Total Leads"
+   443→            value={formatNumber(summary?.totalLeads ?? 0)}
+   444→            tint="bg-accent/30 text-accent-foreground"
+   445→          />
+   446→          <SummaryCard
+   447→            icon={TrendingUp}
+   448→            label="Conversion Rate"
+   449→            value={`${summary?.conversionRate ?? 0}%`}
+   450→            tint="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+   451→          />
+   452→          <SummaryCard
+   453→            icon={TicketIcon}
+   454→            label="Total Tickets"
+   455→            value={formatNumber(summary?.totalTickets ?? 0)}
+   456→            tint="bg-rose-500/15 text-rose-600 dark:text-rose-400"
+   457→          />
+   458→          <SummaryCard
+   459→            icon={Zap}
+   460→            label="AI Requests"
+   461→            value={formatNumber(summary?.aiRequests ?? 0)}
+   462→            tint="bg-amber-500/15 text-amber-600 dark:text-amber-400"
+   463→          />
+   464→          <SummaryCard
+   465→            icon={DollarSign}
+   466→            label="AI Cost"
+   467→            value={`$${formatCost(summary?.aiCostUsd ?? 0)}`}
+   468→            tint="bg-violet-500/15 text-violet-600 dark:text-violet-400"
+   469→          />
+   470→        </div>
+   471→      )}
+   472→
+   473→      {/* Charts Section */}
+   474→      <div className="grid gap-4 lg:grid-cols-2">
+   475→        {/* Monthly Trend */}
+   476→        <Card>
+   477→          <CardHeader>
+   478→            <CardTitle className="text-base flex items-center gap-2">
+   479→              <TrendingUp className="h-4 w-4 text-primary" />
+   480→              Monthly Trend
+   481→            </CardTitle>
+   482→            <CardDescription>
+   483→              Chats and leads over the selected period
+   484→            </CardDescription>
+   485→          </CardHeader>
+   486→          <CardContent>
+   487→            {loading ? (
+   488→              <Skeleton className="h-[280px] w-full" />
+   489→            ) : trend.length === 0 ? (
+   490→              <EmptyBlock text="No activity in this period." />
+   491→            ) : (
+   492→              <div className="h-[280px]">
+   493→                <ResponsiveContainer width="100%" height="100%">
+   494→                  <AreaChart
+   495→                    data={trend.map((t) => ({
+   496→                      ...t,
+   497→                      label: formatMonthLabel(t.month),
+   498→                    }))}
+   499→                    margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+   500→                  >
+   501→                    <defs>
+   502→                      <linearGradient id="anChats" x1="0" y1="0" x2="0" y2="1">
+   503→                        <stop
+   504→                          offset="5%"
+   505→                          stopColor={BRAND_BLUE}
+   506→                          stopOpacity={0.4}
+   507→                        />
+   508→                        <stop
+   509→                          offset="95%"
+   510→                          stopColor={BRAND_BLUE}
+   511→                          stopOpacity={0}
+   512→                        />
+   513→                      </linearGradient>
+   514→                      <linearGradient id="anLeads" x1="0" y1="0" x2="0" y2="1">
+   515→                        <stop
+   516→                          offset="5%"
+   517→                          stopColor={BRAND_GREEN}
+   518→                          stopOpacity={0.4}
+   519→                        />
+   520→                        <stop
+   521→                          offset="95%"
+   522→                          stopColor={BRAND_GREEN}
+   523→                          stopOpacity={0}
+   524→                        />
+   525→                      </linearGradient>
+   526→                    </defs>
+   527→                    <CartesianGrid
+   528→                      strokeDasharray="3 3"
+   529→                      vertical={false}
+   530→                      stroke="var(--border)"
+   531→                    />
+   532→                    <XAxis
+   533→                      dataKey="label"
+   534→                      tickLine={false}
+   535→                      axisLine={false}
+   536→                      fontSize={12}
+   537→                      minTickGap={8}
+   538→                    />
+   539→                    <YAxis
+   540→                      allowDecimals={false}
+   541→                      tickLine={false}
+   542→                      axisLine={false}
+   543→                      fontSize={12}
+   544→                      width={32}
+   545→                    />
+   546→                    <RechartsTooltip
+   547→                      contentStyle={{
+   548→                        borderRadius: 12,
+   549→                        border: "1px solid var(--border)",
+   550→                        background: "var(--popover)",
+   551→                        color: "var(--popover-foreground)",
+   552→                        fontSize: 12,
+   553→                      }}
+   554→                      formatter={(value: number, name: string) => [
+   555→                        formatNumber(Number(value)),
+   556→                        name,
+   557→                      ]}
+   558→                    />
+   559→                    <Area
+   560→                      type="monotone"
+   561→                      dataKey="chats"
+   562→                      name="Chats"
+   563→                      stroke={BRAND_BLUE}
+   564→                      strokeWidth={2}
+   565→                      fill="url(#anChats)"
+   566→                      activeDot={{ r: 4 }}
+   567→                    />
+   568→                    <Area
+   569→                      type="monotone"
+   570→                      dataKey="leads"
+   571→                      name="Leads"
+   572→                      stroke={BRAND_GREEN}
+   573→                      strokeWidth={2}
+   574→                      fill="url(#anLeads)"
+   575→                      activeDot={{ r: 4 }}
+   576→                    />
+   577→                  </AreaChart>
+   578→                </ResponsiveContainer>
+   579→              </div>
+   580→            )}
+   581→          </CardContent>
+   582→        </Card>
+   583→
+   584→        {/* Leads by Source */}
+   585→        <Card>
+   586→          <CardHeader>
+   587→            <CardTitle className="text-base flex items-center gap-2">
+   588→              <Users className="h-4 w-4 text-accent-foreground" />
+   589→              Leads by Source
+   590→            </CardTitle>
+   591→            <CardDescription>
+   592→              Distribution of lead acquisition channels
+   593→            </CardDescription>
+   594→          </CardHeader>
+   595→          <CardContent>
+   596→            {loading ? (
+   597→              <Skeleton className="h-[280px] w-full" />
+   598→            ) : sources.length === 0 ? (
+   599→              <EmptyBlock text="No leads captured in this period." />
+   600→            ) : (
+   601→              <div className="h-[280px]">
+   602→                <ResponsiveContainer width="100%" height="100%">
+   603→                  <BarChart
+   604→                    data={sources.map((s) => ({
+   605→                      name: prettify(s.source),
+   606→                      count: s.count,
+   607→                      key: s.source,
+   608→                    }))}
+   609→                    layout="vertical"
+   610→                    margin={{ top: 4, right: 16, left: 8, bottom: 4 }}
+   611→                  >
+   612→                    <CartesianGrid
+   613→                      strokeDasharray="3 3"
+   614→                      horizontal={false}
+   615→                      stroke="var(--border)"
+   616→                    />
+   617→                    <XAxis
+   618→                      type="number"
+   619→                      allowDecimals={false}
+   620→                      tickLine={false}
+   621→                      axisLine={false}
+   622→                      fontSize={12}
+   623→                    />
+   624→                    <YAxis
+   625→                      type="category"
+   626→                      dataKey="name"
+   627→                      tickLine={false}
+   628→                      axisLine={false}
+   629→                      fontSize={12}
+   630→                      width={96}
+   631→                    />
+   632→                    <RechartsTooltip
+   633→                      cursor={{ fill: "var(--muted)", opacity: 0.5 }}
+   634→                      contentStyle={{
+   635→                        borderRadius: 12,
+   636→                        border: "1px solid var(--border)",
+   637→                        background: "var(--popover)",
+   638→                        color: "var(--popover-foreground)",
+   639→                        fontSize: 12,
+   640→                      }}
+   641→                      formatter={(value: number) => [
+   642→                        formatNumber(Number(value)),
+   643→                        "Leads",
+   644→                      ]}
+   645→                    />
+   646→                    <Bar
+   647→                      dataKey="count"
+   648→                      radius={[0, 6, 6, 0]}
+   649→                      maxBarSize={26}
+   650→                    >
+   651→                      {sources.map((s) => (
+   652→                        <Cell key={s.source} fill={sourceColor(s.source)} />
+   653→                      ))}
+   654→                    </Bar>
+   655→                  </BarChart>
+   656→                </ResponsiveContainer>
+   657→              </div>
+   658→            )}
+   659→          </CardContent>
+   660→        </Card>
+   661→      </div>
+   662→
+   663→      {/* Breakdown Section */}
+   664→      <div className="grid gap-4 lg:grid-cols-2">
+   665→        {/* Leads by Status */}
+   666→        <Card>
+   667→          <CardHeader>
+   668→            <CardTitle className="text-base flex items-center gap-2">
+   669→              <Users className="h-4 w-4 text-primary" />
+   670→              Leads by Status
+   671→            </CardTitle>
+   672→            <CardDescription>Pipeline stage distribution</CardDescription>
+   673→          </CardHeader>
+   674→          <CardContent className="space-y-3">
+   675→            {loading ? (
+   676→              <div className="space-y-3">
+   677→                {Array.from({ length: 5 }).map((_, i) => (
+   678→                  <Skeleton key={i} className="h-10 w-full" />
+   679→                ))}
+   680→              </div>
+   681→            ) : leadStatuses.length === 0 ? (
+   682→              <EmptyBlock text="No leads to display in this period." />
+   683→            ) : (
+   684→              <LeadsByStatusList items={leadStatuses} />
+   685→            )}
+   686→          </CardContent>
+   687→        </Card>
+   688→
+   689→        {/* AI Usage by Feature */}
+   690→        <Card>
+   691→          <CardHeader>
+   692→            <CardTitle className="text-base flex items-center gap-2">
+   693→              <Zap className="h-4 w-4 text-amber-500" />
+   694→              AI Usage by Feature
+   695→            </CardTitle>
+   696→            <CardDescription>
+   697→              Requests and token consumption per AI feature
+   698→            </CardDescription>
+   699→          </CardHeader>
+   700→          <CardContent className="space-y-3">
+   701→            {loading ? (
+   702→              <div className="space-y-3">
+   703→                {Array.from({ length: 4 }).map((_, i) => (
+   704→                  <Skeleton key={i} className="h-10 w-full" />
+   705→                ))}
+   706→              </div>
+   707→            ) : features.length === 0 ? (
+   708→              <EmptyBlock text="No AI usage recorded in this period." />
+   709→            ) : (
+   710→              <AiByFeatureList items={features} />
+   711→            )}
+   712→          </CardContent>
+   713→        </Card>
+   714→      </div>
+   715→
+   716→      {/* Tickets by Status */}
+   717→      <Card>
+   718→        <CardHeader>
+   719→          <CardTitle className="text-base flex items-center gap-2">
+   720→            <TicketIcon className="h-4 w-4 text-rose-500" />
+   721→            Tickets by Status
+   722→          </CardTitle>
+   723→          <CardDescription>
+   724→            Distribution of support tickets across statuses
+   725→          </CardDescription>
+   726→        </CardHeader>
+   727→        <CardContent>
+   728→          {loading ? (
+   729→            <div className="flex flex-wrap gap-2">
+   730→              {Array.from({ length: 5 }).map((_, i) => (
+   731→                <Skeleton key={i} className="h-7 w-28" />
+   732→              ))}
+   733→            </div>
+   734→          ) : ticketStatuses.length === 0 ? (
+   735→            <EmptyBlock text="No support tickets in this period." />
+   736→          ) : (
+   737→            <div className="flex flex-wrap gap-2">
+   738→              {ticketStatuses.map((s) => (
+   739→                <Badge
+   740→                  key={s.status}
+   741→                  variant="outline"
+   742→                  className={`gap-2 py-1 px-3 ${ticketBadgeClass(s.status)}`}
+   743→                >
+   744→                  <span className="font-medium">{prettify(s.status)}</span>
+   745→                  <span className="tabular-nums bg-background/60 rounded px-1.5 py-0.5 text-[10px] font-semibold">
+   746→                    {s.count}
+   747→                  </span>
+   748→                </Badge>
+   749→              ))}
+   750→            </div>
+   751→          )}
+   752→        </CardContent>
+   753→      </Card>
+   754→    </div>
+   755→  );
+   756→}
+   757→
+   758→// ─── Sub-components ───────────────────────────────────────────────────
+   759→
+   760→function SummaryCard({
+   761→  icon: Icon,
+   762→  label,
+   763→  value,
+   764→  tint,
+   765→}: {
+   766→  icon: React.ComponentType<{ size?: number; className?: string }>;
+   767→  label: string;
+   768→  value: string;
+   769→  tint: string;
+   770→}) {
+   771→  return (
+   772→    <Card className="overflow-hidden hover:shadow-md transition-shadow">
+   773→      <CardContent className="space-y-2">
+   774→        <div
+   775→          className={`h-9 w-9 rounded-lg flex items-center justify-center ${tint}`}
+   776→        >
+   777→          <Icon size={18} />
+   778→        </div>
+   779→        <div className="text-2xl font-bold tracking-tight tabular-nums truncate">
+   780→          {value}
+   781→        </div>
+   782→        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+   783→          {label}
+   784→        </div>
+   785→      </CardContent>
+   786→    </Card>
+   787→  );
+   788→}
+   789→
+   790→function LeadsByStatusList({ items }: { items: StatusItem[] }) {
+   791→  const total = items.reduce((a, b) => a + b.count, 0);
+   792→  return (
+   793→    <>
+   794→      {items.map((s) => {
+   795→        const pct = total > 0 ? Math.round((s.count / total) * 100) : 0;
+   796→        const color = statusColor(s.status);
+   797→        return (
+   798→          <div key={s.status} className="space-y-1.5">
+   799→            <div className="flex items-center justify-between text-sm">
+   800→              <span className="flex items-center gap-2">
+   801→                <span
+   802→                  className="h-2.5 w-2.5 rounded-full"
+   803→                  style={{ backgroundColor: color }}
+   804→                />
+   805→                <span className="font-medium">{prettify(s.status)}</span>
+   806→              </span>
+   807→              <span className="font-medium tabular-nums">
+   808→                {formatNumber(s.count)}{" "}
+   809→                <span className="text-muted-foreground">({pct}%)</span>
+   810→              </span>
+   811→            </div>
+   812→            <div className="h-2 rounded-full bg-muted overflow-hidden">
+   813→              <div
+   814→                className="h-full rounded-full transition-all duration-500"
+   815→                style={{ width: `${pct}%`, backgroundColor: color }}
+   816→              />
+   817→            </div>
+   818→          </div>
+   819→        );
+   820→      })}
+   821→    </>
+   822→  );
+   823→}
+   824→
+   825→function AiByFeatureList({ items }: { items: FeatureItem[] }) {
+   826→  const maxTokens = Math.max(...items.map((f) => f.tokens), 1);
+   827→  return (
+   828→    <>
+   829→      {items.map((f) => {
+   830→        const pct = Math.round((f.tokens / maxTokens) * 100);
+   831→        const color = featureColor(f.feature);
+   832→        return (
+   833→          <div key={f.feature} className="space-y-1.5">
+   834→            <div className="flex items-center justify-between text-sm">
+   835→              <span className="flex items-center gap-2 min-w-0">
+   836→                <span
+   837→                  className="h-2.5 w-2.5 rounded-full shrink-0"
+   838→                  style={{ backgroundColor: color }}
+   839→                />
+   840→                <span className="font-medium truncate">
+   841→                  {prettify(f.feature)}
+   842→                </span>
+   843→                <Badge
+   844→                  variant="secondary"
+   845→                  className="text-[10px] py-0 h-4 shrink-0"
+   846→                >
+   847→                  {f.count} req
+   848→                </Badge>
+   849→              </span>
+   850→              <span className="tabular-nums text-muted-foreground text-xs shrink-0 ml-2">
+   851→                {formatNumber(f.tokens)} tok
+   852→              </span>
+   853→            </div>
+   854→            <div className="h-2 rounded-full bg-muted overflow-hidden">
+   855→              <div
+   856→                className="h-full rounded-full transition-all duration-500"
+   857→                style={{ width: `${pct}%`, backgroundColor: color }}
+   858→              />
+   859→            </div>
+   860→          </div>
+   861→        );
+   862→      })}
+   863→    </>
+   864→  );
+   865→}
+   866→
+   867→function EmptyBlock({ text }: { text: string }) {
+   868→  return (
+   869→    <div className="flex h-full min-h-[140px] items-center justify-center text-sm text-muted-foreground">
+   870→      {text}
+   871→    </div>
+   872→  );
+   873→}
+   874→

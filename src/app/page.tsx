@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { AuthScreen } from "@/components/auth/auth-screen";
 import { AppShell, type ViewId } from "@/components/dashboard/app-shell";
 import { OverviewView } from "@/components/dashboard/views/overview-view";
@@ -84,7 +85,7 @@ export default function Home() {
       case "documents": return <DocumentsView user={user} />;
       case "whatsapp": return <WhatsAppView user={user} />;
       case "automations": return <AutomationsView user={user} />;
-      case "analytics": return <AnalyticsView user={user} />;
+      case "analytics": return <AnalyticsView user={user} onNavigate={setView} />;
       case "usage": return <UsageView user={user} />;
       case "embed": return <EmbedView user={user} />;
       case "integrations": return <IntegrationsView user={user} />;
@@ -97,26 +98,28 @@ export default function Home() {
   };
 
   return (
-    <AppShell
-      user={user}
-      active={view}
-      onNavigate={setView}
-      onLogout={() => {
-        setUser(null);
-        setView("overview");
-      }}
-    >
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={view}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -4 }}
-          transition={{ duration: 0.2, ease: "easeOut" }}
-        >
-          {renderView()}
-        </motion.div>
-      </AnimatePresence>
-    </AppShell>
+    <ErrorBoundary>
+      <AppShell
+        user={user}
+        active={view}
+        onNavigate={setView}
+        onLogout={() => {
+          setUser(null);
+          setView("overview");
+        }}
+      >
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={view}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+          >
+            {renderView()}
+          </motion.div>
+        </AnimatePresence>
+      </AppShell>
+    </ErrorBoundary>
   );
 }

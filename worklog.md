@@ -2979,3 +2979,141 @@ Recreated all 18 files that were lost during previous dev server restarts. All 3
 - All 10 previously-broken endpoints now return 200.
 - PWA manifest + service worker accessible (200).
 - Dev server stable.
+
+---
+Task ID: BC-SETTINGS
+Agent: subagent
+Task: Settings enhancements — White-Label & Branding card, GDPR Data & Privacy card, verify Notification Preferences card.
+
+File modified:
+- `src/components/dashboard/views/settings-view.tsx` (only file touched).
+
+Work Log:
+- Added imports: `AlertDialog` family (`AlertDialog`, `AlertDialogAction`, `AlertDialogCancel`, `AlertDialogContent`, `AlertDialogDescription`, `AlertDialogFooter`, `AlertDialogHeader`, `AlertDialogTitle`, `AlertDialogTrigger`) from `@/components/ui/alert-dialog`; lucide icons `Palette`, `Download`, `Trash2`, `AlertTriangle` added to the existing lucide-react import.
+- Added `WhiteLabelConfig` interface (appName, appShortName, primaryColor, accentColor, customDomain, customLogoUrl, hideBranding, isActive).
+- Added state: `wl` / `wlLoading` / `wlSaving` (white-label config), `gdprExporting` / `gdprDeleting` / `deleteDialogOpen` / `deleteConfirmText` (GDPR card + AlertDialog).
+- Added `useEffect` to load white-label config on mount via `GET /api/white-label`. Falls back to brand defaults (`#1d4ed8` / `#84cc16`) if unset.
+- Added `saveWhiteLabel()` → `PUT /api/white-label` (sends 8 fields per spec: appName, appShortName, primaryColor, accentColor, customDomain, customLogoUrl, hideBranding, isActive). On success updates local state from server response and toasts "Branding saved".
+- Added `exportData()` → `GET /api/gdpr/export`. Toasts "Downloading data export…" immediately, reads response as blob, parses `Content-Disposition` filename, triggers an `<a download>` click and revokes the object URL. Falls back to `danets-data-export-YYYY-MM-DD.json`.
+- Added `deleteAllData()` → `POST /api/gdpr/delete` with `{ confirm: "DELETE ALL MY DATA" }`. Toasts "All data deleted. Redirecting…", closes dialog, clears confirmation text, then `window.location.href = "/"` after 1.5s (server destroys the session cookie).
+- New cards inserted into the LEFT column (after Team Members, before the existing Notification Preferences card):
+  1. **White-Label & Branding** (Palette icon) — App Name, App Short Name, Primary Color (native `<input type="color">` + hex Input), Accent Color (same pattern), Custom Domain, Custom Logo URL, `Hide "Powered by Danets"` Switch, `Active` Switch (with Live/Disabled Badge), and a **Live Preview** block that renders a header bar styled with the chosen primary/accent colors, optional custom logo image (or short-name avatar fallback), app name, and conditionally shows "Powered by Danets" when `hideBranding` is off. Skeleton rows while loading. "Save Branding" button.
+  2. **Data & Privacy** (ShieldCheck icon) — destructive-action note box ("Export includes all leads, chats, tickets, proposals, documents, and settings. Deletion is permanent and cannot be undone."), "Export All Data" (outline) and "Delete All Data" (destructive) buttons side-by-side. Delete button opens an `AlertDialog` with a strong warning, a confirmation `Input` (monospace) that must equal the literal `DELETE ALL MY DATA`, and a destructive `AlertDialogAction` ("Delete Everything") that calls `e.preventDefault()` so the dialog stays open until the async API call resolves; disabled until confirmation text matches.
+- **Notification Preferences card already existed** in the file (P4-EMAIL-UI) — verified and left untouched per the "skip adding a duplicate" instruction. It still loads via `GET /api/notifications/preferences`, renders 10 notification types with In-App + Email Switch toggles, and saves via `PUT /api/notifications/preferences`.
+- All existing sections preserved: Business Profile, Public API Key, Team Members, Current Plan, Account Data, Security. Right-column layout unchanged.
+
+Constraints honoured:
+- Modified ONLY `src/components/dashboard/views/settings-view.tsx` (verified).
+- Used only shadcn/ui primitives already in the project (Card, Button, Input, Switch, Label, Badge, Separator, AlertDialog, Skeleton) — no new UI deps.
+- `sonner` toasts for every mutation/error.
+- All fetches use relative paths (`/api/white-label`, `/api/gdpr/export`, `/api/gdpr/delete`, `/api/notifications/preferences`).
+- Brand color classes used where applicable (`bg-accent`, `text-accent-foreground`); raw hex only used inside the live-preview `style` attributes (intentional — those values come from the user's white-label config, not the brand palette).
+- `AlertDialogAction` is overridden to `bg-destructive text-white hover:bg-destructive/90` for the delete confirmation; `e.preventDefault()` is called so the dialog only closes when we explicitly call `setDeleteDialogOpen(false)` after the API succeeds.
+
+Verification:
+- `bunx tsc --noEmit` → no errors in `src/components/dashboard/views/settings-view.tsx`.
+- `bunx eslint src/components/dashboard/views/settings-view.tsx` → 0 errors, 0 warnings (removed an unused `@next/next/no-img-element` eslint-disable since that rule isn't enabled in this project).
+
+Stage Summary:
+- Settings view now exposes three additional capabilities to admins: (1) full white-label/branding editor with live preview, (2) one-click GDPR JSON export, and (3) hard-delete-with-confirmation GDPR erasure that signs the user out. All existing functionality (business profile, public key, team members, plan/usage, account data, security, notification preferences) is preserved unchanged.
+
+---
+Task ID: BC-ANALYTICS
+Agent: subagent
+Task: Add an AI Deflection Analysis card to the Analytics view, surfacing the deflection rate and KB-gap suggestions from `GET /api/analytics/deflection`.
+
+File modified:
+- `src/components/dashboard/views/analytics-view.tsx` (only file touched).
+
+Work Log:
+- Imports: extended the `lucide-react` import block with `AlertCircle`, `CheckCircle2`, `Plus`, `Sparkles` (alphabetically sorted); added `import { Progress } from "@/components/ui/progress"`.
+- Types: added `UnansweredQuestion` (`{ question, count, suggestedAction }`) and `DeflectionData` (`{ deflectionRate, unansweredQuestions[] }`) above the existing `Report` interface.
+- Component signature widened from `{ user }` to `{ user, onNavigate? }` where `onNavigate?: (view: string) => void` — optional so the existing `<AnalyticsView user={user} />` call site in `src/app/page.tsx` stays valid. When `onNavigate` is missing, the "Add to KB" button falls back to a `sonner` info toast containing the suggested action (per the spec's "use onNavigate if available, or just a note" guidance).
+- State: added `deflection: DeflectionData | null` alongside `report`. Existing `loading`/`error` state reused.
+- Fetching: rewrote `load(f, t)` to `Promise.all` both `/api/analytics/report?…` and `/api/analytics/deflection` in parallel. Deflection is best-effort — parsed in its own try/catch and processed independently so a report 401/500 doesn't suppress the deflection card; report error handling/early-return behaviour preserved exactly.
+- New card inserted between the **Breakdown Section** (`Leads by Status` + `AI Usage by Feature` grid) and the **Tickets by Status** card, exactly as specified.
+  - CardHeader: `Sparkles` icon (primary tint) + title "AI Deflection Analysis" + description "How well your AI resolves visitor questions without human handover."
+  - CardContent stacks two new sub-components with `space-y-6`:
+    1. `DeflectionRateDisplay` — a circular SVG progress ring (128px, 10px stroke, `-rotate-90` + `strokeDasharray`/`strokeDashoffset` math) with the big `XX%` number centered in the matching status color, alongside the label "Questions resolved by AI without handover", a status Badge (Excellent / Needs improvement / Critical), and a contextual hint sentence. Color thresholds per spec: `>80%` emerald `#10b981`, `50–80%` amber `#f59e0b`, `<50%` rose `#ef4444`. Skeleton placeholder (rounded-full + 3 lines) while `loading`.
+    2. `DeflectionQuestionsList` — when questions exist, renders a header row (`AlertCircle` + "Unanswered Questions" + count Badge) followed by per-question cards. Each card shows the quoted question, an amber `"N× asked"` Badge, a thin shadcn `Progress` bar sized to the question's relative frequency (`count / maxCount`), the suggested action (with a `Sparkles` icon), and an "Add to KB" `Button` (with `Plus` icon). When no questions, renders a success state: dashed-border container with an emerald-tinted `CheckCircle2` and the copy "Great! Your AI is answering all visitor questions. No KB gaps detected." Skeleton block (header + 3 rows) while `loading`.
+
+Constraints honoured:
+- Modified ONLY `src/components/dashboard/views/analytics-view.tsx` (verified by re-reading the diff).
+- Used only shadcn/ui primitives already in the project: Card / CardHeader / CardTitle / CardDescription / CardContent, Badge, Button, Skeleton, Progress (newly imported), Separator (untouched existing usage).
+- `sonner` toasts for the Add-to-KB fallback path; relative fetch path `/api/analytics/deflection`.
+- Brand color classes used where applicable (`text-primary`, `bg-muted/30`, `border-border`); the only raw hex values are the three semantic status colors on the SVG ring + the centered number (intentional — they encode the >80 / 50–80 / <50 thresholds from the spec).
+- `lucide-react` icons: `Sparkles`, `CheckCircle2`, `AlertCircle`, `Plus` (all newly imported and used).
+- Preserved ALL existing functionality: date filter toolbar (From/To inputs, Apply button, This Month / Last 30 / Last 90 quick ranges), CSV export, Refresh button, 6-card summary grid, Monthly Trend + Leads by Source charts, Leads by Status + AI Usage by Feature breakdown, Tickets by Status badge grid. No existing state, helper, or sub-component was renamed or removed.
+- "Add to KB" click handler: if `onNavigate` is provided → `onNavigate("knowledge")` (routes to the Knowledge Base view via `app-shell.tsx`'s `ViewId` union, which already includes `"knowledge"`); otherwise → `toast.info("Open Knowledge Base", { description: suggestedAction })`.
+
+Verification:
+- `npx tsc --noEmit` → no errors in `src/components/dashboard/views/analytics-view.tsx` (other files in the repo have pre-existing errors from earlier sessions, untouched here).
+- `npx eslint src/components/dashboard/views/analytics-view.tsx` → 0 errors, 0 warnings.
+
+Stage Summary:
+- Analytics view now closes the deflection loop: admins see at a glance how often the AI resolves visitors without handover, the semantic health of that rate (green/amber/red), and — when gaps exist — a ranked list of unanswered questions with one-click routing to the Knowledge Base view to author the missing articles. When the AI is fully deflecting, a friendly success state replaces the list. Fetch is parallel with the existing report fetch so the new card adds no extra round-trip latency.
+
+---
+Task ID: PHASE-B-THROUGH-F
+Agent: main
+Task: Improvement Phases B-F — UX Polish, Feature Completeness, Performance, Security, Production Readiness.
+
+## Summary
+Completed all remaining improvement phases (B-F) from the audit plan.
+
+## Phase B: UX Polish
+- Added `.card-hover` utility class (lift + shadow on hover) to globals.css.
+- Added smooth scroll + text-size-adjust for mobile.
+- All 17 views already have loading states and responsive layouts (verified in audit).
+
+## Phase C: Feature Completeness
+### Settings View Enhancements (subagent BC-SETTINGS)
+- **White-Label & Branding card**: App name, short name, primary/accent color pickers, custom domain, logo URL, hide branding toggle, active toggle, live preview header.
+- **Data & Privacy card**: GDPR data export (JSON download) + GDPR data deletion (AlertDialog with "DELETE ALL MY DATA" confirmation).
+- **Notification Preferences card**: Already existed from P4-EMAIL-UI — verified present.
+
+### Analytics Deflection Card (subagent BC-ANALYTICS)
+- **AI Deflection Analysis card**: Circular SVG progress ring showing deflection rate (green >80%, amber 50-80%, red <50%), status badge, unanswered questions list with count badges + suggested KB articles + "Add to KB" button (navigates to Knowledge Base). Success state when no gaps.
+- Wired `onNavigate` prop from page.tsx so "Add to KB" navigates to the KB view.
+
+## Phase D: Performance
+- Verified 74 database indexes exist across all models.
+- All list endpoints already capped at 100-200 rows with take limits.
+- Public widget config endpoint has Cache-Control header.
+
+## Phase E: Security Hardening
+- Added security headers via `next.config.ts`:
+  - `X-Content-Type-Options: nosniff`
+  - `X-Frame-Options: SAMEORIGIN` (DENY for API routes)
+  - `X-XSS-Protection: 1; mode=block`
+  - `Referrer-Policy: strict-origin-when-cross-origin`
+  - `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+- Plan-based rate limiting (`src/lib/plan-limits.ts`) already restored in Phase A.
+- Input sanitization utility (`sanitizeInput`) already restored in Phase A.
+- API keys masked in all frontend responses (verified in audit).
+
+## Phase F: Production Readiness
+- **Error Boundary** (`src/components/error-boundary.tsx`): Catches React render errors, shows friendly error page with refresh/recovery buttons. Wrapped around the entire dashboard in page.tsx.
+- **Health Check** (`/api/health`): Returns status, database connectivity, uptime, response time, version. Verified: healthy, 2ms response.
+- **PWA manifest + service worker**: Already restored in Phase A (manifest.json, sw.js, register-sw.tsx).
+- **Security headers**: Added in Phase E above.
+
+## Verification
+- Lint: clean (0 errors).
+- Health check: ✅ healthy, DB connected, 2ms.
+- White-label API: ✅ returns config.
+- Deflection API: ✅ 100% rate, 0 unanswered.
+- GDPR export: ✅ 27KB JSON downloaded.
+- Security headers: ✅ all 4 present.
+- Settings view: ✅ White-Label + Data & Privacy sections render.
+- Analytics view: ✅ Deflection card renders.
+- Dev server stable.
+
+## Complete Platform Status
+All improvement phases (A-F) are now complete. The Danets AI Automation platform has:
+- 37 Prisma models, 80+ API endpoints, 21 view components
+- Error boundary, health check, security headers
+- White-label branding, GDPR compliance, notification preferences
+- AI deflection analysis, lead scoring, multi-language support
+- PWA with offline support + push notifications
+- Full audit trail, super admin management, payment processing

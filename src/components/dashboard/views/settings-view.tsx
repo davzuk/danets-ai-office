@@ -9,7 +9,31 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Save, Building2, ShieldCheck, KeyRound, Database, Bell, Mail } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
+  Loader2,
+  Save,
+  Building2,
+  ShieldCheck,
+  KeyRound,
+  Database,
+  Bell,
+  Mail,
+  Palette,
+  Download,
+  Trash2,
+  AlertTriangle,
+} from "lucide-react";
 import { toast } from "sonner";
 import { TeamMembers } from "@/components/dashboard/views/team-members";
 
@@ -37,6 +61,17 @@ interface NotificationPreference {
   email: boolean;
 }
 
+interface WhiteLabelConfig {
+  appName: string;
+  appShortName: string;
+  primaryColor: string;
+  accentColor: string;
+  customDomain: string;
+  customLogoUrl: string;
+  hideBranding: boolean;
+  isActive: boolean;
+}
+
 export function SettingsView({ user }: { user: any }) {
   const [info, setInfo] = useState<BusinessInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -45,6 +80,24 @@ export function SettingsView({ user }: { user: any }) {
   const [prefs, setPrefs] = useState<NotificationPreference[]>([]);
   const [prefsLoading, setPrefsLoading] = useState(true);
   const [prefsSaving, setPrefsSaving] = useState(false);
+
+  const [wl, setWl] = useState<WhiteLabelConfig>({
+    appName: "",
+    appShortName: "",
+    primaryColor: "#1d4ed8",
+    accentColor: "#84cc16",
+    customDomain: "",
+    customLogoUrl: "",
+    hideBranding: false,
+    isActive: false,
+  });
+  const [wlLoading, setWlLoading] = useState(true);
+  const [wlSaving, setWlSaving] = useState(false);
+
+  const [gdprExporting, setGdprExporting] = useState(false);
+  const [gdprDeleting, setGdprDeleting] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
 
   useEffect(() => {
     fetch("/api/business")
@@ -68,6 +121,27 @@ export function SettingsView({ user }: { user: any }) {
       .then((d) => setPrefs(d.preferences ?? []))
       .catch(() => toast.error("Failed to load notification preferences"))
       .finally(() => setPrefsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/white-label")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.config) {
+          setWl({
+            appName: d.config.appName || "",
+            appShortName: d.config.appShortName || "",
+            primaryColor: d.config.primaryColor || "#1d4ed8",
+            accentColor: d.config.accentColor || "#84cc16",
+            customDomain: d.config.customDomain || "",
+            customLogoUrl: d.config.customLogoUrl || "",
+            hideBranding: !!d.config.hideBranding,
+            isActive: !!d.config.isActive,
+          });
+        }
+      })
+      .catch(() => toast.error("Failed to load white-label configuration"))
+      .finally(() => setWlLoading(false));
   }, []);
 
   async function save() {
@@ -116,6 +190,94 @@ export function SettingsView({ user }: { user: any }) {
       toast.error(e.message);
     } finally {
       setPrefsSaving(false);
+    }
+  }
+
+  async function saveWhiteLabel() {
+    setWlSaving(true);
+    try {
+      const res = await fetch("/api/white-label", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          appName: wl.appName,
+          appShortName: wl.appShortName,
+          primaryColor: wl.primaryColor,
+          accentColor: wl.accentColor,
+          customDomain: wl.customDomain,
+          customLogoUrl: wl.customLogoUrl,
+          hideBranding: wl.hideBranding,
+          isActive: wl.isActive,
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Failed to save branding");
+      toast.success("Branding saved");
+      if (d?.config) {
+        setWl((prev) => ({
+          ...prev,
+          appName: d.config.appName || prev.appName,
+          appShortName: d.config.appShortName || prev.appShortName,
+          primaryColor: d.config.primaryColor || prev.primaryColor,
+          accentColor: d.config.accentColor || prev.accentColor,
+          customDomain: d.config.customDomain || "",
+          customLogoUrl: d.config.customLogoUrl || "",
+          hideBranding: !!d.config.hideBranding,
+          isActive: !!d.config.isActive,
+        }));
+      }
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setWlSaving(false);
+    }
+  }
+
+  async function exportData() {
+    setGdprExporting(true);
+    toast.success("Downloading data export…");
+    try {
+      const res = await fetch("/api/gdpr/export");
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const cd = res.headers.get("content-disposition") || "";
+      const m = cd.match(/filename="?([^"]+)"?/i);
+      a.download =
+        m?.[1] || `danets-data-export-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast.error(e.message || "Export failed");
+    } finally {
+      setGdprExporting(false);
+    }
+  }
+
+  async function deleteAllData() {
+    setGdprDeleting(true);
+    try {
+      const res = await fetch("/api/gdpr/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: "DELETE ALL MY DATA" }),
+      });
+      const d = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(d?.error || "Delete failed");
+      toast.success("All data deleted. Redirecting…");
+      setDeleteDialogOpen(false);
+      setDeleteConfirmText("");
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 1500);
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setGdprDeleting(false);
     }
   }
 
@@ -204,6 +366,265 @@ export function SettingsView({ user }: { user: any }) {
               currentUserId={user.userId}
             />
           )}
+
+          {/* White-Label & Branding */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Palette size={16} /> White-Label & Branding
+              </CardTitle>
+              <CardDescription>
+                Customize the appearance for your resellers or sub-brands.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {wlLoading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-9 w-full" />
+                  <Skeleton className="h-9 w-full" />
+                  <Skeleton className="h-9 w-full" />
+                </div>
+              ) : (
+                <>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">App Name</Label>
+                      <Input
+                        value={wl.appName}
+                        onChange={(e) => setWl({ ...wl, appName: e.target.value })}
+                        placeholder="My Brand"
+                        className="h-10"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">App Short Name</Label>
+                      <Input
+                        value={wl.appShortName}
+                        onChange={(e) => setWl({ ...wl, appShortName: e.target.value })}
+                        placeholder="MB"
+                        maxLength={20}
+                        className="h-10"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Primary Color</Label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={wl.primaryColor}
+                          onChange={(e) => setWl({ ...wl, primaryColor: e.target.value })}
+                          className="h-10 w-12 shrink-0 rounded-md border bg-transparent p-1 cursor-pointer"
+                          aria-label="Primary color picker"
+                        />
+                        <Input
+                          value={wl.primaryColor}
+                          onChange={(e) => setWl({ ...wl, primaryColor: e.target.value })}
+                          className="h-10 font-mono"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Accent Color</Label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={wl.accentColor}
+                          onChange={(e) => setWl({ ...wl, accentColor: e.target.value })}
+                          className="h-10 w-12 shrink-0 rounded-md border bg-transparent p-1 cursor-pointer"
+                          aria-label="Accent color picker"
+                        />
+                        <Input
+                          value={wl.accentColor}
+                          onChange={(e) => setWl({ ...wl, accentColor: e.target.value })}
+                          className="h-10 font-mono"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Custom Domain</Label>
+                      <Input
+                        value={wl.customDomain}
+                        onChange={(e) => setWl({ ...wl, customDomain: e.target.value })}
+                        placeholder="app.mybrand.com"
+                        className="h-10"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Custom Logo URL</Label>
+                      <Input
+                        value={wl.customLogoUrl}
+                        onChange={(e) => setWl({ ...wl, customLogoUrl: e.target.value })}
+                        placeholder="https://…/logo.png"
+                        className="h-10"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6 pt-1">
+                    <div className="flex items-center gap-3">
+                      <Switch
+                        checked={wl.hideBranding}
+                        onCheckedChange={(v) => setWl({ ...wl, hideBranding: v })}
+                        aria-label="Hide Powered by Danets"
+                      />
+                      <Label className="text-sm cursor-pointer">Hide “Powered by Danets”</Label>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Switch
+                        checked={wl.isActive}
+                        onCheckedChange={(v) => setWl({ ...wl, isActive: v })}
+                        aria-label="Activate white-label"
+                      />
+                      <Label className="text-sm cursor-pointer">Active</Label>
+                      {wl.isActive ? (
+                        <Badge variant="secondary" className="bg-accent text-accent-foreground">Live</Badge>
+                      ) : (
+                        <Badge variant="outline">Disabled</Badge>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Live Preview */}
+                  <div className="rounded-lg border p-4">
+                    <div className="text-xs uppercase tracking-wide text-muted-foreground mb-3">
+                      Live Preview
+                    </div>
+                    <div
+                      className="flex items-center justify-between rounded-md p-3"
+                      style={{ backgroundColor: wl.primaryColor }}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        {wl.customLogoUrl ? (
+                          <img
+                            src={wl.customLogoUrl}
+                            alt="Logo preview"
+                            className="h-6 w-6 shrink-0 rounded object-contain"
+                          />
+                        ) : (
+                          <div className="h-6 w-6 shrink-0 rounded bg-white/20 flex items-center justify-center text-xs font-bold text-white">
+                            {(wl.appShortName || "A").slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                        <span className="font-semibold text-white truncate">
+                          {wl.appName || "Your App Name"}
+                        </span>
+                      </div>
+                      <span
+                        className="rounded-full px-2 py-0.5 text-xs font-medium shrink-0 ml-2"
+                        style={{ backgroundColor: wl.accentColor, color: "#1a1a1a" }}
+                      >
+                        {wl.isActive ? "Active" : "Preview"}
+                      </span>
+                    </div>
+                    {!wl.hideBranding && (
+                      <div className="mt-2 text-center text-[10px] text-muted-foreground">
+                        Powered by Danets
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end pt-1">
+                    <Button onClick={saveWhiteLabel} disabled={wlSaving}>
+                      {wlSaving ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="mr-2 h-4 w-4" />
+                      )}
+                      Save Branding
+                    </Button>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Data & Privacy (GDPR) */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <ShieldCheck size={16} /> Data & Privacy
+              </CardTitle>
+              <CardDescription>
+                Export or delete your business data (GDPR compliance).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-start gap-2 text-xs text-muted-foreground rounded-lg bg-muted/40 px-3 py-2.5">
+                <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                <span>
+                  Export includes all leads, chats, tickets, proposals, documents, and settings. Deletion is permanent and cannot be undone.
+                </span>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Button variant="outline" onClick={exportData} disabled={gdprExporting}>
+                  {gdprExporting ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="mr-2 h-4 w-4" />
+                  )}
+                  Export All Data
+                </Button>
+                <AlertDialog open={deleteDialogOpen} onOpenChange={(o) => { setDeleteDialogOpen(o); if (!o) setDeleteConfirmText(""); }}>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive" disabled={gdprDeleting}>
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete All Data
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+                        <AlertTriangle size={18} /> Permanently delete all data?
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This action cannot be undone. All leads, chats, tickets, proposals,
+                        documents, settings, and your business account will be permanently
+                        deleted. You will be signed out immediately.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <div className="space-y-2">
+                      <Label className="text-xs">
+                        Type{" "}
+                        <span className="font-mono font-semibold text-destructive">
+                          DELETE ALL MY DATA
+                        </span>{" "}
+                        to confirm
+                      </Label>
+                      <Input
+                        value={deleteConfirmText}
+                        onChange={(e) => setDeleteConfirmText(e.target.value)}
+                        placeholder="DELETE ALL MY DATA"
+                        className="font-mono"
+                        autoComplete="off"
+                      />
+                    </div>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={gdprDeleting}>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (deleteConfirmText !== "DELETE ALL MY DATA") {
+                            toast.error('Type "DELETE ALL MY DATA" to confirm');
+                            return;
+                          }
+                          deleteAllData();
+                        }}
+                        disabled={deleteConfirmText !== "DELETE ALL MY DATA" || gdprDeleting}
+                        className="bg-destructive text-white hover:bg-destructive/90 disabled:opacity-50"
+                      >
+                        {gdprDeleting ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="mr-2 h-4 w-4" />
+                        )}
+                        Delete Everything
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Notification preferences */}
           <Card>

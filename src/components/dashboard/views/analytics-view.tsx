@@ -15,12 +15,16 @@ import {
   YAxis,
 } from "recharts";
 import {
+  AlertCircle,
   BarChart3,
   CalendarDays,
+  CheckCircle2,
   DollarSign,
   Download,
   MessagesSquare,
+  Plus,
   RefreshCw,
+  Sparkles,
   Ticket as TicketIcon,
   TrendingUp,
   Users,
@@ -38,6 +42,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Progress } from "@/components/ui/progress";
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -78,6 +83,16 @@ interface TrendItem {
   month: string;
   chats: number;
   leads: number;
+}
+
+interface UnansweredQuestion {
+  question: string;
+  count: number;
+  suggestedAction: string;
+}
+interface DeflectionData {
+  deflectionRate: number;
+  unansweredQuestions: UnansweredQuestion[];
 }
 
 interface Report {
@@ -193,13 +208,22 @@ function ticketBadgeClass(s: string): string {
 
 // ─── Main component ───────────────────────────────────────────────────
 
-export function AnalyticsView({ user: _user }: { user: AnalyticsUser }) {
+export function AnalyticsView({
+  user: _user,
+  onNavigate,
+}: {
+  user: AnalyticsUser;
+  onNavigate?: (view: string) => void;
+}) {
   const [from, setFrom] = React.useState<string>(firstOfMonthStr());
   const [to, setTo] = React.useState<string>(todayStr());
   const [appliedFrom, setAppliedFrom] = React.useState<string>(from);
   const [appliedTo, setAppliedTo] = React.useState<string>(to);
 
   const [report, setReport] = React.useState<Report | null>(null);
+  const [deflection, setDeflection] = React.useState<DeflectionData | null>(
+    null
+  );
   const [loading, setLoading] = React.useState<boolean>(true);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -207,19 +231,33 @@ export function AnalyticsView({ user: _user }: { user: AnalyticsUser }) {
     setLoading(true);
     setError(null);
     try {
-      const url = `/api/analytics/report?from=${encodeURIComponent(
+      const reportUrl = `/api/analytics/report?from=${encodeURIComponent(
         f
       )}&to=${encodeURIComponent(t)}`;
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) {
-        if (res.status === 401) {
+      const deflectionUrl = `/api/analytics/deflection`;
+      // Fetch report + deflection in parallel (deflection is best-effort).
+      const [reportRes, deflectionRes] = await Promise.all([
+        fetch(reportUrl, { cache: "no-store" }),
+        fetch(deflectionUrl, { cache: "no-store" }),
+      ]);
+      // Process deflection independently of report success.
+      if (deflectionRes.ok) {
+        try {
+          const d = (await deflectionRes.json()) as DeflectionData;
+          setDeflection(d);
+        } catch {
+          // ignore parse errors — deflection is best-effort
+        }
+      }
+      if (!reportRes.ok) {
+        if (reportRes.status === 401) {
           setError("Unauthorized. Please sign in again.");
         } else {
-          setError(`Failed to load report (${res.status})`);
+          setError(`Failed to load report (${reportRes.status})`);
         }
         return;
       }
-      const json = (await res.json()) as Report;
+      const json = (await reportRes.json()) as Report;
       setReport(json);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Network error";
@@ -713,6 +751,30 @@ export function AnalyticsView({ user: _user }: { user: AnalyticsUser }) {
         </Card>
       </div>
 
+      {/* AI Deflection Analysis */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-primary" />
+            AI Deflection Analysis
+          </CardTitle>
+          <CardDescription>
+            How well your AI resolves visitor questions without human handover.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <DeflectionRateDisplay
+            rate={deflection?.deflectionRate ?? 0}
+            loading={loading}
+          />
+          <DeflectionQuestionsList
+            questions={deflection?.unansweredQuestions ?? []}
+            loading={loading}
+            onNavigate={onNavigate}
+          />
+        </CardContent>
+      </Card>
+
       {/* Tickets by Status */}
       <Card>
         <CardHeader>
@@ -868,6 +930,216 @@ function EmptyBlock({ text }: { text: string }) {
   return (
     <div className="flex h-full min-h-[140px] items-center justify-center text-sm text-muted-foreground">
       {text}
+    </div>
+  );
+}
+
+function DeflectionRateDisplay({
+  rate,
+  loading,
+}: {
+  rate: number;
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="flex flex-col sm:flex-row items-center gap-6 p-4 rounded-lg bg-muted/30 border border-border/50">
+        <Skeleton className="h-32 w-32 rounded-full shrink-0" />
+        <div className="flex-1 space-y-2 w-full">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-3 w-56" />
+          <Skeleton className="h-3 w-48" />
+        </div>
+      </div>
+    );
+  }
+
+  const clamped = Math.max(0, Math.min(100, rate));
+  const color =
+    clamped > 80 ? "#10b981" : clamped >= 50 ? "#f59e0b" : "#ef4444";
+  const statusLabel =
+    clamped > 80
+      ? "Excellent"
+      : clamped >= 50
+      ? "Needs improvement"
+      : "Critical";
+  const tintClass =
+    clamped > 80
+      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+      : clamped >= 50
+      ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30"
+      : "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30";
+  const hint =
+    clamped > 80
+      ? "Your AI is handling most questions. Keep your knowledge base fresh!"
+      : clamped >= 50
+      ? "Add KB articles to cover common unanswered questions below."
+      : "Many questions need human handover. Expand your KB to improve.";
+
+  // Circular SVG progress ring with the rate in the center.
+  const size = 128;
+  const stroke = 10;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (clamped / 100) * circumference;
+
+  return (
+    <div className="flex flex-col sm:flex-row items-center gap-6 p-4 rounded-lg bg-muted/30 border border-border/50">
+      <div
+        className="relative shrink-0"
+        style={{ width: size, height: size }}
+      >
+        <svg
+          className="h-full w-full -rotate-90"
+          viewBox={`0 0 ${size} ${size}`}
+        >
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={stroke}
+            className="text-muted-foreground/15"
+          />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke={color}
+            strokeWidth={stroke}
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            className="transition-all duration-700 ease-out"
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span
+            className="text-3xl font-bold tabular-nums leading-none"
+            style={{ color }}
+          >
+            {clamped}%
+          </span>
+        </div>
+      </div>
+      <div className="flex-1 text-center sm:text-left min-w-0">
+        <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
+          <span className="text-sm font-semibold">
+            Questions resolved by AI without handover
+          </span>
+          <Badge variant="outline" className={tintClass}>
+            {statusLabel}
+          </Badge>
+        </div>
+        <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+          {hint}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function DeflectionQuestionsList({
+  questions,
+  loading,
+  onNavigate,
+}: {
+  questions: UnansweredQuestion[];
+  loading: boolean;
+  onNavigate?: (view: string) => void;
+}) {
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-4 w-4 rounded-full" />
+          <Skeleton className="h-4 w-44" />
+        </div>
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-24 w-full" />
+        ))}
+      </div>
+    );
+  }
+
+  if (questions.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-8 text-center rounded-lg border border-dashed border-border">
+        <div className="h-12 w-12 rounded-full bg-emerald-500/10 flex items-center justify-center">
+          <CheckCircle2 className="h-6 w-6 text-emerald-500" />
+        </div>
+        <div>
+          <p className="text-sm font-medium">
+            Great! Your AI is answering all visitor questions.
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            No KB gaps detected.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const maxCount = Math.max(...questions.map((q) => q.count), 1);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <AlertCircle className="h-4 w-4 text-amber-500" />
+        <h4 className="text-sm font-semibold">Unanswered Questions</h4>
+        <Badge variant="secondary" className="text-[10px] py-0 h-4">
+          {questions.length}
+        </Badge>
+      </div>
+      <div className="space-y-2.5">
+        {questions.map((q, i) => {
+          const pct = Math.max(8, Math.round((q.count / maxCount) * 100));
+          return (
+            <div
+              key={`${q.question}-${i}`}
+              className="rounded-lg border border-border bg-card p-3 space-y-2.5"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm font-medium leading-snug flex-1">
+                  &ldquo;{q.question}&rdquo;
+                </p>
+                <Badge
+                  variant="outline"
+                  className="bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30 shrink-0"
+                >
+                  {q.count}&times; asked
+                </Badge>
+              </div>
+              <Progress value={pct} className="h-1.5" />
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <p className="text-xs text-muted-foreground flex items-center gap-1.5 min-w-0 flex-1">
+                  <Sparkles className="h-3 w-3 text-primary shrink-0" />
+                  <span className="truncate">{q.suggestedAction}</span>
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 shrink-0 h-7 text-xs"
+                  onClick={() => {
+                    if (onNavigate) {
+                      onNavigate("knowledge");
+                    } else {
+                      toast.info("Open Knowledge Base", {
+                        description: q.suggestedAction,
+                      });
+                    }
+                  }}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add to KB
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
