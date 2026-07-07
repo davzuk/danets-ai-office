@@ -33,7 +33,15 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
-# vercel
+# local databases
+*.db
+prisma/dev.db
+db/
+
+# agent artifacts
+tool-results/
+*.tar
+.zscripts/dev.pid
 .vercel
 
 

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { aiChat, logUsage } from "@/lib/ai";
 import { withSession } from "@/lib/api";
+import { requireAiQuota } from "@/lib/plan-limits";
 
 const schema = z.object({
   quoteRequestId: z.string().min(1, "quoteRequestId is required"),
@@ -29,6 +30,8 @@ export async function POST(req: NextRequest) {
       where: { id: quoteRequestId, businessId: user.businessId },
     });
     if (!qr) throw new Error("FORBIDDEN");
+
+    await requireAiQuota(user.businessId);
 
     const template = await db.aiPromptTemplate.findFirst({
       where: { businessId: user.businessId, type: "quote", isActive: true },

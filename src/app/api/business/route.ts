@@ -46,7 +46,7 @@ export async function PUT(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const parsed = updateSchema.safeParse(body);
     if (!parsed.success) {
-      return Response.json({ error: parsed.error.issues[0]?.message }, { status: 400 });
+      throw new Error(parsed.error.issues[0]?.message || "Invalid input");
     }
     const data: any = {};
     if (parsed.data.name !== undefined) data.name = parsed.data.name;

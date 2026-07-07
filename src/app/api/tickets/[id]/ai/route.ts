@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { aiChat, logUsage } from "@/lib/ai";
+import { checkMonthlyAiQuota, quotaExceededResponse } from "@/lib/plan-limits";
 
 const aiSchema = z.object({
   action: z.enum(["summary", "suggest_reply", "detect_priority", "full_analysis"]),
@@ -43,6 +44,9 @@ export async function POST(req: NextRequest, { params }: RouteCtx) {
   }
 
   const action = parsed.data.action;
+
+  const quota = await checkMonthlyAiQuota(user.businessId);
+  if (!quota.allowed) return quotaExceededResponse();
 
   // Build conversation transcript
   const transcript = ticket.messages

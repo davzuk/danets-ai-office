@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { aiChat, logUsage } from "@/lib/ai";
+import { checkMonthlyAiQuota, quotaExceededResponse } from "@/lib/plan-limits";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
@@ -20,6 +21,9 @@ export async function POST(_req: NextRequest, { params }: RouteCtx) {
     include: { items: true },
   });
   if (!quote) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const quota = await checkMonthlyAiQuota(user.businessId);
+  if (!quota.allowed) return quotaExceededResponse();
 
   const systemPrompt = `You are a professional business development assistant. Draft an email to send a proposal to a client.
 

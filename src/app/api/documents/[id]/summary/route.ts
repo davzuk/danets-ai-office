@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { aiChat, logUsage } from "@/lib/ai";
+import { checkMonthlyAiQuota, quotaExceededResponse } from "@/lib/plan-limits";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
@@ -22,6 +23,9 @@ export async function POST(_req: NextRequest, { params }: RouteCtx) {
   if (!doc) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+
+  const quota = await checkMonthlyAiQuota(user.businessId);
+  if (!quota.allowed) return quotaExceededResponse();
 
   // Truncate content to ~4000 chars for the summary prompt
   const content = doc.content.slice(0, 4000);

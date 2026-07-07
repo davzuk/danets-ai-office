@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { aiChat, logUsage } from "@/lib/ai";
+import { checkMonthlyAiQuota, quotaExceededResponse } from "@/lib/plan-limits";
 
 const followupSchema = z.object({
   leadId: z.string().optional(),
@@ -33,6 +34,9 @@ export async function POST(req: NextRequest) {
   }
 
   const d = parsed.data;
+
+  const quota = await checkMonthlyAiQuota(user.businessId);
+  if (!quota.allowed) return quotaExceededResponse();
 
   // If leadId provided, load lead info
   let leadInfo = "";

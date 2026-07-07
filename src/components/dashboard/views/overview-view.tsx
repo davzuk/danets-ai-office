@@ -27,6 +27,7 @@ import {
   HelpCircle,
 } from "lucide-react";
 import type { ViewId } from "@/components/dashboard/app-shell";
+import { OnboardingChecklist } from "@/components/dashboard/shared/onboarding-checklist";
 import {
   Area,
   AreaChart,
@@ -159,6 +160,8 @@ export function OverviewView({
           </div>
         </div>
       </div>
+
+      <OnboardingChecklist businessId={user.businessId} onNavigate={onNavigate} />
 
       {/* Stat cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

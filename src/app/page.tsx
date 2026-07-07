@@ -33,6 +33,9 @@ interface AuthUser {
   businessId: string;
   businessName: string;
   isSuperAdmin: boolean;
+  isImpersonating?: boolean;
+  isPlatformAdmin?: boolean;
+  totpEnabled?: boolean;
 }
 
 export default function Home() {
@@ -41,9 +44,19 @@ export default function Home() {
   const [view, setView] = useState<ViewId>("overview");
 
   useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((d) => setUser(d.user || null))
+    Promise.all([
+      fetch("/api/platform-auth/me").then((r) => r.json()),
+      fetch("/api/auth/me").then((r) => r.json()),
+    ])
+      .then(([platform, tenant]) => {
+        if (tenant.user?.isImpersonating) {
+          setUser(tenant.user);
+        } else if (platform.admin) {
+          setUser(platform.admin);
+        } else if (tenant.user) {
+          setUser(tenant.user);
+        }
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -68,7 +81,12 @@ export default function Home() {
         animate={{ opacity: 1 }}
         transition={{ duration: 0.4 }}
       >
-        <AuthScreen onAuthed={(u) => setUser(u)} />
+        <AuthScreen
+          onAuthed={(u) => {
+            setUser(u);
+            if (u.isPlatformAdmin || u.isSuperAdmin) setView("super-admin");
+          }}
+        />
       </motion.div>
     );
   }
@@ -92,7 +110,15 @@ export default function Home() {
       case "subscription": return <SubscriptionView user={user} />;
       case "settings": return <SettingsView user={user} />;
       case "audit": return <AuditLogsView user={user} />;
-      case "super-admin": return <SuperAdminView user={user} />;
+      case "super-admin": return (
+        <SuperAdminView
+          user={user}
+          onSessionChange={(u) => {
+            setUser(u);
+            setView("overview");
+          }}
+        />
+      );
       default: return null;
     }
   };
@@ -107,6 +133,7 @@ export default function Home() {
           setUser(null);
           setView("overview");
         }}
+        onSessionChange={setUser}
       >
         <AnimatePresence mode="wait">
           <motion.div

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireSuperAdmin } from "@/lib/super-admin";
 import { logActivity } from "@/lib/activity";
+import { getTenantUsage } from "@/lib/tenant-usage";
 
 const patchSchema = z.object({
   status: z.enum(["active", "suspended"]).optional(),
@@ -14,15 +15,8 @@ type RouteCtx = { params: Promise<{ id: string }> };
 
 // GET /api/super-admin/businesses/[id] — detailed business view
 export async function GET(_req: NextRequest, { params }: RouteCtx) {
-  let user;
-  try {
-    user = await requireSession();
-  } catch {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (!user.isSuperAdmin) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireSuperAdmin();
+  if (auth.error) return auth.error;
 
   const { id } = await params;
   const business = await db.business.findUnique({
@@ -46,20 +40,36 @@ export async function GET(_req: NextRequest, { params }: RouteCtx) {
 
   if (!business) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  return NextResponse.json({ business });
+  // Normalize subscription fields so the Super Admin UI receives a stable
+  // shape regardless of the underlying BusinessSubscription column names.
+  const { subscription: rawSub, ...rest } = business;
+  const subscription = rawSub
+    ? {
+        id: rawSub.id,
+        plan: rawSub.planName,
+        status: rawSub.status,
+        monthlyFee: rawSub.monthlyFee,
+        startDate: rawSub.startDate.toISOString(),
+        endDate: rawSub.endDate?.toISOString() || null,
+        trialEndsAt: rawSub.trialEndsAt?.toISOString() || null,
+        paymentMethod: rawSub.paymentMethod,
+        paymentRef: rawSub.paymentRef,
+        // UI-friendly aliases
+        currentPeriodEnd: rawSub.endDate?.toISOString() || null,
+        cancelAtPeriodEnd: rawSub.status === "canceled",
+      }
+    : null;
+
+  const usage = await getTenantUsage(id, business.plan);
+
+  return NextResponse.json({ business: { ...rest, subscription, usage } });
 }
 
 // PATCH /api/super-admin/businesses/[id] — update business status/plan
 export async function PATCH(req: NextRequest, { params }: RouteCtx) {
-  let user;
-  try {
-    user = await requireSession();
-  } catch {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (!user.isSuperAdmin) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireSuperAdmin();
+  if (auth.error) return auth.error;
+  const { user } = auth;
 
   const { id } = await params;
   const business = await db.business.findUnique({ where: { id } });
@@ -76,7 +86,41 @@ export async function PATCH(req: NextRequest, { params }: RouteCtx) {
   if (parsed.data.plan) data.plan = parsed.data.plan;
   if (parsed.data.name) data.name = parsed.data.name.trim();
 
-  const updated = await db.business.update({ where: { id }, data });
+  // Run business + subscription sync inside a transaction so plan changes
+  // stay consistent across Business.plan and BusinessSubscription.planName.
+  const updated = await db.$transaction(async (tx) => {
+    const business = await tx.business.update({ where: { id }, data });
+
+    if (parsed.data.plan) {
+      const planRow = await tx.subscriptionPlan.findUnique({
+        where: { name: parsed.data.plan },
+        select: { priceUsd: true },
+      });
+      const monthlyFee = planRow?.priceUsd ?? 0;
+      const existingSub = await tx.businessSubscription.findUnique({
+        where: { businessId: id },
+        select: { id: true },
+      });
+      if (existingSub) {
+        await tx.businessSubscription.update({
+          where: { id: existingSub.id },
+          data: { planName: parsed.data.plan, monthlyFee },
+        });
+      } else {
+        await tx.businessSubscription.create({
+          data: {
+            businessId: id,
+            planName: parsed.data.plan,
+            status: "active",
+            monthlyFee,
+            startDate: new Date(),
+          },
+        });
+      }
+    }
+
+    return business;
+  });
 
   // Log to the business's audit log
   await logActivity({
@@ -89,4 +133,41 @@ export async function PATCH(req: NextRequest, { params }: RouteCtx) {
   });
 
   return NextResponse.json({ business: updated });
+}
+
+// DELETE /api/super-admin/businesses/[id] — permanently delete a tenant
+export async function DELETE(_req: NextRequest, { params }: RouteCtx) {
+  const auth = await requireSuperAdmin();
+  if (auth.error) return auth.error;
+  const { user } = auth;
+
+  const { id } = await params;
+  const business = await db.business.findUnique({
+    where: { id },
+    include: {
+      users: { select: { id: true, email: true, isSuperAdmin: true } },
+    },
+  });
+  if (!business) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  if (business.users.some((u) => u.isSuperAdmin)) {
+    return NextResponse.json(
+      { error: "Cannot delete a tenant that contains super admin users" },
+      { status: 400 }
+    );
+  }
+
+  await db.business.delete({ where: { id } });
+
+  await logActivity({
+    businessId: user.businessId,
+    userId: user.userId,
+    userName: `${user.name} (Super Admin)`,
+    action: "tenant_deleted",
+    module: "business",
+    description: `Super admin deleted tenant "${business.name}" (${business.id})`,
+    metadata: { deletedBusinessId: id, deletedBusinessName: business.name },
+  });
+
+  return NextResponse.json({ ok: true });
 }

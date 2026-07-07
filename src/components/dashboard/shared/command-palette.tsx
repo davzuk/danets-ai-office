@@ -29,6 +29,10 @@ import {
   Download,
   Sparkles,
   Search,
+  Zap,
+  Plug,
+  CreditCard,
+  Shield,
 } from "lucide-react";
 import type { ViewId } from "@/components/dashboard/app-shell";
 import { useTheme } from "next-themes";
@@ -52,12 +56,17 @@ const NAV_ITEMS: {
   { id: "quotes", label: "Quotes & Proposals", icon: FileText, hint: "AI proposal generator" },
   { id: "documents", label: "Document Assistant", icon: FileText, hint: "AI document Q&A" },
   { id: "whatsapp", label: "WhatsApp", icon: MessageCircle, hint: "Templates & automation" },
+  { id: "automations", label: "Automations", icon: Zap, hint: "Workflow builder" },
+  { id: "analytics", label: "Analytics", icon: BarChart3, hint: "Reports & insights" },
   { id: "usage", label: "AI Usage", icon: BarChart3, hint: "Token & cost logs" },
   { id: "agent", label: "AI Agent", icon: Bot, hint: "Bot configuration" },
   { id: "knowledge", label: "Knowledge Base", icon: BookOpen, hint: "KB articles" },
   { id: "embed", label: "Widget Embed", icon: Code2, hint: "Install instructions" },
+  { id: "integrations", label: "Integrations", icon: Plug, hint: "Provider settings" },
+  { id: "subscription", label: "Subscription", icon: CreditCard, hint: "Plan & billing" },
   { id: "audit", label: "Audit Logs", icon: History, hint: "Activity tracking" },
   { id: "settings", label: "Settings", icon: Settings, hint: "Business settings" },
+  { id: "super-admin", label: "Super Admin", icon: Shield, hint: "Internal management" },
 ];
 
 export function CommandPalette({

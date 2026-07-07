@@ -51,6 +51,49 @@ async function seed() {
     });
   }
 
+  // Super admin user (platform-wide access). Lives in the Danets tenant but
+  // has the isSuperAdmin flag granting access to the Super Admin area.
+  const saEmail = "superadmin@danetstecpro.com";
+  const existingSa = await db.businessUser.findUnique({ where: { email: saEmail } });
+  if (!existingSa) {
+    const saPassword = await bcrypt.hash("super123", 10);
+    await db.businessUser.create({
+      data: {
+        businessId: business.id,
+        name: "Super Admin",
+        email: saEmail,
+        password: saPassword,
+        role: "admin",
+        isSuperAdmin: true,
+      },
+    });
+  } else if (!existingSa.isSuperAdmin) {
+    await db.businessUser.update({
+      where: { email: saEmail },
+      data: { isSuperAdmin: true },
+    });
+  }
+
+  // Dedicated platform admin (Phase 5 auth realm)
+  const paEmail = "superadmin@danetstecpro.com";
+  const existingPa = await db.platformAdmin.findUnique({ where: { email: paEmail } });
+  if (!existingPa) {
+    const paPassword = await bcrypt.hash("super123", 10);
+    await db.platformAdmin.create({
+      data: {
+        name: "Super Admin",
+        email: paEmail,
+        password: paPassword,
+        homeBusinessId: business.id,
+      },
+    });
+  } else if (!existingPa.homeBusinessId) {
+    await db.platformAdmin.update({
+      where: { email: paEmail },
+      data: { homeBusinessId: business.id },
+    });
+  }
+
   // AI agent
   let agent = await db.aiAgent.findFirst({ where: { businessId: business.id } });
   if (!agent) {
@@ -123,9 +166,25 @@ async function seed() {
     });
   }
 
+  // Default platform feature flags
+  const defaultFlags = [
+    { key: "document_upload", name: "Document Upload", description: "Allow PDF/DOCX file upload in Document Assistant", enabled: true },
+    { key: "whatsapp_live", name: "WhatsApp Live Sending", description: "Enable real WhatsApp message delivery", enabled: false },
+    { key: "automations_engine", name: "Automation Engine", description: "Auto-execute workflow triggers", enabled: false },
+    { key: "advanced_analytics", name: "Advanced Analytics", description: "Extended reports and deflection insights", enabled: true },
+  ];
+  for (const f of defaultFlags) {
+    await db.platformFeatureFlag.upsert({
+      where: { key: f.key },
+      create: f,
+      update: { name: f.name, description: f.description },
+    });
+  }
+
   console.log("Seed complete.");
   console.log("  Business:", business.name, "(", business.publicKey, ")");
   console.log("  Login:    admin@danetstecpro.com / danets123");
+  console.log("  Super:    superadmin@danetstecpro.com / super123");
   console.log("  Widget public key:", business.publicKey);
 }
 

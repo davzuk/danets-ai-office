@@ -1,18 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireSuperAdmin } from "@/lib/super-admin";
+import { logActivity } from "@/lib/activity";
+import { getTenantUsage } from "@/lib/tenant-usage";
+
+const createSchema = z.object({
+  businessName: z.string().min(2).max(120),
+  industry: z.string().max(120).optional(),
+  email: z.string().email().optional(),
+  plan: z.enum(["free", "starter", "pro", "enterprise"]).default("free"),
+  adminName: z.string().min(2).max(80),
+  adminEmail: z.string().email(),
+  adminPassword: z.string().min(6).max(100),
+});
 
 // GET /api/super-admin/businesses — list all businesses with stats
 export async function GET(req: NextRequest) {
-  let user;
-  try {
-    user = await requireSession();
-  } catch {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (!user.isSuperAdmin) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireSuperAdmin();
+  if (auth.error) return auth.error;
 
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q")?.trim() || undefined;
@@ -94,5 +101,115 @@ export async function GET(req: NextRequest) {
           : { tokens: 0, costUsd: 0, requests: 0 },
       };
     }),
+  });
+}
+
+// POST /api/super-admin/businesses — create a new tenant
+export async function POST(req: NextRequest) {
+  const auth = await requireSuperAdmin();
+  if (auth.error) return auth.error;
+  const { user } = auth;
+
+  const body = await req.json().catch(() => null);
+  const parsed = createSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+  }
+
+  const {
+    businessName,
+    industry,
+    email,
+    plan,
+    adminName,
+    adminEmail,
+    adminPassword,
+  } = parsed.data;
+
+  const existing = await db.businessUser.findUnique({
+    where: { email: adminEmail.toLowerCase() },
+  });
+  if (existing) {
+    return NextResponse.json({ error: "Admin email already registered" }, { status: 409 });
+  }
+
+  const planRow = await db.subscriptionPlan.findUnique({
+    where: { name: plan },
+    select: { priceUsd: true },
+  });
+
+  const result = await db.$transaction(async (tx) => {
+    const business = await tx.business.create({
+      data: {
+        name: businessName.trim(),
+        industry: industry?.trim() || null,
+        email: email?.toLowerCase() || adminEmail.toLowerCase(),
+        plan,
+        status: "active",
+      },
+    });
+
+    const adminUser = await tx.businessUser.create({
+      data: {
+        businessId: business.id,
+        name: adminName.trim(),
+        email: adminEmail.toLowerCase(),
+        password: await bcrypt.hash(adminPassword, 10),
+        role: "admin",
+      },
+    });
+
+    await tx.aiAgent.create({
+      data: {
+        businessId: business.id,
+        botName: "Assistant",
+        businessName: business.name,
+        industry: industry || "General",
+        welcomeMessage: "Hi! How can I help you today?",
+        fallbackMessage:
+          "I'm not fully sure about that. Please contact our team for confirmation.",
+        handoverMessage: "Let me connect you with our team for further assistance.",
+        tone: "professional",
+        brandColor: "#1d4ed8",
+        status: "active",
+      },
+    });
+
+    await tx.businessSubscription.create({
+      data: {
+        businessId: business.id,
+        planName: plan,
+        status: "active",
+        monthlyFee: planRow?.priceUsd ?? 0,
+      },
+    });
+
+    return { business, adminUser };
+  });
+
+  await logActivity({
+    businessId: result.business.id,
+    userId: user.userId,
+    userName: `${user.name} (Super Admin)`,
+    action: "tenant_created",
+    module: "business",
+    description: `Super admin created tenant "${result.business.name}" with admin ${result.adminUser.email}`,
+    metadata: { plan, createdBy: user.email },
+  });
+
+  return NextResponse.json({
+    business: {
+      id: result.business.id,
+      name: result.business.name,
+      email: result.business.email,
+      plan: result.business.plan,
+      status: result.business.status,
+      createdAt: result.business.createdAt.toISOString(),
+    },
+    admin: {
+      id: result.adminUser.id,
+      name: result.adminUser.name,
+      email: result.adminUser.email,
+    },
   });
 }

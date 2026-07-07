@@ -49,6 +49,7 @@ model Business {
   invoices           Invoice[]
   whatsappMessages   WhatsAppMessage[]
   whiteLabel         WhiteLabelConfig?
+  featureFlagOverrides BusinessFeatureFlag[]
 }
 
 model BusinessUser {
@@ -825,4 +826,81 @@ model WhiteLabelConfig {
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
+}
+
+// ─── Platform Control (Super Admin) ───────────────────────────────
+
+model PlatformAnnouncement {
+  id        String    @id @default(cuid())
+  title     String
+  message   String
+  severity  String    @default("info") // info | warning | critical
+  isActive  Boolean   @default(true)
+  startsAt  DateTime  @default(now())
+  endsAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([isActive])
+  @@index([startsAt])
+}
+
+model PlatformFeatureFlag {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String?
+  enabled     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  overrides BusinessFeatureFlag[]
+}
+
+model BusinessFeatureFlag {
+  id         String   @id @default(cuid())
+  businessId String
+  flagKey    String
+  enabled    Boolean
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  business Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  flag     PlatformFeatureFlag @relation(fields: [flagKey], references: [key], onDelete: Cascade)
+
+  @@unique([businessId, flagKey])
+  @@index([businessId])
+  @@index([flagKey])
+}
+
+// ─── Platform Admin Auth (dedicated super-admin realm) ───────────
+
+model PlatformAdmin {
+  id             String   @id @default(cuid())
+  name           String
+  email          String   @unique
+  password       String   // bcrypt hash
+  totpSecret     String?  // base32 secret when 2FA enabled
+  totpPending    String?  // pending secret during setup
+  totpEnabled    Boolean  @default(false)
+  homeBusinessId String?  // audit-log context (Danets internal tenant)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  sessions PlatformSession[]
+
+  @@index([email])
+}
+
+model PlatformSession {
+  id              String   @id @default(cuid())
+  token           String   @unique
+  platformAdminId String
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+
+  platformAdmin PlatformAdmin @relation(fields: [platformAdminId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([platformAdminId])
 }

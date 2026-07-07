@@ -29,12 +29,24 @@ import {
   ExternalLink,
   FileText,
   BookOpen,
+  LayoutDashboard,
+  Receipt,
+  CreditCard,
+  Plus,
+  Trash2,
+  LogIn,
+  KeyRound,
+  Gauge,
+  History,
+  Settings2,
+  Download,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
@@ -83,6 +95,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  SuperAdminSubscriptionsPanel,
+  SuperAdminPaymentsPanel,
+  SuperAdminInvoicesPanel,
+} from "@/components/dashboard/views/super-admin-billing-panels";
+import { SuperAdminUsagePanel, UsageQuotaSummary } from "@/components/dashboard/views/super-admin-usage-panel";
+import { SuperAdminUsersPanel } from "@/components/dashboard/views/super-admin-users-panel";
+import { SuperAdminAuditPanel } from "@/components/dashboard/views/super-admin-audit-panel";
+import {
+  SuperAdminPlatformPanel,
+  exportTenantsCsv,
+} from "@/components/dashboard/views/super-admin-platform-panels";
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -114,6 +139,18 @@ interface StatsData {
     aiCostUsd: number;
   };
   plansBreakdown: { plan: string; count: number }[];
+  revenue?: {
+    mrr: number;
+    arr: number;
+    totalRevenue: number;
+    successfulPayments: number;
+    failedPayments: number;
+    pendingPayments: number;
+    paidInvoicesTotal: number;
+    paidInvoicesCount: number;
+    mrrByPlan: { plan: string; amount: number }[];
+    paymentsByStatus: { status: string; count: number; amount: number }[];
+  };
   recentBusinesses: {
     id: string;
     name: string;
@@ -172,7 +209,12 @@ interface BusinessDetail {
     id: string;
     plan: string;
     status: string;
-    seats: number | null;
+    monthlyFee: number;
+    startDate: string;
+    endDate: string | null;
+    trialEndsAt: string | null;
+    paymentMethod: string | null;
+    paymentRef: string | null;
     currentPeriodEnd: string | null;
     cancelAtPeriodEnd: boolean;
   } | null;
@@ -184,6 +226,14 @@ interface BusinessDetail {
     knowledgeBaseItems: number;
     documents: number;
     usageLogs: number;
+  };
+  usage?: {
+    chats: number;
+    leads: number;
+    kbItems: number;
+    aiRequests: number;
+    limits: { chatLimit: number; leadLimit: number; kbLimit: number; aiLimit: number };
+    percent: { chats: number; leads: number; kbItems: number; aiRequests: number };
   };
 }
 
@@ -242,6 +292,10 @@ function formatCost(n: number): string {
   });
 }
 
+function fmtMoney(n: number, currency = "USD") {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(n);
+}
+
 function formatCompact(n: number): string {
   if (n < 1000) return String(n);
   if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
@@ -275,7 +329,13 @@ function formatDate(iso: string): string {
 
 // ─── Main component ──────────────────────────────────────────────
 
-export function SuperAdminView({ user }: { user: SuperAdminUser }) {
+export function SuperAdminView({
+  user,
+  onSessionChange,
+}: {
+  user: SuperAdminUser;
+  onSessionChange?: (user: SuperAdminUser) => void;
+}) {
   // Guard: only super admins may view this.
   if (!user?.isSuperAdmin) {
     return (
@@ -294,10 +354,14 @@ export function SuperAdminView({ user }: { user: SuperAdminUser }) {
     );
   }
 
-  return <SuperAdminInner />;
+  return <SuperAdminInner onSessionChange={onSessionChange} />;
 }
 
-function SuperAdminInner() {
+function SuperAdminInner({
+  onSessionChange,
+}: {
+  onSessionChange?: (user: SuperAdminUser) => void;
+}) {
   const [stats, setStats] = React.useState<StatsData | null>(null);
   const [businesses, setBusinesses] = React.useState<BusinessRow[]>([]);
   const [statsLoading, setStatsLoading] = React.useState(true);
@@ -309,6 +373,7 @@ function SuperAdminInner() {
   const [debounced, setDebounced] = React.useState("");
   const [planFilter, setPlanFilter] = React.useState<string>("all");
   const [statusFilter, setStatusFilter] = React.useState<string>("all");
+  const [mainTab, setMainTab] = React.useState("overview");
 
   // Detail dialog state
   const [detailId, setDetailId] = React.useState<string | null>(null);
@@ -318,6 +383,28 @@ function SuperAdminInner() {
   // Suspend/activate confirmation
   const [toggleTarget, setToggleTarget] = React.useState<BusinessRow | null>(null);
   const [toggling, setToggling] = React.useState(false);
+
+  // Create tenant
+  const [createOpen, setCreateOpen] = React.useState(false);
+  const [creating, setCreating] = React.useState(false);
+  const [createForm, setCreateForm] = React.useState({
+    businessName: "",
+    industry: "",
+    email: "",
+    plan: "free" as Plan,
+    adminName: "",
+    adminEmail: "",
+    adminPassword: "",
+  });
+
+  // Delete tenant
+  const [deleteTarget, setDeleteTarget] = React.useState<BusinessRow | null>(null);
+  const [deleting, setDeleting] = React.useState(false);
+
+  // Password reset in detail dialog
+  const [resetUserId, setResetUserId] = React.useState<string | null>(null);
+  const [resetPassword, setResetPassword] = React.useState("");
+  const [resetting, setResetting] = React.useState(false);
 
   // Refresh stats
   async function loadStats() {
@@ -466,6 +553,120 @@ function SuperAdminInner() {
     }
   }
 
+  async function createTenant() {
+    if (
+      !createForm.businessName.trim() ||
+      !createForm.adminName.trim() ||
+      !createForm.adminEmail.trim() ||
+      createForm.adminPassword.length < 6
+    ) {
+      toast.error("Fill in all required fields (password min. 6 chars)");
+      return;
+    }
+    setCreating(true);
+    try {
+      const res = await fetch("/api/super-admin/businesses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          businessName: createForm.businessName.trim(),
+          industry: createForm.industry.trim() || undefined,
+          email: createForm.email.trim() || undefined,
+          plan: createForm.plan,
+          adminName: createForm.adminName.trim(),
+          adminEmail: createForm.adminEmail.trim(),
+          adminPassword: createForm.adminPassword,
+        }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || `Failed (${res.status})`);
+      }
+      toast.success(`Tenant "${createForm.businessName}" created`);
+      setCreateOpen(false);
+      setCreateForm({
+        businessName: "",
+        industry: "",
+        email: "",
+        plan: "free",
+        adminName: "",
+        adminEmail: "",
+        adminPassword: "",
+      });
+      loadBusinesses();
+      loadStats();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to create tenant");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/super-admin/businesses/${deleteTarget.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || `Failed (${res.status})`);
+      }
+      toast.success(`Deleted ${deleteTarget.name}`);
+      setBusinesses((prev) => prev.filter((b) => b.id !== deleteTarget.id));
+      if (detailId === deleteTarget.id) setDetailId(null);
+      setDeleteTarget(null);
+      loadStats();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete tenant");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function impersonateUser(userId: string, businessId: string, label: string) {
+    try {
+      const res = await fetch("/api/super-admin/impersonate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, businessId }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || `Failed (${res.status})`);
+      }
+      const data = await res.json();
+      toast.success(`Now impersonating ${label}`);
+      onSessionChange?.(data.user);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Impersonation failed");
+    }
+  }
+
+  async function resetUserPassword() {
+    if (!resetUserId || resetPassword.length < 6) return;
+    setResetting(true);
+    try {
+      const res = await fetch(`/api/super-admin/users/${resetUserId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: resetPassword }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || `Failed (${res.status})`);
+      }
+      toast.success("Password reset successfully");
+      setResetUserId(null);
+      setResetPassword("");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Reset failed");
+    } finally {
+      setResetting(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Distinctive header bar (dark gradient) */}
@@ -500,7 +701,7 @@ function SuperAdminInner() {
               size="sm"
               onClick={() => {
                 loadStats();
-                loadBusinesses();
+                if (mainTab === "tenants") loadBusinesses();
               }}
               className="gap-2 border-slate-600 bg-slate-800/60 text-slate-100 hover:bg-slate-700 hover:text-white"
             >
@@ -510,6 +711,72 @@ function SuperAdminInner() {
           </div>
         </div>
       </div>
+
+      <Tabs value={mainTab} onValueChange={setMainTab} className="space-y-4">
+        <TabsList className="flex flex-wrap h-auto gap-1">
+          <TabsTrigger value="overview" className="gap-1.5">
+            <LayoutDashboard className="h-3.5 w-3.5" /> Overview
+          </TabsTrigger>
+          <TabsTrigger value="tenants" className="gap-1.5">
+            <Building2 className="h-3.5 w-3.5" /> Tenants
+          </TabsTrigger>
+          <TabsTrigger value="usage" className="gap-1.5">
+            <Gauge className="h-3.5 w-3.5" /> Usage
+          </TabsTrigger>
+          <TabsTrigger value="users" className="gap-1.5">
+            <Users className="h-3.5 w-3.5" /> Users
+          </TabsTrigger>
+          <TabsTrigger value="audit" className="gap-1.5">
+            <History className="h-3.5 w-3.5" /> Audit
+          </TabsTrigger>
+          <TabsTrigger value="platform" className="gap-1.5">
+            <Settings2 className="h-3.5 w-3.5" /> Platform
+          </TabsTrigger>
+          <TabsTrigger value="subscriptions" className="gap-1.5">
+            <Crown className="h-3.5 w-3.5" /> Subscriptions
+          </TabsTrigger>
+          <TabsTrigger value="payments" className="gap-1.5">
+            <CreditCard className="h-3.5 w-3.5" /> Payments
+          </TabsTrigger>
+          <TabsTrigger value="invoices" className="gap-1.5">
+            <Receipt className="h-3.5 w-3.5" /> Invoices
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="space-y-6 mt-0">
+      {/* Revenue row */}
+      {!statsLoading && stats?.revenue && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <StatCard
+            label="MRR"
+            value={fmtMoney(stats.revenue.mrr)}
+            icon={<CircleDollarSign className="h-4 w-4" />}
+            accent="emerald"
+            hint={`ARR ${fmtMoney(stats.revenue.arr)}`}
+          />
+          <StatCard
+            label="Total Revenue"
+            value={fmtMoney(stats.revenue.totalRevenue)}
+            icon={<DollarSign className="h-4 w-4" />}
+            accent="blue"
+            hint={`${stats.revenue.successfulPayments} payments`}
+          />
+          <StatCard
+            label="Pending Payments"
+            value={String(stats.revenue.pendingPayments)}
+            icon={<CreditCard className="h-4 w-4" />}
+            accent="amber"
+            hint={`${stats.revenue.failedPayments} failed`}
+          />
+          <StatCard
+            label="Paid Invoices"
+            value={fmtMoney(stats.revenue.paidInvoicesTotal)}
+            icon={<FileText className="h-4 w-4" />}
+            accent="violet"
+            hint={`${stats.revenue.paidInvoicesCount} invoices`}
+          />
+        </div>
+      )}
 
       {/* System stats row */}
       {statsLoading ? (
@@ -601,7 +868,9 @@ function SuperAdminInner() {
           onView={setDetailId}
         />
       </div>
+        </TabsContent>
 
+        <TabsContent value="tenants" className="space-y-6 mt-0">
       {/* Businesses management table */}
       <Card>
         <CardHeader className="space-y-4">
@@ -612,8 +881,18 @@ function SuperAdminInner() {
                 Businesses Management
               </CardTitle>
               <CardDescription>
-                Search, filter, suspend, and change plans for any business on the platform.
+                Search, filter, create, suspend, and manage any business on the platform.
               </CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2 shrink-0">
+              <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1.5">
+                <Plus className="h-4 w-4" />
+                Create Tenant
+              </Button>
+              <Button size="sm" variant="outline" onClick={exportTenantsCsv} className="gap-1.5">
+                <Download className="h-4 w-4" />
+                Export CSV
+              </Button>
             </div>
           </div>
           {/* Toolbar */}
@@ -692,6 +971,7 @@ function SuperAdminInner() {
                       onView={() => setDetailId(b.id)}
                       onToggle={() => setToggleTarget(b)}
                       onPlanChange={(plan) => changePlan(b, plan)}
+                      onDelete={() => setDeleteTarget(b)}
                     />
                   ))}
                 </TableBody>
@@ -700,6 +980,45 @@ function SuperAdminInner() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="usage" className="mt-0">
+          <SuperAdminUsagePanel />
+        </TabsContent>
+
+        <TabsContent value="users" className="mt-0">
+          <SuperAdminUsersPanel
+            businesses={businesses.map((b) => ({ id: b.id, name: b.name }))}
+            onImpersonate={(u) => impersonateUser(u.id, u.business.id, u.email)}
+          />
+        </TabsContent>
+
+        <TabsContent value="audit" className="mt-0">
+          <SuperAdminAuditPanel
+            businesses={businesses.map((b) => ({ id: b.id, name: b.name }))}
+          />
+        </TabsContent>
+
+        <TabsContent value="platform" className="mt-0">
+          <SuperAdminPlatformPanel
+            businesses={businesses.map((b) => ({ id: b.id, name: b.name }))}
+          />
+        </TabsContent>
+
+        <TabsContent value="subscriptions" className="mt-0">
+          <SuperAdminSubscriptionsPanel />
+        </TabsContent>
+
+        <TabsContent value="payments" className="mt-0">
+          <SuperAdminPaymentsPanel />
+        </TabsContent>
+
+        <TabsContent value="invoices" className="mt-0">
+          <SuperAdminInvoicesPanel
+            businesses={businesses.map((b) => ({ id: b.id, name: b.name }))}
+          />
+        </TabsContent>
+      </Tabs>
 
       {/* Detail dialog */}
       <Dialog open={!!detailId} onOpenChange={(open) => !open && setDetailId(null)}>
@@ -777,16 +1096,34 @@ function SuperAdminInner() {
                       <span className="text-muted-foreground">Status</span>
                       <span className="font-medium capitalize">{detail.subscription.status}</span>
                     </div>
-                    {detail.subscription.seats != null && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Monthly fee</span>
+                      <span className="font-medium">
+                        ${detail.subscription.monthlyFee.toFixed(2)}
+                      </span>
+                    </div>
+                    {detail.subscription.trialEndsAt && (
                       <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">Seats</span>
-                        <span className="font-medium">{detail.subscription.seats}</span>
+                        <span className="text-muted-foreground">Trial ends</span>
+                        <span className="font-medium">
+                          {formatDate(detail.subscription.trialEndsAt)}
+                        </span>
                       </div>
                     )}
                     {detail.subscription.currentPeriodEnd && (
                       <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">Renews</span>
-                        <span className="font-medium">{formatDate(detail.subscription.currentPeriodEnd)}</span>
+                        <span className="text-muted-foreground">Renews / ends</span>
+                        <span className="font-medium">
+                          {formatDate(detail.subscription.currentPeriodEnd)}
+                        </span>
+                      </div>
+                    )}
+                    {detail.subscription.paymentMethod && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Payment</span>
+                        <span className="font-medium capitalize">
+                          {detail.subscription.paymentMethod}
+                        </span>
                       </div>
                     )}
                     {detail.subscription.cancelAtPeriodEnd && (
@@ -807,6 +1144,8 @@ function SuperAdminInner() {
                 </div>
                 <code className="text-xs font-mono break-all">{detail.publicKey}</code>
               </div>
+
+              {detail.usage && <UsageQuotaSummary usage={detail.usage} />}
 
               <Separator />
 
@@ -840,6 +1179,31 @@ function SuperAdminInner() {
                       <Badge variant={u.role === "admin" ? "default" : "secondary"} className="capitalize text-xs">
                         {u.role}
                       </Badge>
+                      {!u.isSuperAdmin && (
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8"
+                            title="Impersonate"
+                            onClick={() => impersonateUser(u.id, detail.id, u.email)}
+                          >
+                            <LogIn className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8"
+                            title="Reset password"
+                            onClick={() => {
+                              setResetUserId(u.id);
+                              setResetPassword("");
+                            }}
+                          >
+                            <KeyRound className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -894,6 +1258,153 @@ function SuperAdminInner() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Create tenant */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Create Tenant</DialogTitle>
+            <DialogDescription>
+              Provision a new business with an admin account, default AI agent, and subscription.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div className="space-y-1.5">
+              <Label>Business name *</Label>
+              <Input
+                value={createForm.businessName}
+                onChange={(e) => setCreateForm((f) => ({ ...f, businessName: e.target.value }))}
+                placeholder="Acme Corp"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Industry</Label>
+                <Input
+                  value={createForm.industry}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, industry: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Plan</Label>
+                <Select
+                  value={createForm.plan}
+                  onValueChange={(v) => setCreateForm((f) => ({ ...f, plan: v as Plan }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PLAN_ORDER.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {planMeta(p).label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Business email</Label>
+              <Input
+                type="email"
+                value={createForm.email}
+                onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))}
+                placeholder="Optional — defaults to admin email"
+              />
+            </div>
+            <Separator />
+            <div className="space-y-1.5">
+              <Label>Admin name *</Label>
+              <Input
+                value={createForm.adminName}
+                onChange={(e) => setCreateForm((f) => ({ ...f, adminName: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Admin email *</Label>
+              <Input
+                type="email"
+                value={createForm.adminEmail}
+                onChange={(e) => setCreateForm((f) => ({ ...f, adminEmail: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Admin password *</Label>
+              <Input
+                type="password"
+                value={createForm.adminPassword}
+                onChange={(e) => setCreateForm((f) => ({ ...f, adminPassword: e.target.value }))}
+                placeholder="Min. 6 characters"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>
+              Cancel
+            </Button>
+            <Button onClick={createTenant} disabled={creating}>
+              {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Create Tenant
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete tenant */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {deleteTarget?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes the tenant and all associated data (leads, chats, documents, etc.).
+              Tenants with super admin users cannot be deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={(e) => {
+                e.preventDefault();
+                confirmDelete();
+              }}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Delete Tenant
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Password reset (detail dialog) */}
+      <Dialog open={!!resetUserId} onOpenChange={(o) => !o && setResetUserId(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reset Password</DialogTitle>
+            <DialogDescription>Set a new password for this user.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>New password</Label>
+            <Input
+              type="password"
+              value={resetPassword}
+              onChange={(e) => setResetPassword(e.target.value)}
+              placeholder="Min. 6 characters"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetUserId(null)} disabled={resetting}>
+              Cancel
+            </Button>
+            <Button onClick={resetUserPassword} disabled={resetting || resetPassword.length < 6}>
+              {resetting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Reset
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1142,11 +1653,13 @@ function BusinessRowItem({
   onView,
   onToggle,
   onPlanChange,
+  onDelete,
 }: {
   business: BusinessRow;
   onView: () => void;
   onToggle: () => void;
   onPlanChange: (plan: Plan) => void;
+  onDelete: () => void;
 }) {
   const meta = planMeta(business.plan);
   const isActive = business.status === "active";
@@ -1271,6 +1784,14 @@ function BusinessRowItem({
                 })}
               </DropdownMenuSubContent>
             </DropdownMenuSub>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={onDelete}
+              className="text-destructive focus:text-destructive"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete Tenant
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </TableCell>

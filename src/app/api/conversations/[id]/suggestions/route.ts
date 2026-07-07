@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
 import { aiChat, logUsage } from "@/lib/ai";
+import { requireAiQuota } from "@/lib/plan-limits";
 
 // POST /api/conversations/[id]/suggestions
 // Generates AI suggested replies for the conversation. Updates the ChatSession
@@ -27,6 +28,8 @@ export async function POST(
     if (!session || session.businessId !== user.businessId) {
       return { error: "Conversation not found", suggestions: null };
     }
+
+    await requireAiQuota(user.businessId);
 
     if (!session.messages || session.messages.length === 0) {
       return {

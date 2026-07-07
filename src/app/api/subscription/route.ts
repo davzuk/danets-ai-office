@@ -119,10 +119,6 @@ export function PUT(req: NextRequest) {
     });
     if (!plan) throw new Error("Plan not found");
 
-    let subscription = await db.businessSubscription.findUnique({
-      where: { businessId: user.businessId },
-    });
-
     const data: any = {
       planName: parsed.data.planName,
       monthlyFee: plan.priceUsd,
@@ -131,21 +127,24 @@ export function PUT(req: NextRequest) {
     if (parsed.data.paymentRef !== undefined) data.paymentRef = parsed.data.paymentRef || null;
     if (parsed.data.status) data.status = parsed.data.status;
 
-    if (subscription) {
-      subscription = await db.businessSubscription.update({
-        where: { id: subscription.id },
-        data,
+    // Sync Business.plan and BusinessSubscription in one transaction so
+    // the two cannot drift apart.
+    const subscription = await db.$transaction(async (tx) => {
+      const existing = await tx.businessSubscription.findUnique({
+        where: { businessId: user.businessId },
       });
-    } else {
-      subscription = await db.businessSubscription.create({
-        data: { businessId: user.businessId, ...data },
-      });
-    }
+      const result = existing
+        ? await tx.businessSubscription.update({ where: { id: existing.id }, data })
+        : await tx.businessSubscription.create({
+            data: { businessId: user.businessId, ...data },
+          });
 
-    // Also update the business plan field
-    await db.business.update({
-      where: { id: user.businessId },
-      data: { plan: parsed.data.planName },
+      await tx.business.update({
+        where: { id: user.businessId },
+        data: { plan: parsed.data.planName },
+      });
+
+      return result;
     });
 
     await logActivity({

@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { createSession } from "@/lib/auth";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
-import { logActivity } from "@/lib/activity";
+import { destroyPlatformSession } from "@/lib/platform-auth";
 
 const schema = z.object({
   email: z.string().email(),
@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Business suspended" }, { status: 403 });
   }
 
+  await destroyPlatformSession();
   await createSession(user.id, user.businessId);
 
   await logActivity({
@@ -58,6 +59,7 @@ export async function POST(req: NextRequest) {
       role: user.role,
       businessId: user.businessId,
       businessName: user.business.name,
+      isSuperAdmin: user.isSuperAdmin,
     },
   });
 }

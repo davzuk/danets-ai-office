@@ -29,6 +29,7 @@ import { DanetsLogo } from "@/components/dashboard/shared/danets-logo";
 import { ThemeToggle } from "@/components/dashboard/shared/theme-toggle";
 import { NotificationBell } from "@/components/dashboard/shared/notification-bell";
 import { CommandPalette } from "@/components/dashboard/shared/command-palette";
+import { PlatformAnnouncementBanner } from "@/components/dashboard/shared/platform-announcement-banner";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -86,6 +87,7 @@ export function AppShell({
   active,
   onNavigate,
   onLogout,
+  onSessionChange,
   children,
 }: {
   user: {
@@ -94,10 +96,22 @@ export function AppShell({
     businessName: string;
     businessId: string;
     isSuperAdmin?: boolean;
+    isPlatformAdmin?: boolean;
+    isImpersonating?: boolean;
   };
   active: ViewId;
   onNavigate: (v: ViewId) => void;
   onLogout: () => void;
+  onSessionChange?: (user: {
+    userId: string;
+    name: string;
+    email: string;
+    role: string;
+    businessId: string;
+    businessName: string;
+    isSuperAdmin: boolean;
+    isImpersonating?: boolean;
+  }) => void;
   children: React.ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -122,15 +136,50 @@ export function AppShell({
   ];
 
   async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
+    await Promise.all([
+      fetch("/api/auth/logout", { method: "POST" }),
+      fetch("/api/platform-auth/logout", { method: "POST" }),
+    ]);
     toast.success("Signed out");
     onLogout();
+  }
+
+  async function exitImpersonation() {
+    try {
+      const res = await fetch("/api/super-admin/impersonate/exit", { method: "POST" });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Failed to exit");
+      }
+      const data = await res.json();
+      toast.success("Returned to super admin session");
+      onSessionChange?.(data.user);
+      onNavigate(data.user.isPlatformAdmin || data.user.isSuperAdmin ? "super-admin" : "overview");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to exit impersonation");
+    }
   }
 
   const activeItem = NAV.find((n) => n.id === active);
 
   return (
     <div className="min-h-screen flex bg-muted/30">
+      {user.isImpersonating && (
+        <div className="fixed top-0 inset-x-0 z-[60] bg-amber-500 text-amber-950 px-4 py-2 flex items-center justify-between gap-3 text-sm shadow-md">
+          <span className="font-medium truncate">
+            Impersonating <strong>{user.email}</strong> at {user.businessName}
+          </span>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="shrink-0 h-8 gap-1.5 bg-amber-950/10 hover:bg-amber-950/20 text-amber-950 border-amber-900/20"
+            onClick={exitImpersonation}
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            Exit Impersonation
+          </Button>
+        </div>
+      )}
       {/* Sidebar - desktop */}
       <aside className="hidden lg:flex w-64 flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border shrink-0">
         <SidebarContent
@@ -139,7 +188,7 @@ export function AppShell({
             onNavigate(v);
             setMobileOpen(false);
           }}
-          isSuperAdmin={user.isSuperAdmin}
+          isSuperAdmin={user.isSuperAdmin || user.isPlatformAdmin}
           groups={groups}
         />
         <SidebarFooter user={user} onLogout={logout} />
@@ -170,7 +219,7 @@ export function AppShell({
                 onNavigate(v);
                 setMobileOpen(false);
               }}
-              isSuperAdmin={user.isSuperAdmin}
+              isSuperAdmin={user.isSuperAdmin || user.isPlatformAdmin}
               groups={groups}
             />
             <SidebarFooter user={user} onLogout={logout} />
@@ -179,7 +228,7 @@ export function AppShell({
       )}
 
       {/* Main */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className={cn("flex-1 flex flex-col min-w-0", user.isImpersonating && "pt-10")}>
         {/* Top bar */}
         <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-background/80 backdrop-blur px-4 lg:px-6">
           <Button
@@ -237,6 +286,10 @@ export function AppShell({
         </header>
 
         {/* Content */}
+        <PlatformAnnouncementBanner
+          isSuperAdmin={user.isSuperAdmin}
+          isPlatformAdmin={user.isPlatformAdmin}
+        />
         <main className="flex-1 p-4 lg:p-6 overflow-x-hidden">
           {children}
         </main>

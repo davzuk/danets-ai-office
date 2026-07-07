@@ -1344,7 +1344,7 @@ function IntegrationSection() {
                 </Label>
                 <Input
                   id="int-webhook"
-                  placeholder="https://your-app.com/api/whatsapp/webhook"
+                  placeholder="https://your-app.com/api/whatsapp/incoming"
                   value={form.webhookUrl}
                   onChange={(e) => setForm({ ...form, webhookUrl: e.target.value })}
                 />

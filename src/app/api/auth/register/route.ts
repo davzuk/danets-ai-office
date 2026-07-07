@@ -81,6 +81,7 @@ export async function POST(req: NextRequest) {
       role: user.role,
       businessId: business.id,
       businessName: business.name,
+      isSuperAdmin: user.isSuperAdmin,
     },
   });
 }

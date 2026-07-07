@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { aiChat, logUsage } from "@/lib/ai";
 import { withSession } from "@/lib/api";
+import { requireAiQuota } from "@/lib/plan-limits";
 
 const createSchema = z.object({
   clientName: z.string().min(1, "Client name is required").max(120),
@@ -151,6 +152,8 @@ export async function POST(req: NextRequest) {
         parsed.error.issues[0]?.message ?? "Invalid request input"
       );
     }
+
+    await requireAiQuota(user.businessId);
 
     const {
       clientName,

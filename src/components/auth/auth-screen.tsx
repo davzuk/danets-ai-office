@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, ShieldCheck, Sparkles, Lock, Mail, User, Building2 } from "lucide-react";
+import { Loader2, ShieldCheck, Sparkles, Lock, Mail, User, Building2, Shield, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,11 +16,17 @@ interface AuthUser {
   role: string;
   businessId: string;
   businessName: string;
+  isSuperAdmin?: boolean;
+  isPlatformAdmin?: boolean;
+  totpEnabled?: boolean;
 }
 
+type AuthMode = "login" | "register" | "platform";
+
 export function AuthScreen({ onAuthed }: { onAuthed: (u: AuthUser) => void }) {
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<AuthMode>("login");
   const [loading, setLoading] = useState(false);
+  const [needsTotp, setNeedsTotp] = useState(false);
   const router = useRouter();
 
   const [form, setForm] = useState({
@@ -29,12 +35,37 @@ export function AuthScreen({ onAuthed }: { onAuthed: (u: AuthUser) => void }) {
     name: "",
     businessName: "",
     industry: "",
+    totpCode: "",
   });
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     try {
+      if (mode === "platform") {
+        const res = await fetch("/api/platform-auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: form.email,
+            password: form.password,
+            totpCode: form.totpCode || undefined,
+          }),
+        });
+        const data = await res.json();
+        if (data.requiresTotp) {
+          setNeedsTotp(true);
+          setForm((f) => ({ ...f, email: data.email || f.email }));
+          toast.message("Enter your 2FA code to continue");
+          return;
+        }
+        if (!res.ok) throw new Error(data.error || "Authentication failed");
+        toast.success("Platform admin access granted");
+        onAuthed(data.user);
+        router.refresh();
+        return;
+      }
+
       const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/register";
       const payload =
         mode === "login"
@@ -56,12 +87,26 @@ export function AuthScreen({ onAuthed }: { onAuthed: (u: AuthUser) => void }) {
       toast.success(mode === "login" ? "Welcome back!" : "Account created!");
       onAuthed(data.user);
       router.refresh();
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Authentication failed");
     } finally {
       setLoading(false);
     }
   }
+
+  const title =
+    mode === "platform"
+      ? "Platform admin sign in"
+      : mode === "login"
+        ? "Sign in to your dashboard"
+        : "Create your business account";
+
+  const subtitle =
+    mode === "platform"
+      ? "Danets TecPro internal operators — separate secure auth realm."
+      : mode === "login"
+        ? "Enter your credentials to access Danets AI Automation."
+        : "Start automating your customer conversations in minutes.";
 
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
@@ -117,15 +162,16 @@ export function AuthScreen({ onAuthed }: { onAuthed: (u: AuthUser) => void }) {
           </div>
 
           <div className="space-y-1.5">
-            <h2 className="text-2xl font-bold tracking-tight">
-              {mode === "login" ? "Sign in to your dashboard" : "Create your business account"}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {mode === "login"
-                ? "Enter your credentials to access Danets AI Automation."
-                : "Start automating your customer conversations in minutes."}
-            </p>
+            <h2 className="text-2xl font-bold tracking-tight">{title}</h2>
+            <p className="text-sm text-muted-foreground">{subtitle}</p>
           </div>
+
+          {mode === "platform" && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200 flex items-center gap-2">
+              <Shield className="h-4 w-4 shrink-0" />
+              Internal platform access only. All actions are audit-logged.
+            </div>
+          )}
 
           <form onSubmit={submit} className="space-y-4">
             {mode === "register" && (
@@ -161,7 +207,7 @@ export function AuthScreen({ onAuthed }: { onAuthed: (u: AuthUser) => void }) {
               type="email"
               value={form.email}
               onChange={(v) => setForm({ ...form, email: v })}
-              placeholder="you@company.com"
+              placeholder={mode === "platform" ? "superadmin@danetstecpro.com" : "you@company.com"}
               required
             />
             <Field
@@ -173,6 +219,16 @@ export function AuthScreen({ onAuthed }: { onAuthed: (u: AuthUser) => void }) {
               placeholder="••••••••"
               required
             />
+            {(mode === "platform" && needsTotp) && (
+              <Field
+                icon={<KeyRound size={16} />}
+                label="2FA code"
+                value={form.totpCode}
+                onChange={(v) => setForm({ ...form, totpCode: v })}
+                placeholder="6-digit code"
+                required
+              />
+            )}
 
             <Button
               type="submit"
@@ -180,12 +236,32 @@ export function AuthScreen({ onAuthed }: { onAuthed: (u: AuthUser) => void }) {
               disabled={loading}
             >
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {mode === "login" ? "Sign in" : "Create account"}
+              {mode === "platform"
+                ? needsTotp
+                  ? "Verify & sign in"
+                  : "Platform sign in"
+                : mode === "login"
+                  ? "Sign in"
+                  : "Create account"}
             </Button>
           </form>
 
           <div className="text-center text-sm text-muted-foreground">
-            {mode === "login" ? (
+            {mode === "platform" ? (
+              <>
+                Tenant dashboard?{" "}
+                <button
+                  className="text-primary font-semibold hover:underline"
+                  onClick={() => {
+                    setMode("login");
+                    setNeedsTotp(false);
+                    setForm((f) => ({ ...f, totpCode: "" }));
+                  }}
+                >
+                  Business sign in
+                </button>
+              </>
+            ) : mode === "login" ? (
               <>
                 Don&apos;t have an account?{" "}
                 <button
@@ -209,9 +285,37 @@ export function AuthScreen({ onAuthed }: { onAuthed: (u: AuthUser) => void }) {
           </div>
 
           {mode === "login" && (
+            <div className="rounded-lg border border-dashed bg-muted/40 p-3 text-xs text-muted-foreground text-center space-y-2">
+              <div>
+                <span className="font-medium text-foreground">Demo account:</span>{" "}
+                admin@danetstecpro.com · danets123
+              </div>
+              <button
+                type="button"
+                className="text-primary font-semibold hover:underline inline-flex items-center gap-1"
+                onClick={() => {
+                  setMode("platform");
+                  setForm({
+                    email: "superadmin@danetstecpro.com",
+                    password: "super123",
+                    name: "",
+                    businessName: "",
+                    industry: "",
+                    totpCode: "",
+                  });
+                  setNeedsTotp(false);
+                }}
+              >
+                <Shield size={12} />
+                Platform admin sign in
+              </button>
+            </div>
+          )}
+
+          {mode === "platform" && !needsTotp && (
             <div className="rounded-lg border border-dashed bg-muted/40 p-3 text-xs text-muted-foreground text-center">
-              <span className="font-medium text-foreground">Demo account:</span>{" "}
-              admin@danetstecpro.com · danets123
+              <span className="font-medium text-foreground">Platform demo:</span>{" "}
+              superadmin@danetstecpro.com · super123
             </div>
           )}
         </div>

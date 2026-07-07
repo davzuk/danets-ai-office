@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { aiChat, logUsage, retrieveKnowledge } from "@/lib/ai";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
+import { checkChatRateLimit, checkMonthlyAiQuota } from "@/lib/plan-limits";
 
 const chatSchema = z.object({
   pk: z.string().min(1),
@@ -42,6 +43,30 @@ export async function POST(req: NextRequest) {
   });
   if (!business) {
     return NextResponse.json({ error: "Business not found" }, { status: 404 });
+  }
+
+  // Enforce the tenant's plan limits: a per-hour chat rate limit keyed by
+  // business + visitor IP, and a monthly AI request quota. Suspended or
+  // over-quota tenants get a clear message instead of silently failing.
+  const chatLimit = await checkChatRateLimit(business.id, ip);
+  if (!chatLimit.allowed) {
+    return NextResponse.json(
+      {
+        error: "This site's chat limit has been reached for now. Please try again shortly.",
+      },
+      { status: 429 }
+    );
+  }
+
+  const quota = await checkMonthlyAiQuota(business.id);
+  if (!quota.allowed) {
+    return NextResponse.json(
+      {
+        error:
+          "This business's monthly AI quota has been reached. Please contact the business directly.",
+      },
+      { status: 429 }
+    );
   }
 
   // Load active AI agent

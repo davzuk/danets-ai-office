@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { aiChat, logUsage } from "@/lib/ai";
+import { checkMonthlyAiQuota, quotaExceededResponse } from "@/lib/plan-limits";
 
 const askSchema = z.object({
   question: z.string().min(2).max(1000),
@@ -40,6 +41,9 @@ export async function POST(req: NextRequest, { params }: RouteCtx) {
   }
 
   const { question } = parsed.data;
+
+  const quota = await checkMonthlyAiQuota(user.businessId);
+  if (!quota.allowed) return quotaExceededResponse();
 
   // Save the question first
   const questionRecord = await db.documentAiQuestion.create({
