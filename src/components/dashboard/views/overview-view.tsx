@@ -52,6 +52,10 @@ interface Stats {
   topKb: any[];
   usageByFeature: { feature: string; count: number; tokens: number }[];
   series: { date: string; label: string; leads: number; sessions: number }[];
+  insights?: AnalyticsData["insights"];
+  topQuestions?: AnalyticsData["topQuestions"];
+  leadQuality?: AnalyticsData["leadQuality"];
+  hourly?: AnalyticsData["hourly"];
 }
 
 interface AnalyticsData {
@@ -77,19 +81,22 @@ export function OverviewView({
   onNavigate: (v: ViewId) => void;
 }) {
   const [data, setData] = useState<Stats | null>(null);
-  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
+  const [analyticsLocked, setAnalyticsLocked] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([
-      fetch("/api/dashboard/stats", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/analytics", { cache: "no-store" }).then((r) => r.json().catch(() => null)),
-    ])
-      .then(([d, a]) => {
-        setData(d);
-        setAnalytics(a);
+    fetch("/api/dashboard/stats", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        setData(d?.stats ? d : null);
       })
       .finally(() => setLoading(false));
+
+    fetch("/api/analytics", { cache: "no-store" }).then((r) => {
+      if (!r.ok) {
+        setAnalyticsLocked(r.status === 403);
+      }
+    });
   }, []);
 
   if (loading) {
@@ -110,6 +117,9 @@ export function OverviewView({
   }
 
   const s = data?.stats;
+  const insights = data?.insights;
+  const topQuestions = data?.topQuestions ?? [];
+  const leadQuality = data?.leadQuality ?? { high: 0, medium: 0, low: 0 };
   const featureColors: Record<string, string> = {
     chat: "var(--chart-1)",
     suggested_reply: "var(--chart-2)",
@@ -300,14 +310,14 @@ export function OverviewView({
         </Card>
       </div>
 
-      {/* AI Insights & Analytics */}
-      {analytics && (
+      {/* AI Insights — available on all plans via dashboard stats */}
+      {insights && (
         <div className="grid gap-4 lg:grid-cols-4">
           {/* Insight stat cards */}
           <InsightCard
             icon={CheckCircle2}
             label="AI Deflection Rate"
-            value={`${analytics.insights.deflectionRate}%`}
+            value={`${insights.deflectionRate}%`}
             sub="Sessions resolved without handover"
             color="text-accent-foreground"
             bg="bg-accent/15"
@@ -315,7 +325,7 @@ export function OverviewView({
           <InsightCard
             icon={Target}
             label="Lead Conversion"
-            value={`${analytics.insights.leadConversion}%`}
+            value={`${insights.leadConversion}%`}
             sub="Sessions that became leads"
             color="text-primary"
             bg="bg-primary/10"
@@ -323,7 +333,7 @@ export function OverviewView({
           <InsightCard
             icon={MessagesSquare}
             label="Avg Messages/Session"
-            value={String(analytics.insights.avgMessages)}
+            value={String(insights.avgMessages)}
             sub="Engagement depth"
             color="text-foreground"
             bg="bg-muted"
@@ -331,16 +341,32 @@ export function OverviewView({
           <InsightCard
             icon={Zap}
             label="AI Success Rate"
-            value={`${analytics.insights.aiSuccessRate}%`}
-            sub={`${analytics.insights.aiRequests} requests (30d)`}
+            value={`${insights.aiSuccessRate}%`}
+            sub={`${insights.aiRequests} requests (30d)`}
             color="text-accent-foreground"
             bg="bg-accent/15"
           />
         </div>
       )}
 
+      {analyticsLocked && (
+        <Card className="border-dashed bg-muted/30">
+          <CardContent className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 py-4">
+            <div>
+              <p className="text-sm font-medium">Advanced Analytics module</p>
+              <p className="text-sm text-muted-foreground">
+                Upgrade to Starter for the full Analytics dashboard with date ranges and reports.
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => onNavigate("subscription")}>
+              View plans
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Top Questions + Lead Quality */}
-      {analytics && (
+      {insights && (
         <div className="grid gap-4 lg:grid-cols-2">
           <Card>
             <CardHeader className="pb-3">
@@ -350,13 +376,13 @@ export function OverviewView({
               <CardDescription>Most asked questions (30 days)</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              {analytics.topQuestions.length === 0 && (
+              {topQuestions.length === 0 && (
                 <p className="text-sm text-muted-foreground py-6 text-center">
                   No visitor questions yet. Once people chat with your widget,
                   the most common questions appear here.
                 </p>
               )}
-              {analytics.topQuestions.map((q, i) => (
+              {topQuestions.map((q, i) => (
                 <div
                   key={i}
                   className="flex items-center gap-3 rounded-lg p-2 hover:bg-muted/50 transition-colors"
@@ -383,9 +409,7 @@ export function OverviewView({
             <CardContent>
               {(() => {
                 const total =
-                  analytics.leadQuality.high +
-                  analytics.leadQuality.medium +
-                  analytics.leadQuality.low;
+                  leadQuality.high + leadQuality.medium + leadQuality.low;
                 if (total === 0) {
                   return (
                     <p className="text-sm text-muted-foreground py-6 text-center">
@@ -397,21 +421,21 @@ export function OverviewView({
                   <div className="space-y-3">
                     <QualityBar
                       label="High quality"
-                      count={analytics.leadQuality.high}
+                      count={leadQuality.high}
                       total={total}
                       color="bg-destructive"
                       textClass="text-destructive"
                     />
                     <QualityBar
                       label="Medium quality"
-                      count={analytics.leadQuality.medium}
+                      count={leadQuality.medium}
                       total={total}
                       color="bg-accent"
                       textClass="text-accent-foreground"
                     />
                     <QualityBar
                       label="Low quality"
-                      count={analytics.leadQuality.low}
+                      count={leadQuality.low}
                       total={total}
                       color="bg-muted-foreground"
                       textClass="text-muted-foreground"

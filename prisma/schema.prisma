@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -50,6 +50,7 @@ model Business {
   whatsappMessages   WhatsAppMessage[]
   whiteLabel         WhiteLabelConfig?
   featureFlagOverrides BusinessFeatureFlag[]
+  limitOverride      BusinessLimitOverride?
 }
 
 model BusinessUser {
@@ -60,6 +61,9 @@ model BusinessUser {
   password     String // bcrypt hash
   role         String   @default("admin") // admin | member
   isSuperAdmin Boolean  @default(false) // Danets TecPro internal super admin
+  totpSecret   String?  // base32 secret when 2FA enabled
+  totpPending  String?  // pending secret during setup
+  totpEnabled  Boolean  @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -490,10 +494,28 @@ model SubscriptionPlan {
   chatLimit   Int      @default(100)
   leadLimit   Int      @default(50)
   kbLimit     Int      @default(25)
+  agentLimit  Int      @default(1)
+  auditRetentionDays Int @default(30)
+  chatRetentionDays  Int @default(90)
+  leadRetentionDays  Int @default(365)
   features    String   @default("[]") // JSON array
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model BusinessLimitOverride {
+  id         String   @id @default(cuid())
+  businessId String   @unique
+  chatLimit  Int?
+  leadLimit  Int?
+  kbLimit    Int?
+  agentLimit Int?
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 }
 
 // ─── Notifications ─────────────────────────────────────────────────
@@ -829,6 +851,23 @@ model WhiteLabelConfig {
 }
 
 // ─── Platform Control (Super Admin) ───────────────────────────────
+
+model PlatformConfig {
+  id                 String   @id @default("default")
+  platformName       String   @default("Danets AI Automation")
+  platformTagline    String   @default("AI-powered business automation")
+  supportEmail       String?
+  supportPhone       String?
+  defaultSignupPlan  String   @default("free")
+  maintenanceMode    Boolean  @default(false)
+  maintenanceMessage String?
+  emailFromName      String   @default("Danets AI")
+  emailFromAddress   String?
+  allowPublicSignup  Boolean  @default(true)
+  enforcePlatform2fa Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
 
 model PlatformAnnouncement {
   id        String    @id @default(cuid())

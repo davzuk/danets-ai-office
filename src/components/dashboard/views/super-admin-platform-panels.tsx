@@ -12,10 +12,13 @@ import {
   Plus,
   Trash2,
   ToggleLeft,
-  Download,
   Shield,
   KeyRound,
   Copy,
+  ClipboardCheck,
+  Settings2,
+  Mail,
+  Archive,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -60,6 +63,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import {
+  PlatformSetupPanel,
+  PlatformGeneralPanel,
+  PlatformEmailPanel,
+  PlatformRetentionPanel,
+} from "@/components/dashboard/views/platform-settings-panels";
 
 const PLAN_BADGE: Record<string, string> = {
   free: "bg-muted text-muted-foreground",
@@ -85,6 +94,10 @@ interface PlanRow {
   chatLimit: number;
   leadLimit: number;
   kbLimit: number;
+  agentLimit: number;
+  auditRetentionDays: number;
+  chatRetentionDays: number;
+  leadRetentionDays: number;
   features: string[];
   isActive: boolean;
   tenantCount: number;
@@ -115,10 +128,22 @@ export function SuperAdminPlatformPanel({
   businesses: { id: string; name: string }[];
 }) {
   return (
-    <Tabs defaultValue="plans" className="space-y-4">
+    <Tabs defaultValue="setup" className="space-y-4">
       <TabsList className="flex flex-wrap h-auto gap-1">
+        <TabsTrigger value="setup" className="gap-1.5">
+          <ClipboardCheck className="h-3.5 w-3.5" /> Setup
+        </TabsTrigger>
+        <TabsTrigger value="general" className="gap-1.5">
+          <Settings2 className="h-3.5 w-3.5" /> General
+        </TabsTrigger>
         <TabsTrigger value="plans" className="gap-1.5">
           <Crown className="h-3.5 w-3.5" /> Plans
+        </TabsTrigger>
+        <TabsTrigger value="email" className="gap-1.5">
+          <Mail className="h-3.5 w-3.5" /> Email
+        </TabsTrigger>
+        <TabsTrigger value="retention" className="gap-1.5">
+          <Archive className="h-3.5 w-3.5" /> Retention
         </TabsTrigger>
         <TabsTrigger value="announcements" className="gap-1.5">
           <Megaphone className="h-3.5 w-3.5" /> Announcements
@@ -130,8 +155,20 @@ export function SuperAdminPlatformPanel({
           <Shield className="h-3.5 w-3.5" /> Security
         </TabsTrigger>
       </TabsList>
+      <TabsContent value="setup" className="mt-0">
+        <PlatformSetupPanel />
+      </TabsContent>
+      <TabsContent value="general" className="mt-0">
+        <PlatformGeneralPanel />
+      </TabsContent>
       <TabsContent value="plans" className="mt-0">
         <PlansPanel />
+      </TabsContent>
+      <TabsContent value="email" className="mt-0">
+        <PlatformEmailPanel />
+      </TabsContent>
+      <TabsContent value="retention" className="mt-0">
+        <PlatformRetentionPanel />
       </TabsContent>
       <TabsContent value="announcements" className="mt-0">
         <AnnouncementsPanel />
@@ -156,6 +193,10 @@ function PlansPanel() {
     chatLimit: "",
     leadLimit: "",
     kbLimit: "",
+    agentLimit: "",
+    auditRetentionDays: "",
+    chatRetentionDays: "",
+    leadRetentionDays: "",
     features: "",
     isActive: true,
   });
@@ -185,6 +226,10 @@ function PlansPanel() {
       chatLimit: String(plan.chatLimit),
       leadLimit: String(plan.leadLimit),
       kbLimit: String(plan.kbLimit),
+      agentLimit: String(plan.agentLimit ?? 1),
+      auditRetentionDays: String(plan.auditRetentionDays ?? 30),
+      chatRetentionDays: String(plan.chatRetentionDays ?? 90),
+      leadRetentionDays: String(plan.leadRetentionDays ?? 365),
       features: plan.features.join("\n"),
       isActive: plan.isActive,
     });
@@ -203,6 +248,10 @@ function PlansPanel() {
           chatLimit: parseInt(form.chatLimit, 10) || 0,
           leadLimit: parseInt(form.leadLimit, 10) || 0,
           kbLimit: parseInt(form.kbLimit, 10) || 0,
+          agentLimit: parseInt(form.agentLimit, 10) || 0,
+          auditRetentionDays: parseInt(form.auditRetentionDays, 10) || 30,
+          chatRetentionDays: parseInt(form.chatRetentionDays, 10) || 90,
+          leadRetentionDays: parseInt(form.leadRetentionDays, 10) || 365,
           features: form.features
             .split("\n")
             .map((s) => s.trim())
@@ -267,7 +316,7 @@ function PlansPanel() {
                     <TableCell className="tabular-nums">{fmtMoney(p.priceUsd)}/mo</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {p.chatLimit.toLocaleString()} chats · {p.leadLimit.toLocaleString()} leads ·{" "}
-                      {p.kbLimit.toLocaleString()} KB
+                      {p.kbLimit.toLocaleString()} KB · {p.agentLimit.toLocaleString()} agents
                     </TableCell>
                     <TableCell>{p.tenantCount}</TableCell>
                     <TableCell>
@@ -305,7 +354,7 @@ function PlansPanel() {
                 <Switch checked={form.isActive} onCheckedChange={(v) => setForm((f) => ({ ...f, isActive: v }))} />
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="space-y-1.5">
                 <Label>Chat limit/mo</Label>
                 <Input value={form.chatLimit} onChange={(e) => setForm((f) => ({ ...f, chatLimit: e.target.value }))} />
@@ -315,8 +364,26 @@ function PlansPanel() {
                 <Input value={form.leadLimit} onChange={(e) => setForm((f) => ({ ...f, leadLimit: e.target.value }))} />
               </div>
               <div className="space-y-1.5">
-                <Label>KB limit</Label>
+                <Label>KB limit (total)</Label>
                 <Input value={form.kbLimit} onChange={(e) => setForm((f) => ({ ...f, kbLimit: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Agent limit (total)</Label>
+                <Input value={form.agentLimit} onChange={(e) => setForm((f) => ({ ...f, agentLimit: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label>Audit retention (days)</Label>
+                <Input value={form.auditRetentionDays} onChange={(e) => setForm((f) => ({ ...f, auditRetentionDays: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Chat retention (days)</Label>
+                <Input value={form.chatRetentionDays} onChange={(e) => setForm((f) => ({ ...f, chatRetentionDays: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Lead retention (days)</Label>
+                <Input value={form.leadRetentionDays} onChange={(e) => setForm((f) => ({ ...f, leadRetentionDays: e.target.value }))} />
               </div>
             </div>
             <div className="space-y-1.5">
@@ -347,14 +414,35 @@ function AnnouncementsPanel() {
   const [items, setItems] = React.useState<AnnouncementRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [editItem, setEditItem] = React.useState<AnnouncementRow | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [form, setForm] = React.useState({
     title: "",
     message: "",
     severity: "info",
     isActive: true,
+    startsAt: "",
     endsAt: "",
   });
+
+  function toLocalDatetime(iso: string) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function openEdit(item: AnnouncementRow) {
+    setEditItem(item);
+    setForm({
+      title: item.title,
+      message: item.message,
+      severity: item.severity,
+      isActive: item.isActive,
+      startsAt: toLocalDatetime(item.startsAt),
+      endsAt: item.endsAt ? toLocalDatetime(item.endsAt) : "",
+    });
+  }
 
   async function load() {
     setLoading(true);
@@ -392,10 +480,37 @@ function AnnouncementsPanel() {
       if (!res.ok) throw new Error(`Failed (${res.status})`);
       toast.success("Announcement published");
       setCreateOpen(false);
-      setForm({ title: "", message: "", severity: "info", isActive: true, endsAt: "" });
+      setForm({ title: "", message: "", severity: "info", isActive: true, startsAt: "", endsAt: "" });
       load();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Create failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveEdit() {
+    if (!editItem || !form.title.trim() || !form.message.trim()) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/super-admin/announcements/${editItem.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: form.title.trim(),
+          message: form.message.trim(),
+          severity: form.severity,
+          isActive: form.isActive,
+          startsAt: form.startsAt ? new Date(form.startsAt).toISOString() : undefined,
+          endsAt: form.endsAt ? new Date(form.endsAt).toISOString() : null,
+        }),
+      });
+      if (!res.ok) throw new Error(`Failed (${res.status})`);
+      toast.success("Announcement updated");
+      setEditItem(null);
+      load();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Update failed");
     } finally {
       setSaving(false);
     }
@@ -462,6 +577,9 @@ function AnnouncementsPanel() {
                     <p className="text-sm text-muted-foreground mt-1">{a.message}</p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
+                    <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => openEdit(a)}>
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
                     <Switch checked={a.isActive} onCheckedChange={() => toggleActive(a)} />
                     <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => remove(a.id)}>
                       <Trash2 className="h-3.5 w-3.5" />
@@ -502,9 +620,13 @@ function AnnouncementsPanel() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>Ends at (optional)</Label>
-                <Input type="datetime-local" value={form.endsAt} onChange={(e) => setForm((f) => ({ ...f, endsAt: e.target.value }))} />
+                <Label>Starts at (optional)</Label>
+                <Input type="datetime-local" value={form.startsAt} onChange={(e) => setForm((f) => ({ ...f, startsAt: e.target.value }))} />
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Ends at (optional)</Label>
+              <Input type="datetime-local" value={form.endsAt} onChange={(e) => setForm((f) => ({ ...f, endsAt: e.target.value }))} />
             </div>
           </div>
           <DialogFooter>
@@ -512,6 +634,59 @@ function AnnouncementsPanel() {
             <Button onClick={create} disabled={saving}>
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Publish
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editItem} onOpenChange={(o) => !o && setEditItem(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Announcement</DialogTitle>
+            <DialogDescription>Update broadcast content and schedule.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Title</Label>
+              <Input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Message</Label>
+              <Textarea rows={4} value={form.message} onChange={(e) => setForm((f) => ({ ...f, message: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Severity</Label>
+                <Select value={form.severity} onValueChange={(v) => setForm((f) => ({ ...f, severity: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="info">Info</SelectItem>
+                    <SelectItem value="warning">Warning</SelectItem>
+                    <SelectItem value="critical">Critical</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                <Label>Published</Label>
+                <Switch checked={form.isActive} onCheckedChange={(v) => setForm((f) => ({ ...f, isActive: v }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Starts at</Label>
+                <Input type="datetime-local" value={form.startsAt} onChange={(e) => setForm((f) => ({ ...f, startsAt: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Ends at</Label>
+                <Input type="datetime-local" value={form.endsAt} onChange={(e) => setForm((f) => ({ ...f, endsAt: e.target.value }))} />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditItem(null)} disabled={saving}>Cancel</Button>
+            <Button onClick={saveEdit} disabled={saving}>
+              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save changes
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -525,6 +700,13 @@ function FeatureFlagsPanel({ businesses }: { businesses: { id: string; name: str
   const [loading, setLoading] = React.useState(true);
   const [createOpen, setCreateOpen] = React.useState(false);
   const [overrideOpen, setOverrideOpen] = React.useState<FlagRow | null>(null);
+  const [overridesListOpen, setOverridesListOpen] = React.useState<FlagRow | null>(null);
+  const [overrides, setOverrides] = React.useState<
+    { businessId: string; businessName: string; enabled: boolean }[]
+  >([]);
+  const [overridesLoading, setOverridesLoading] = React.useState(false);
+  const [editFlag, setEditFlag] = React.useState<FlagRow | null>(null);
+  const [editForm, setEditForm] = React.useState({ name: "", description: "" });
   const [overrideBiz, setOverrideBiz] = React.useState("");
   const [overrideEnabled, setOverrideEnabled] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
@@ -548,6 +730,61 @@ function FeatureFlagsPanel({ businesses }: { businesses: { id: string; name: str
   React.useEffect(() => {
     load();
   }, []);
+
+  async function loadOverrides(flag: FlagRow) {
+    setOverridesListOpen(flag);
+    setOverridesLoading(true);
+    try {
+      const res = await fetch(`/api/super-admin/feature-flags/${flag.key}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json();
+      setOverrides(data.overrides || []);
+    } catch {
+      toast.error("Failed to load overrides");
+      setOverrides([]);
+    } finally {
+      setOverridesLoading(false);
+    }
+  }
+
+  async function removeOverride(flagKey: string, businessId: string) {
+    try {
+      const res = await fetch(
+        `/api/super-admin/feature-flags/${flagKey}?businessId=${businessId}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) throw new Error("Failed");
+      setOverrides((prev) => prev.filter((o) => o.businessId !== businessId));
+      load();
+      toast.success("Override removed");
+    } catch {
+      toast.error("Failed to remove override");
+    }
+  }
+
+  async function saveFlagEdit() {
+    if (!editFlag) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/super-admin/feature-flags", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: editFlag.key,
+          name: editForm.name.trim(),
+          description: editForm.description.trim() || null,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast.success("Flag updated");
+      setEditFlag(null);
+      load();
+    } catch {
+      toast.error("Update failed");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function toggleGlobal(flag: FlagRow) {
     try {
@@ -673,8 +910,32 @@ function FeatureFlagsPanel({ businesses }: { businesses: { id: string; name: str
                     <TableCell>
                       <Switch checked={f.enabled} onCheckedChange={() => toggleGlobal(f)} />
                     </TableCell>
-                    <TableCell className="tabular-nums">{f.overrideCount}</TableCell>
+                    <TableCell className="tabular-nums">
+                      {f.overrideCount > 0 ? (
+                        <Button
+                          size="sm"
+                          variant="link"
+                          className="h-auto p-0 tabular-nums"
+                          onClick={() => loadOverrides(f)}
+                        >
+                          {f.overrideCount}
+                        </Button>
+                      ) : (
+                        "0"
+                      )}
+                    </TableCell>
                     <TableCell className="pr-6 text-right space-x-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="gap-1"
+                        onClick={() => {
+                          setEditFlag(f);
+                          setEditForm({ name: f.name, description: f.description || "" });
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
                       <Button
                         size="sm"
                         variant="ghost"
@@ -766,6 +1027,69 @@ function FeatureFlagsPanel({ businesses }: { businesses: { id: string; name: str
         </DialogContent>
       </Dialog>
 
+      <Dialog open={!!overridesListOpen} onOpenChange={(o) => !o && setOverridesListOpen(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Overrides — {overridesListOpen?.name}</DialogTitle>
+            <DialogDescription>Tenant-specific overrides for this flag.</DialogDescription>
+          </DialogHeader>
+          {overridesLoading ? (
+            <Skeleton className="h-24 w-full" />
+          ) : overrides.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">No overrides.</p>
+          ) : (
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {overrides.map((o) => (
+                <div key={o.businessId} className="flex items-center justify-between rounded-lg border px-3 py-2">
+                  <div>
+                    <div className="text-sm font-medium">{o.businessName}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {o.enabled ? "Enabled" : "Disabled"}
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive h-8"
+                    onClick={() =>
+                      overridesListOpen &&
+                      removeOverride(overridesListOpen.key, o.businessId)
+                    }
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editFlag} onOpenChange={(o) => !o && setEditFlag(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Flag — {editFlag?.key}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Display name</Label>
+              <Input value={editForm.name} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Description</Label>
+              <Input value={editForm.description} onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditFlag(null)} disabled={saving}>Cancel</Button>
+            <Button onClick={saveFlagEdit} disabled={saving}>
+              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <AlertDialog open={!!deleteKey} onOpenChange={(o) => !o && setDeleteKey(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -800,12 +1124,18 @@ function PlatformSecurityPanel() {
   const [disablePassword, setDisablePassword] = React.useState("");
   const [disableCode, setDisableCode] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  const [enforce2fa, setEnforce2fa] = React.useState(false);
 
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch("/api/platform-auth/me", { cache: "no-store" });
-      const data = await res.json();
+      const [meRes, cfgRes] = await Promise.all([
+        fetch("/api/platform-auth/me", { cache: "no-store" }),
+        fetch("/api/super-admin/platform-config", { cache: "no-store" }),
+      ]);
+      const data = await meRes.json();
+      const cfg = await cfgRes.json().catch(() => ({}));
+      setEnforce2fa(!!cfg?.config?.enforcePlatform2fa);
       if (data.admin) {
         setProfile({
           email: data.admin.email,
@@ -974,26 +1304,35 @@ function PlatformSecurityPanel() {
 
           {profile.totpEnabled && (
             <div className="space-y-2 pt-2 border-t">
-              <Label className="text-xs">Disable 2FA (password + current code required)</Label>
-              <Input
-                type="password"
-                placeholder="Password"
-                value={disablePassword}
-                onChange={(e) => setDisablePassword(e.target.value)}
-              />
-              <Input
-                placeholder="Current 2FA code"
-                value={disableCode}
-                onChange={(e) => setDisableCode(e.target.value)}
-              />
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={disable2fa}
-                disabled={busy || !disablePassword || disableCode.length < 6}
-              >
-                Disable 2FA
-              </Button>
+              {enforce2fa ? (
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  Platform policy requires 2FA for all admins. Turn off enforcement in
+                  Platform Settings → General before disabling.
+                </p>
+              ) : (
+                <>
+                  <Label className="text-xs">Disable 2FA (password + current code required)</Label>
+                  <Input
+                    type="password"
+                    placeholder="Password"
+                    value={disablePassword}
+                    onChange={(e) => setDisablePassword(e.target.value)}
+                  />
+                  <Input
+                    placeholder="Current 2FA code"
+                    value={disableCode}
+                    onChange={(e) => setDisableCode(e.target.value)}
+                  />
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={disable2fa}
+                    disabled={busy || !disablePassword || disableCode.length < 6}
+                  >
+                    Disable 2FA
+                  </Button>
+                </>
+              )}
             </div>
           )}
         </div>

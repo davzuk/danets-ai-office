@@ -3,18 +3,17 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { logActivity, createNotification } from "@/lib/activity";
+import {
+  verifyFlutterwaveTransaction,
+  verifyPaystackTransaction,
+} from "@/lib/payment-gateway";
 
 const verifySchema = z.object({
   reference: z.string().min(1),
-  // For manual/bank_transfer, admin confirms manually
-  // For paystack/flutterwave, this would be called after webhook
-  status: z.enum(["success", "failed"]).default("success"),
+  status: z.enum(["success", "failed"]).optional(),
 });
 
-// POST /api/payments/verify — verify/confirm a payment
-// In production, this calls the provider's verification API:
-// - Paystack: GET https://api.paystack.co/transaction/verify/:reference
-// - Flutterwave: GET https://api.flutterwave.com/v3/transactions/:id/verify
+// POST /api/payments/verify — verify/confirm a payment (client callback or manual)
 export async function POST(req: NextRequest) {
   let user;
   try {
@@ -32,7 +31,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { reference, status } = parsed.data;
+  const { reference } = parsed.data;
 
   const payment = await db.payment.findFirst({
     where: { reference, businessId: user.businessId },
@@ -44,34 +43,49 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Payment already processed" }, { status: 400 });
   }
 
-  // Update payment status
+  let status: "success" | "failed" = parsed.data.status ?? "success";
+  let providerRef: string | undefined;
+
+  if (payment.provider === "paystack") {
+    const verified = await verifyPaystackTransaction(reference);
+    if (process.env.PAYSTACK_SECRET_KEY) {
+      status = verified.success ? "success" : "failed";
+      providerRef = verified.providerRef;
+    }
+  } else if (payment.provider === "flutterwave") {
+    const verified = await verifyFlutterwaveTransaction(reference);
+    if (process.env.FLUTTERWAVE_SECRET_KEY) {
+      status = verified.success ? "success" : "failed";
+      providerRef = verified.providerRef;
+    }
+  }
+
   const updated = await db.payment.update({
     where: { id: payment.id },
     data: {
       status,
       paidAt: status === "success" ? new Date() : null,
       verifiedAt: new Date(),
-      providerRef: `${payment.provider}_verified_${Date.now()}`,
+      providerRef: providerRef ?? `${payment.provider}_verified_${Date.now()}`,
     },
   });
 
   if (status === "success") {
-    // Parse metadata for plan info
     let planName = "pro";
     let billingCycle = "monthly";
     try {
       const meta = JSON.parse(payment.metadata || "{}");
       planName = meta.planName || "pro";
       billingCycle = meta.billingCycle || "monthly";
-    } catch {}
+    } catch {
+      /* use defaults */
+    }
 
-    // Get plan details
     const plan = await db.subscriptionPlan.findUnique({ where: { name: planName } });
     const monthlyFee = plan?.priceUsd || 0;
     const endDate = new Date();
     endDate.setMonth(endDate.getMonth() + (billingCycle === "annual" ? 12 : 1));
 
-    // Update subscription
     let subscription = await db.businessSubscription.findUnique({
       where: { businessId: user.businessId },
     });
@@ -102,19 +116,16 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Update business plan
     await db.business.update({
       where: { id: user.businessId },
       data: { plan: planName },
     });
 
-    // Link payment to subscription
     await db.payment.update({
       where: { id: payment.id },
       data: { subscriptionId: subscription.id },
     });
 
-    // Generate invoice
     const invoiceNumber = `INV-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
     const invoice = await db.invoice.create({
       data: {
@@ -152,7 +163,7 @@ export async function POST(req: NextRequest) {
     await createNotification({
       businessId: user.businessId,
       type: "subscription_expiry",
-      title: "Payment successful! ✅",
+      title: "Payment successful!",
       message: `Your ${planName} plan is now active. Invoice ${invoiceNumber} generated.`,
       data: { paymentId: payment.id, invoiceId: invoice.id, planName },
     });
@@ -163,20 +174,20 @@ export async function POST(req: NextRequest) {
       invoice: { id: invoice.id, invoiceNumber, amount: invoice.amount },
       message: "Payment verified successfully. Subscription activated.",
     });
-  } else {
-    await logActivity({
-      businessId: user.businessId,
-      userId: user.userId,
-      userName: user.name,
-      action: "subscription_changed",
-      module: "subscription",
-      description: `Payment failed: ${reference}`,
-      metadata: { paymentId: payment.id, reference },
-    });
-
-    return NextResponse.json({
-      payment: updated,
-      message: "Payment verification failed.",
-    });
   }
+
+  await logActivity({
+    businessId: user.businessId,
+    userId: user.userId,
+    userName: user.name,
+    action: "subscription_changed",
+    module: "subscription",
+    description: `Payment failed: ${reference}`,
+    metadata: { paymentId: payment.id, reference },
+  });
+
+  return NextResponse.json({
+    payment: updated,
+    message: "Payment verification failed.",
+  });
 }

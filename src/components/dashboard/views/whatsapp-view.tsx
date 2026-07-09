@@ -1219,13 +1219,24 @@ function IntegrationSection() {
           </div>
         ) : (
           <>
-            {/* Info banner for non-manual providers */}
-            {!isManual && (
+            {/* Provider setup banners */}
+            {isMeta && (
+              <Alert className="border-emerald-500/30 bg-emerald-500/5 text-emerald-800 dark:text-emerald-300">
+                <Info className="size-4 text-emerald-600" />
+                <AlertTitle className="text-sm font-medium">Meta Cloud API</AlertTitle>
+                <AlertDescription className="text-xs">
+                  When your access token and phone number ID are saved, outbound messages from{" "}
+                  <code className="rounded bg-muted px-1 py-0.5">/api/whatsapp/send</code> are delivered
+                  via the WhatsApp Business API. Drafts in this view still use click-to-chat for manual review.
+                </AlertDescription>
+              </Alert>
+            )}
+            {!isManual && !isMeta && (
               <Alert className="border-amber-500/30 bg-amber-500/5 text-amber-800 dark:text-amber-300">
                 <Info className="size-4 text-amber-600" />
                 <AlertTitle className="text-sm font-medium">Provider setup required</AlertTitle>
                 <AlertDescription className="text-xs">
-                  Direct WhatsApp API integration requires a WhatsApp Business account with the selected provider. Configuration is stored securely — actual message sending will be enabled in a future update.
+                  Live send for {form.provider} is not yet supported. Use Manual Link or Meta Cloud API for outbound delivery.
                 </AlertDescription>
               </Alert>
             )}

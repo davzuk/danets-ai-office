@@ -272,28 +272,77 @@ export async function sendEmailNotification(
  */
 async function sendEmail(params: EmailParams): Promise<{ success: boolean; error?: string }> {
   const provider = process.env.EMAIL_PROVIDER || "none";
+  const from =
+    process.env.SMTP_FROM ||
+    process.env.SENDGRID_FROM ||
+    process.env.EMAIL_FROM ||
+    "noreply@danetstecpro.com";
 
   try {
     if (provider === "smtp") {
-      // In production:
-      // import nodemailer from "nodemailer";
-      // const transporter = nodemailer.createTransport({ host, port, auth: { user, pass } });
-      // await transporter.sendMail({ from, to, subject, html, text });
-      console.log(`[email] SMTP send (simulated): to=${params.to} subject="${params.subject}"`);
+      const host = process.env.SMTP_HOST;
+      const port = parseInt(process.env.SMTP_PORT || "587", 10);
+      const user = process.env.SMTP_USER;
+      const pass = process.env.SMTP_PASS;
+
+      if (!host || !user || !pass) {
+        return { success: false, error: "SMTP_HOST, SMTP_USER, and SMTP_PASS are required" };
+      }
+
+      const nodemailer = await import("nodemailer");
+      const transporter = nodemailer.createTransport({
+        host,
+        port,
+        secure: port === 465,
+        auth: { user, pass },
+      });
+
+      await transporter.sendMail({
+        from,
+        to: params.to,
+        subject: params.subject,
+        html: params.html,
+        text: params.text,
+      });
       return { success: true };
-    } else if (provider === "sendgrid") {
-      // In production:
-      // import sgMail from "@sendgrid/mail";
-      // sgMail.setApiKey(process.env.SENDGRID_API_KEY!);
-      // await sgMail.send({ to, from, subject, html, text });
-      console.log(`[email] SendGrid send (simulated): to=${params.to} subject="${params.subject}"`);
-      return { success: true };
-    } else {
-      console.log(`[email] No provider — skipped: to=${params.to} subject="${params.subject}"`);
-      return { success: false, error: "No email provider configured" };
     }
-  } catch (e: any) {
-    return { success: false, error: e?.message || "Send failed" };
+
+    if (provider === "sendgrid") {
+      const apiKey = process.env.SENDGRID_API_KEY;
+      if (!apiKey) {
+        return { success: false, error: "SENDGRID_API_KEY is required" };
+      }
+
+      const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email: params.to }] }],
+          from: { email: from },
+          subject: params.subject,
+          content: [
+            ...(params.text
+              ? [{ type: "text/plain", value: params.text }]
+              : []),
+            { type: "text/html", value: params.html },
+          ],
+        }),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        return { success: false, error: errText || `SendGrid error (${res.status})` };
+      }
+      return { success: true };
+    }
+
+    console.log(`[email] No provider — skipped: to=${params.to} subject="${params.subject}"`);
+    return { success: false, error: "No email provider configured" };
+  } catch (e: unknown) {
+    return { success: false, error: e instanceof Error ? e.message : "Send failed" };
   }
 }
 

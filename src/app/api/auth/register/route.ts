@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { createSession } from "@/lib/auth";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
+import { getPlatformConfig } from "@/lib/platform-config";
 
 const schema = z.object({
   businessName: z.string().min(2).max(120),
@@ -15,7 +16,7 @@ const schema = z.object({
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
-  const rl = rateLimit(`register:${ip}`, 5, 60_000);
+  const rl = await rateLimit(`register:${ip}`, 5, 60_000);
   if (!rl.success) {
     return NextResponse.json({ error: "Too many attempts." }, { status: 429 });
   }
@@ -27,6 +28,15 @@ export async function POST(req: NextRequest) {
   }
 
   const { businessName, industry, name, email, password } = parsed.data;
+
+  const platformConfig = await getPlatformConfig();
+  if (!platformConfig.allowPublicSignup) {
+    return NextResponse.json({ error: "Public registration is disabled" }, { status: 403 });
+  }
+  if (platformConfig.maintenanceMode) {
+    return NextResponse.json({ error: "Platform is in maintenance mode" }, { status: 503 });
+  }
+
   const existing = await db.businessUser.findUnique({
     where: { email: email.toLowerCase() },
   });
@@ -38,7 +48,7 @@ export async function POST(req: NextRequest) {
     data: {
       name: businessName,
       industry: industry || null,
-      plan: "free",
+      plan: platformConfig.defaultSignupPlan,
       status: "active",
     },
   });

@@ -17,7 +17,7 @@ type RouteCtx = { params: Promise<{ id: string }> };
 // PATCH /api/super-admin/announcements/[id]
 export async function PATCH(req: NextRequest, { params }: RouteCtx) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
 
   const { id } = await params;
   const existing = await db.platformAnnouncement.findUnique({ where: { id } });
@@ -55,7 +55,7 @@ export async function PATCH(req: NextRequest, { params }: RouteCtx) {
 // DELETE /api/super-admin/announcements/[id]
 export async function DELETE(_req: NextRequest, { params }: RouteCtx) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
 
   const { id } = await params;
   await db.platformAnnouncement.delete({ where: { id } }).catch(() => null);

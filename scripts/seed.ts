@@ -6,10 +6,10 @@ async function seed() {
 
   // Subscription plans
   const plans = [
-    { name: "free", priceUsd: 0, chatLimit: 100, leadLimit: 50, kbLimit: 25, features: JSON.stringify(["1 AI agent", "Basic analytics", "Chat widget"]) },
-    { name: "starter", priceUsd: 29, chatLimit: 1000, leadLimit: 300, kbLimit: 100, features: JSON.stringify(["3 AI agents", "Lead scoring", "Email support"]) },
-    { name: "pro", priceUsd: 79, chatLimit: 5000, leadLimit: 1500, kbLimit: 500, features: JSON.stringify(["Unlimited agents", "Quote generator", "Priority support", "Custom branding"]) },
-    { name: "enterprise", priceUsd: 199, chatLimit: 50000, leadLimit: 20000, kbLimit: 5000, features: JSON.stringify(["Everything in Pro", "Dedicated manager", "SLA", "API access"]) },
+    { name: "free", priceUsd: 0, chatLimit: 100, leadLimit: 50, kbLimit: 25, agentLimit: 1, auditRetentionDays: 7, chatRetentionDays: 30, leadRetentionDays: 90, features: JSON.stringify(["1 AI agent", "Basic analytics", "Chat widget"]) },
+    { name: "starter", priceUsd: 29, chatLimit: 1000, leadLimit: 300, kbLimit: 100, agentLimit: 3, auditRetentionDays: 30, chatRetentionDays: 90, leadRetentionDays: 180, features: JSON.stringify(["3 AI agents", "Lead scoring", "Email support"]) },
+    { name: "pro", priceUsd: 79, chatLimit: 5000, leadLimit: 1500, kbLimit: 500, agentLimit: 999, auditRetentionDays: 90, chatRetentionDays: 180, leadRetentionDays: 365, features: JSON.stringify(["Unlimited agents", "Quote generator", "Priority support", "Custom branding"]) },
+    { name: "enterprise", priceUsd: 199, chatLimit: 50000, leadLimit: 20000, kbLimit: 5000, agentLimit: 9999, auditRetentionDays: 365, chatRetentionDays: 730, leadRetentionDays: 1095, features: JSON.stringify(["Everything in Pro", "Dedicated manager", "SLA", "API access", "Custom domain"]) },
   ];
   for (const p of plans) {
     await db.subscriptionPlan.upsert({
@@ -18,6 +18,24 @@ async function seed() {
       update: p,
     });
   }
+
+  await db.platformConfig.upsert({
+    where: { id: "default" },
+    create: {
+      id: "default",
+      platformName: "Danets AI Automation",
+      platformTagline: "AI-powered business automation",
+      supportEmail: "hello@danetstecpro.com",
+      supportPhone: "+234 800 000 0000",
+      defaultSignupPlan: "free",
+      emailFromName: "Danets AI",
+      emailFromAddress: "noreply@danetstecpro.com",
+    },
+    update: {
+      supportEmail: "hello@danetstecpro.com",
+      supportPhone: "+234 800 000 0000",
+    },
+  });
 
   // Default business: Danets TecPro demo
   let business = await db.business.findFirst({ where: { email: "hello@danetstecpro.com" } });
@@ -166,6 +184,21 @@ async function seed() {
     });
   }
 
+  // Default subscription record for demo business
+  await db.businessSubscription.upsert({
+    where: { businessId: business.id },
+    create: {
+      businessId: business.id,
+      planName: business.plan,
+      status: "active",
+      monthlyFee: 79,
+    },
+    update: {
+      planName: business.plan,
+      status: "active",
+    },
+  });
+
   // Default platform feature flags
   const defaultFlags = [
     { key: "document_upload", name: "Document Upload", description: "Allow PDF/DOCX file upload in Document Assistant", enabled: true },
@@ -181,10 +214,20 @@ async function seed() {
     });
   }
 
+  // Enable pro-tier feature flags for the demo business
+  const proFlags = ["whatsapp_live", "automations_engine"] as const;
+  for (const flagKey of proFlags) {
+    await db.businessFeatureFlag.upsert({
+      where: { businessId_flagKey: { businessId: business.id, flagKey } },
+      create: { businessId: business.id, flagKey, enabled: true },
+      update: { enabled: true },
+    });
+  }
+
   console.log("Seed complete.");
   console.log("  Business:", business.name, "(", business.publicKey, ")");
   console.log("  Login:    admin@danetstecpro.com / danets123");
-  console.log("  Super:    superadmin@danetstecpro.com / super123");
+  console.log("  Platform: http://localhost:3000/platform (superadmin@danetstecpro.com / super123)");
   console.log("  Widget public key:", business.publicKey);
 }
 

@@ -5,7 +5,7 @@ import { requireSuperAdmin } from "@/lib/super-admin";
 // GET /api/super-admin/stats — system-wide stats for super admin dashboard
 export async function GET(_req: NextRequest) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
 
   const [
     totalBusinesses,

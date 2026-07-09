@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { db } from "@/lib/db";
 import { randomBytes } from "crypto";
 import type { SessionUser } from "@/lib/auth";
+import { getPlatformConfig } from "@/lib/platform-config";
 
 export const PLATFORM_SESSION_COOKIE = "danets_platform_session";
 export const PLATFORM_IMPERSONATOR_COOKIE = "danets_platform_impersonator";
@@ -115,6 +116,13 @@ export async function getPlatformSession(): Promise<PlatformAdminUser | null> {
 export async function requirePlatformSession(): Promise<PlatformAdminUser> {
   const s = await getPlatformSession();
   if (!s) throw new Error("UNAUTHORIZED");
+
+  const config = await getPlatformConfig();
+  if (config.enforcePlatform2fa && !s.totpEnabled) {
+    await destroyPlatformSession();
+    throw new Error("PLATFORM_2FA_REQUIRED");
+  }
+
   return s;
 }
 

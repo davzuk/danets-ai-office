@@ -13,7 +13,7 @@ function csvEscape(value: string | number | null | undefined) {
 // GET /api/super-admin/businesses/export — CSV export of all tenants
 export async function GET() {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
 
   const businesses = await db.business.findMany({
     orderBy: { createdAt: "desc" },

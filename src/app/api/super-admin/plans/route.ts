@@ -6,7 +6,7 @@ import { requireSuperAdmin } from "@/lib/super-admin";
 // GET /api/super-admin/plans — subscription plan catalog
 export async function GET() {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
 
   const plans = await db.subscriptionPlan.findMany({
     orderBy: { priceUsd: "asc" },
@@ -26,6 +26,10 @@ export async function GET() {
       chatLimit: p.chatLimit,
       leadLimit: p.leadLimit,
       kbLimit: p.kbLimit,
+      agentLimit: p.agentLimit,
+      auditRetentionDays: p.auditRetentionDays,
+      chatRetentionDays: p.chatRetentionDays,
+      leadRetentionDays: p.leadRetentionDays,
       features: JSON.parse(p.features || "[]"),
       isActive: p.isActive,
       tenantCount: countMap.get(p.name) || 0,
@@ -41,6 +45,10 @@ const patchSchema = z.object({
   chatLimit: z.number().int().min(0).optional(),
   leadLimit: z.number().int().min(0).optional(),
   kbLimit: z.number().int().min(0).optional(),
+  agentLimit: z.number().int().min(0).optional(),
+  auditRetentionDays: z.number().int().min(1).optional(),
+  chatRetentionDays: z.number().int().min(1).optional(),
+  leadRetentionDays: z.number().int().min(1).optional(),
   features: z.array(z.string()).optional(),
   isActive: z.boolean().optional(),
 });
@@ -48,7 +56,7 @@ const patchSchema = z.object({
 // PATCH /api/super-admin/plans — update plan catalog entry
 export async function PATCH(req: NextRequest) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
 
   const body = await req.json().catch(() => ({}));
   const parsed = patchSchema.safeParse(body);
@@ -68,6 +76,10 @@ export async function PATCH(req: NextRequest) {
   if (parsed.data.chatLimit !== undefined) data.chatLimit = parsed.data.chatLimit;
   if (parsed.data.leadLimit !== undefined) data.leadLimit = parsed.data.leadLimit;
   if (parsed.data.kbLimit !== undefined) data.kbLimit = parsed.data.kbLimit;
+  if (parsed.data.agentLimit !== undefined) data.agentLimit = parsed.data.agentLimit;
+  if (parsed.data.auditRetentionDays !== undefined) data.auditRetentionDays = parsed.data.auditRetentionDays;
+  if (parsed.data.chatRetentionDays !== undefined) data.chatRetentionDays = parsed.data.chatRetentionDays;
+  if (parsed.data.leadRetentionDays !== undefined) data.leadRetentionDays = parsed.data.leadRetentionDays;
   if (parsed.data.features !== undefined) data.features = JSON.stringify(parsed.data.features);
   if (parsed.data.isActive !== undefined) data.isActive = parsed.data.isActive;
 

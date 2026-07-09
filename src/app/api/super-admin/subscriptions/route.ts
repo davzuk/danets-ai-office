@@ -7,7 +7,7 @@ import { logActivity } from "@/lib/activity";
 // GET /api/super-admin/subscriptions — list all tenant subscriptions
 export async function GET(req: NextRequest) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
 
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status") || undefined;
@@ -71,7 +71,7 @@ const patchSchema = z.object({
 // PATCH /api/super-admin/subscriptions — bulk update by subscriptionId in body
 export async function PATCH(req: NextRequest) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
   const { user } = auth;
 
   const body = await req.json().catch(() => ({}));

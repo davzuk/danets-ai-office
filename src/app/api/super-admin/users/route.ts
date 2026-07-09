@@ -1,22 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireSuperAdmin } from "@/lib/super-admin";
 
 // GET /api/super-admin/users — list users across all tenants
 export async function GET(req: NextRequest) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
 
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q")?.trim() || undefined;
   const businessId = searchParams.get("businessId") || undefined;
   const role = searchParams.get("role") || undefined;
 
-  const where: {
-    businessId?: string;
-    role?: string;
-    OR?: { name: { contains: string } }[] | { email: { contains: string } }[];
-  } = {};
+  const where: Record<string, unknown> = {};
   if (businessId) where.businessId = businessId;
   if (role) where.role = role;
   if (q) {
@@ -24,7 +21,7 @@ export async function GET(req: NextRequest) {
   }
 
   const users = await db.businessUser.findMany({
-    where,
+    where: where as Prisma.BusinessUserWhereInput,
     orderBy: { createdAt: "desc" },
     take: 200,
     select: {

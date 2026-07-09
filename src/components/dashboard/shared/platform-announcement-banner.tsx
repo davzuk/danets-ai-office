@@ -44,13 +44,7 @@ const SEVERITY = {
   },
 };
 
-export function PlatformAnnouncementBanner({
-  isSuperAdmin,
-  isPlatformAdmin,
-}: {
-  isSuperAdmin?: boolean;
-  isPlatformAdmin?: boolean;
-}) {
+export function PlatformAnnouncementBanner() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
@@ -61,8 +55,6 @@ export function PlatformAnnouncementBanner({
       .then((d) => setAnnouncements(d.announcements || []))
       .catch(() => {});
   }, []);
-
-  if (isSuperAdmin || isPlatformAdmin) return null;
 
   const visible = announcements.filter((a) => !dismissed.has(a.id));
   if (visible.length === 0) return null;

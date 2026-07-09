@@ -95,13 +95,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   SuperAdminSubscriptionsPanel,
   SuperAdminPaymentsPanel,
   SuperAdminInvoicesPanel,
 } from "@/components/dashboard/views/super-admin-billing-panels";
 import { SuperAdminUsagePanel, UsageQuotaSummary } from "@/components/dashboard/views/super-admin-usage-panel";
+import { TenantLimitOverrides } from "@/components/dashboard/views/tenant-limit-overrides";
+import { SuperAdminHealthPanel } from "@/components/dashboard/views/super-admin-health-panel";
+import { TenantWhiteLabelEditor } from "@/components/dashboard/views/tenant-white-label-editor";
+import type { PlatformTabId } from "@/lib/platform-nav";
 import { SuperAdminUsersPanel } from "@/components/dashboard/views/super-admin-users-panel";
 import { SuperAdminAuditPanel } from "@/components/dashboard/views/super-admin-audit-panel";
 import {
@@ -231,10 +234,30 @@ interface BusinessDetail {
     chats: number;
     leads: number;
     kbItems: number;
+    agents: number;
     aiRequests: number;
-    limits: { chatLimit: number; leadLimit: number; kbLimit: number; aiLimit: number };
-    percent: { chats: number; leads: number; kbItems: number; aiRequests: number };
+    limits: {
+      chatLimit: number;
+      leadLimit: number;
+      kbLimit: number;
+      agentLimit: number;
+      aiLimit: number;
+    };
+    percent: {
+      chats: number;
+      leads: number;
+      kbItems: number;
+      agents: number;
+      aiRequests: number;
+    };
   };
+  limitOverride?: {
+    chatLimit: number | null;
+    leadLimit: number | null;
+    kbLimit: number | null;
+    agentLimit: number | null;
+    notes: string | null;
+  } | null;
 }
 
 // ─── Plan metadata ───────────────────────────────────────────────
@@ -332,9 +355,13 @@ function formatDate(iso: string): string {
 export function SuperAdminView({
   user,
   onSessionChange,
+  activeTab,
+  onTabChange,
 }: {
   user: SuperAdminUser;
   onSessionChange?: (user: SuperAdminUser) => void;
+  activeTab: PlatformTabId;
+  onTabChange?: (tab: PlatformTabId) => void;
 }) {
   // Guard: only super admins may view this.
   if (!user?.isSuperAdmin) {
@@ -354,12 +381,22 @@ export function SuperAdminView({
     );
   }
 
-  return <SuperAdminInner onSessionChange={onSessionChange} />;
+  return (
+    <SuperAdminInner
+      activeTab={activeTab}
+      onTabChange={onTabChange}
+      onSessionChange={onSessionChange}
+    />
+  );
 }
 
 function SuperAdminInner({
+  activeTab,
+  onTabChange,
   onSessionChange,
 }: {
+  activeTab: PlatformTabId;
+  onTabChange?: (tab: PlatformTabId) => void;
   onSessionChange?: (user: SuperAdminUser) => void;
 }) {
   const [stats, setStats] = React.useState<StatsData | null>(null);
@@ -373,7 +410,8 @@ function SuperAdminInner({
   const [debounced, setDebounced] = React.useState("");
   const [planFilter, setPlanFilter] = React.useState<string>("all");
   const [statusFilter, setStatusFilter] = React.useState<string>("all");
-  const [mainTab, setMainTab] = React.useState("overview");
+  const mainTab = activeTab;
+  const setMainTab = (tab: string) => onTabChange?.(tab as PlatformTabId);
 
   // Detail dialog state
   const [detailId, setDetailId] = React.useState<string | null>(null);
@@ -669,81 +707,8 @@ function SuperAdminInner({
 
   return (
     <div className="space-y-6">
-      {/* Distinctive header bar (dark gradient) */}
-      <div className="relative overflow-hidden rounded-xl border border-slate-700/40 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white shadow-lg">
-        {/* Decorative shield pattern */}
-        <div className="absolute inset-0 opacity-10 pointer-events-none">
-          <Shield className="absolute -right-6 -top-6 h-40 w-40" />
-        </div>
-        <div className="relative p-6 sm:p-7">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-                  <Shield className="h-6 w-6 text-amber-400" />
-                  Super Admin Dashboard
-                </h1>
-                <Badge className="bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/20 gap-1">
-                  <Shield className="h-3 w-3" />
-                  Internal
-                </Badge>
-              </div>
-              <p className="text-sm text-slate-300 max-w-2xl">
-                Manage all businesses, plans, and system health for Danets AI Automation.
-              </p>
-              <p className="text-xs text-amber-200/80 flex items-center gap-1.5">
-                <ShieldAlert className="h-3.5 w-3.5" />
-                You are logged in as a super admin. Changes here affect all businesses.
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                loadStats();
-                if (mainTab === "tenants") loadBusinesses();
-              }}
-              className="gap-2 border-slate-600 bg-slate-800/60 text-slate-100 hover:bg-slate-700 hover:text-white"
-            >
-              <RefreshCw className={statsLoading || listLoading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
-              Refresh
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <Tabs value={mainTab} onValueChange={setMainTab} className="space-y-4">
-        <TabsList className="flex flex-wrap h-auto gap-1">
-          <TabsTrigger value="overview" className="gap-1.5">
-            <LayoutDashboard className="h-3.5 w-3.5" /> Overview
-          </TabsTrigger>
-          <TabsTrigger value="tenants" className="gap-1.5">
-            <Building2 className="h-3.5 w-3.5" /> Tenants
-          </TabsTrigger>
-          <TabsTrigger value="usage" className="gap-1.5">
-            <Gauge className="h-3.5 w-3.5" /> Usage
-          </TabsTrigger>
-          <TabsTrigger value="users" className="gap-1.5">
-            <Users className="h-3.5 w-3.5" /> Users
-          </TabsTrigger>
-          <TabsTrigger value="audit" className="gap-1.5">
-            <History className="h-3.5 w-3.5" /> Audit
-          </TabsTrigger>
-          <TabsTrigger value="platform" className="gap-1.5">
-            <Settings2 className="h-3.5 w-3.5" /> Platform
-          </TabsTrigger>
-          <TabsTrigger value="subscriptions" className="gap-1.5">
-            <Crown className="h-3.5 w-3.5" /> Subscriptions
-          </TabsTrigger>
-          <TabsTrigger value="payments" className="gap-1.5">
-            <CreditCard className="h-3.5 w-3.5" /> Payments
-          </TabsTrigger>
-          <TabsTrigger value="invoices" className="gap-1.5">
-            <Receipt className="h-3.5 w-3.5" /> Invoices
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="overview" className="space-y-6 mt-0">
+      {mainTab === "overview" && (
+        <div className="space-y-6">
       {/* Revenue row */}
       {!statsLoading && stats?.revenue && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -868,9 +833,11 @@ function SuperAdminInner({
           onView={setDetailId}
         />
       </div>
-        </TabsContent>
+        </div>
+      )}
 
-        <TabsContent value="tenants" className="space-y-6 mt-0">
+      {mainTab === "tenants" && (
+        <div className="space-y-6">
       {/* Businesses management table */}
       <Card>
         <CardHeader className="space-y-4">
@@ -980,45 +947,48 @@ function SuperAdminInner({
           )}
         </CardContent>
       </Card>
-        </TabsContent>
+        </div>
+      )}
 
-        <TabsContent value="usage" className="mt-0">
-          <SuperAdminUsagePanel />
-        </TabsContent>
+      {mainTab === "health" && (
+        <SuperAdminHealthPanel
+          onViewTenant={(id) => {
+            setMainTab("tenants");
+            setDetailId(id);
+          }}
+        />
+      )}
 
-        <TabsContent value="users" className="mt-0">
-          <SuperAdminUsersPanel
-            businesses={businesses.map((b) => ({ id: b.id, name: b.name }))}
-            onImpersonate={(u) => impersonateUser(u.id, u.business.id, u.email)}
-          />
-        </TabsContent>
+      {mainTab === "usage" && <SuperAdminUsagePanel />}
 
-        <TabsContent value="audit" className="mt-0">
-          <SuperAdminAuditPanel
-            businesses={businesses.map((b) => ({ id: b.id, name: b.name }))}
-          />
-        </TabsContent>
+      {mainTab === "users" && (
+        <SuperAdminUsersPanel
+          businesses={businesses.map((b) => ({ id: b.id, name: b.name }))}
+          onImpersonate={(u) => impersonateUser(u.id, u.business.id, u.email)}
+        />
+      )}
 
-        <TabsContent value="platform" className="mt-0">
-          <SuperAdminPlatformPanel
-            businesses={businesses.map((b) => ({ id: b.id, name: b.name }))}
-          />
-        </TabsContent>
+      {mainTab === "audit" && (
+        <SuperAdminAuditPanel
+          businesses={businesses.map((b) => ({ id: b.id, name: b.name }))}
+        />
+      )}
 
-        <TabsContent value="subscriptions" className="mt-0">
-          <SuperAdminSubscriptionsPanel />
-        </TabsContent>
+      {mainTab === "platform" && (
+        <SuperAdminPlatformPanel
+          businesses={businesses.map((b) => ({ id: b.id, name: b.name }))}
+        />
+      )}
 
-        <TabsContent value="payments" className="mt-0">
-          <SuperAdminPaymentsPanel />
-        </TabsContent>
+      {mainTab === "subscriptions" && <SuperAdminSubscriptionsPanel />}
 
-        <TabsContent value="invoices" className="mt-0">
-          <SuperAdminInvoicesPanel
-            businesses={businesses.map((b) => ({ id: b.id, name: b.name }))}
-          />
-        </TabsContent>
-      </Tabs>
+      {mainTab === "payments" && <SuperAdminPaymentsPanel />}
+
+      {mainTab === "invoices" && (
+        <SuperAdminInvoicesPanel
+          businesses={businesses.map((b) => ({ id: b.id, name: b.name }))}
+        />
+      )}
 
       {/* Detail dialog */}
       <Dialog open={!!detailId} onOpenChange={(open) => !open && setDetailId(null)}>
@@ -1146,6 +1116,19 @@ function SuperAdminInner({
               </div>
 
               {detail.usage && <UsageQuotaSummary usage={detail.usage} />}
+
+              <TenantLimitOverrides
+                businessId={detail.id}
+                businessName={detail.name}
+                onSaved={() => {
+                  fetch(`/api/super-admin/businesses/${detail.id}`, { cache: "no-store" })
+                    .then((r) => r.json())
+                    .then((json) => setDetail(json.business as BusinessDetail))
+                    .catch(() => {});
+                }}
+              />
+
+              <TenantWhiteLabelEditor businessId={detail.id} plan={detail.plan} />
 
               <Separator />
 

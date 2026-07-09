@@ -19,7 +19,7 @@ const createSchema = z.object({
 // GET /api/super-admin/businesses — list all businesses with stats
 export async function GET(req: NextRequest) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
 
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q")?.trim() || undefined;
@@ -107,7 +107,7 @@ export async function GET(req: NextRequest) {
 // POST /api/super-admin/businesses — create a new tenant
 export async function POST(req: NextRequest) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
   const { user } = auth;
 
   const body = await req.json().catch(() => null);

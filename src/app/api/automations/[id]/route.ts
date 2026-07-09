@@ -7,9 +7,9 @@ const patchSchema = z.object({
   name: z.string().min(2).max(100).optional(),
   description: z.string().max(500).optional().nullable(),
   triggerType: z.string().optional(),
-  triggerConfig: z.record(z.any()).optional().nullable(),
+  triggerConfig: z.record(z.string(), z.any()).optional().nullable(),
   actionType: z.string().optional(),
-  actionConfig: z.record(z.any()).optional().nullable(),
+  actionConfig: z.record(z.string(), z.any()).optional().nullable(),
   isActive: z.boolean().optional(),
 });
 

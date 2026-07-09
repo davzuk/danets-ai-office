@@ -14,7 +14,7 @@ const schema = z.object({
 // POST /api/super-admin/impersonate — log in as a tenant user for support
 export async function POST(req: NextRequest) {
   const auth = await requireSuperAdmin();
-  if ("error" in auth && auth.error) return auth.error;
+  if (!auth.success) return auth.error;
   const { user: admin, isPlatformAdmin } = auth;
 
   const body = await req.json().catch(() => null);

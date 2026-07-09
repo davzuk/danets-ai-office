@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requirePlatformSession } from "@/lib/platform-auth";
 import { generateTotpSecret, getTotpUri, verifyTotpCode } from "@/lib/totp";
+import { getPlatformConfig } from "@/lib/platform-config";
 
 // GET /api/platform-auth/totp/setup — begin 2FA setup
 export async function GET() {
@@ -90,6 +91,17 @@ export async function DELETE(req: NextRequest) {
 
   const row = await db.platformAdmin.findUnique({ where: { id: session.platformAdminId } });
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const config = await getPlatformConfig();
+  if (config.enforcePlatform2fa) {
+    return NextResponse.json(
+      {
+        error:
+          "Platform policy requires 2FA for all admins. Turn off enforcement in Platform Settings before disabling.",
+      },
+      { status: 403 }
+    );
+  }
 
   const bcrypt = await import("bcryptjs");
   if (!(await bcrypt.compare(parsed.data.password, row.password))) {

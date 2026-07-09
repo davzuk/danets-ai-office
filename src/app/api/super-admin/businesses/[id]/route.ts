@@ -16,7 +16,7 @@ type RouteCtx = { params: Promise<{ id: string }> };
 // GET /api/super-admin/businesses/[id] — detailed business view
 export async function GET(_req: NextRequest, { params }: RouteCtx) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
 
   const { id } = await params;
   const business = await db.business.findUnique({
@@ -24,6 +24,7 @@ export async function GET(_req: NextRequest, { params }: RouteCtx) {
     include: {
       users: { select: { id: true, name: true, email: true, role: true, isSuperAdmin: true, createdAt: true } },
       subscription: true,
+      limitOverride: true,
       _count: {
         select: {
           leads: true,
@@ -68,7 +69,7 @@ export async function GET(_req: NextRequest, { params }: RouteCtx) {
 // PATCH /api/super-admin/businesses/[id] — update business status/plan
 export async function PATCH(req: NextRequest, { params }: RouteCtx) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
   const { user } = auth;
 
   const { id } = await params;
@@ -138,7 +139,7 @@ export async function PATCH(req: NextRequest, { params }: RouteCtx) {
 // DELETE /api/super-admin/businesses/[id] — permanently delete a tenant
 export async function DELETE(_req: NextRequest, { params }: RouteCtx) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
   const { user } = auth;
 
   const { id } = await params;

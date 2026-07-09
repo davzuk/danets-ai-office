@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { createNotification } from "@/lib/activity";
 import { fireTrigger } from "@/lib/automation";
+import { requireQuota, LimitExceededError } from "@/lib/plan-quota";
 
 const leadSchema = z.object({
   pk: z.string().min(1),
@@ -17,7 +18,7 @@ const leadSchema = z.object({
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
-  const rl = rateLimit(`lead:${ip}`, 10, 10 * 60 * 1000);
+  const rl = await rateLimit(`lead:${ip}`, 10, 10 * 60 * 1000);
   if (!rl.success) {
     return NextResponse.json({ error: "Too many submissions." }, { status: 429 });
   }
@@ -67,6 +68,18 @@ export async function POST(req: NextRequest) {
         quality: existing.quality,
       });
     }
+  }
+
+  try {
+    await requireQuota(business.id, "leads");
+  } catch (e) {
+    if (e instanceof LimitExceededError) {
+      return NextResponse.json(
+        { error: "Lead capture limit reached for this business." },
+        { status: 429 }
+      );
+    }
+    throw e;
   }
 
   const lead = await db.lead.create({

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
+import { testIntegrationConnection } from "@/lib/integration-test";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
-// POST /api/integrations/[id]/test — test connection (placeholder)
+// POST /api/integrations/[id]/test — verify provider connectivity
 export async function POST(_req: NextRequest, { params }: RouteCtx) {
   let user;
   try {
@@ -19,18 +20,23 @@ export async function POST(_req: NextRequest, { params }: RouteCtx) {
   });
   if (!integration) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // Mark as tested — actual connection test depends on provider
+  const result = await testIntegrationConnection(integration);
+
   await db.integration.update({
     where: { id },
     data: {
       lastTestedAt: new Date(),
-      status: "active",
+      status: result.success ? "active" : "error",
+      notes: result.success
+        ? result.message
+        : [result.message, result.details].filter(Boolean).join(" — "),
     },
   });
 
   return NextResponse.json({
-    success: true,
-    message: `Connection test completed for ${integration.name}. Status: active.`,
+    success: result.success,
+    message: result.message,
+    details: result.details,
     lastTestedAt: new Date().toISOString(),
   });
 }

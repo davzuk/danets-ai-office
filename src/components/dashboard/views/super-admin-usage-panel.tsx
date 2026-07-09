@@ -29,9 +29,22 @@ interface TenantUsageRow {
     chats: number;
     leads: number;
     kbItems: number;
+    agents: number;
     aiRequests: number;
-    limits: { chatLimit: number; leadLimit: number; kbLimit: number; aiLimit: number };
-    percent: { chats: number; leads: number; kbItems: number; aiRequests: number };
+    limits: {
+      chatLimit: number;
+      leadLimit: number;
+      kbLimit: number;
+      agentLimit: number;
+      aiLimit: number;
+    };
+    percent: {
+      chats: number;
+      leads: number;
+      kbItems: number;
+      agents: number;
+      aiRequests: number;
+    };
   };
 }
 
@@ -214,6 +227,7 @@ export function UsageQuotaSummary({
       <UsageBar label="Chats" used={usage.chats} limit={usage.limits.chatLimit} pct={usage.percent.chats} />
       <UsageBar label="Leads" used={usage.leads} limit={usage.limits.leadLimit} pct={usage.percent.leads} />
       <UsageBar label="KB Items" used={usage.kbItems} limit={usage.limits.kbLimit} pct={usage.percent.kbItems} />
+      <UsageBar label="AI Agents" used={usage.agents} limit={usage.limits.agentLimit} pct={usage.percent.agents} />
       <UsageBar label="AI Requests" used={usage.aiRequests} limit={usage.limits.aiLimit} pct={usage.percent.aiRequests} />
     </div>
   );

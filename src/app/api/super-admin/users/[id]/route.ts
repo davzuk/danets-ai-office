@@ -16,7 +16,7 @@ type RouteCtx = { params: Promise<{ id: string }> };
 // PATCH /api/super-admin/users/[id] — update user or reset password
 export async function PATCH(req: NextRequest, { params }: RouteCtx) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
   const { user: admin } = auth;
 
   const { id } = await params;
@@ -76,7 +76,7 @@ export async function PATCH(req: NextRequest, { params }: RouteCtx) {
 // DELETE /api/super-admin/users/[id] — remove a user from any tenant
 export async function DELETE(_req: NextRequest, { params }: RouteCtx) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
   const { user: admin } = auth;
 
   const { id } = await params;

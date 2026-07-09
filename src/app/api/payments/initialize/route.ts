@@ -4,6 +4,14 @@ import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { randomBytes } from "crypto";
+import {
+  calculateCheckoutAmount,
+  initializeFlutterwaveCheckout,
+  initializePaystackCheckout,
+  isFlutterwaveConfigured,
+  isPaystackConfigured,
+  mockCheckoutUrl,
+} from "@/lib/payment-gateway";
 
 const initSchema = z.object({
   planName: z.enum(["free", "starter", "pro", "enterprise"]),
@@ -31,26 +39,19 @@ export async function POST(req: NextRequest) {
 
   const { planName, provider, billingCycle } = parsed.data;
 
-  // Get plan details
   const plan = await db.subscriptionPlan.findUnique({ where: { name: planName } });
   if (!plan) {
     return NextResponse.json({ error: "Plan not found" }, { status: 404 });
   }
 
-  // Calculate amount (annual = 20% discount)
-  const monthlyFee = plan.priceUsd;
-  const amount = billingCycle === "annual" ? monthlyFee * 12 * 0.8 : monthlyFee;
-  const currency = "USD";
+  const { amount, currency } = calculateCheckoutAmount(plan.priceUsd, billingCycle);
 
   if (amount === 0) {
-    // Free plan — no payment needed, just update subscription
     return handleFreePlan(user, planName);
   }
 
-  // Generate unique reference
   const reference = `DAN-${Date.now()}-${randomBytes(4).toString("hex")}`;
 
-  // Create payment record
   const payment = await db.payment.create({
     data: {
       businessId: user.businessId,
@@ -61,7 +62,11 @@ export async function POST(req: NextRequest) {
       status: "pending",
       payerEmail: user.email,
       payerName: user.name,
-      metadata: JSON.stringify({ planName, billingCycle, monthlyFee }),
+      metadata: JSON.stringify({
+        planName,
+        billingCycle,
+        monthlyFee: plan.priceUsd,
+      }),
     },
   });
 
@@ -75,10 +80,59 @@ export async function POST(req: NextRequest) {
     metadata: { paymentId: payment.id, reference, planName, amount },
   });
 
-  // Generate provider-specific payment URL
-  // In production, this would call the actual Paystack/Flutterwave API
-  // For now, return a mock URL that simulates the payment page
-  const paymentUrl = generatePaymentUrl(provider, reference, amount, currency, user.email);
+  const baseUrl = req.nextUrl.origin;
+  let paymentUrl: string;
+  let checkoutMode: "live" | "sandbox" | "mock" = "mock";
+  let note: string;
+
+  try {
+    if (provider === "paystack") {
+      if (!isPaystackConfigured()) {
+        paymentUrl = mockCheckoutUrl(reference, amount, currency, user.email, provider);
+        note =
+          "Paystack keys not configured — using local test checkout. Set PAYSTACK_SECRET_KEY for live checkout.";
+      } else {
+        const checkout = await initializePaystackCheckout({
+          email: user.email,
+          amount,
+          currency,
+          reference,
+          baseUrl,
+        });
+        paymentUrl = checkout.paymentUrl;
+        checkoutMode = checkout.mode;
+        note = "Redirecting to Paystack secure checkout.";
+      }
+    } else if (provider === "flutterwave") {
+      if (!isFlutterwaveConfigured()) {
+        paymentUrl = mockCheckoutUrl(reference, amount, currency, user.email, provider);
+        note =
+          "Flutterwave keys not configured — using local test checkout. Set FLUTTERWAVE_SECRET_KEY for live checkout.";
+      } else {
+        const checkout = await initializeFlutterwaveCheckout({
+          email: user.email,
+          amount,
+          currency,
+          reference,
+          customerName: user.name,
+          baseUrl,
+        });
+        paymentUrl = checkout.paymentUrl;
+        checkoutMode = checkout.mode;
+        note = "Redirecting to Flutterwave secure checkout.";
+      }
+    } else {
+      paymentUrl = mockCheckoutUrl(reference, amount, currency, user.email, provider);
+      note = "Manual payment — use the reference to confirm after transfer.";
+    }
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Checkout initialization failed";
+    await db.payment.update({
+      where: { id: payment.id },
+      data: { status: "failed" },
+    });
+    return NextResponse.json({ error: msg }, { status: 502 });
+  }
 
   return NextResponse.json({
     payment: {
@@ -92,18 +146,12 @@ export async function POST(req: NextRequest) {
       billingCycle,
     },
     paymentUrl,
-    note:
-      provider === "manual" || provider === "bank_transfer"
-        ? "Manual payment — use the reference to confirm after transfer."
-        : "Payment gateway integration is ready. In production, this URL redirects to the provider's checkout page.",
+    checkoutMode,
+    note,
   });
 }
 
-async function handleFreePlan(
-  user: any,
-  planName: string
-) {
-  // Update subscription directly
+async function handleFreePlan(user: { businessId: string }, planName: string) {
   let subscription = await db.businessSubscription.findUnique({
     where: { businessId: user.businessId },
   });
@@ -129,26 +177,4 @@ async function handleFreePlan(
     redirected: true,
     message: "Switched to free plan — no payment required.",
   });
-}
-
-function generatePaymentUrl(
-  provider: string,
-  reference: string,
-  amount: number,
-  currency: string,
-  email: string
-): string {
-  // In production, these would be real API calls:
-  // - Paystack: POST https://api.paystack.co/transaction/initialize
-  // - Flutterwave: POST https://api.flutterwave.com/v3/payments
-
-  // For now, return a mock checkout URL
-  const params = new URLSearchParams({
-    ref: reference,
-    amount: amount.toString(),
-    currency,
-    email,
-    provider,
-  });
-  return `/payment-checkout?${params.toString()}`;
 }

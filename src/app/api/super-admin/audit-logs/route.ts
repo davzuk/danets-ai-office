@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireSuperAdmin } from "@/lib/super-admin";
 
@@ -10,7 +11,7 @@ const VALID_MODULES = [
 // GET /api/super-admin/audit-logs — cross-tenant activity timeline
 export async function GET(req: NextRequest) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
 
   const { searchParams } = new URL(req.url);
   const businessId = searchParams.get("businessId") || undefined;
@@ -19,12 +20,7 @@ export async function GET(req: NextRequest) {
   const q = searchParams.get("q")?.trim() || undefined;
   const limit = Math.min(parseInt(searchParams.get("limit") || "100"), 200);
 
-  const where: {
-    businessId?: string;
-    module?: string;
-    action?: string;
-    OR?: { description: { contains: string } }[] | { userName: { contains: string } }[];
-  } = {};
+  const where: Record<string, unknown> = {};
   if (businessId) where.businessId = businessId;
   if (moduleFilter && VALID_MODULES.includes(moduleFilter)) where.module = moduleFilter;
   if (action) where.action = action;
@@ -33,7 +29,7 @@ export async function GET(req: NextRequest) {
   }
 
   const logs = await db.activityLog.findMany({
-    where,
+    where: where as Prisma.ActivityLogWhereInput,
     orderBy: { createdAt: "desc" },
     take: limit,
     include: {

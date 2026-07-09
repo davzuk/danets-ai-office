@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
 import { logActivity } from "@/lib/activity";
+import { requireQuota } from "@/lib/plan-quota";
 
 // GET — return the business's AI agent; create a default if none exists.
 export function GET() {
@@ -12,6 +13,7 @@ export function GET() {
     });
 
     if (!agent) {
+      await requireQuota(user.businessId, "agents");
       agent = await db.aiAgent.create({
         data: {
           businessId: user.businessId,
@@ -101,6 +103,7 @@ export function PUT(req: NextRequest) {
         data: cleanData,
       });
     } else {
+      await requireQuota(user.businessId, "agents");
       agent = await db.aiAgent.create({
         data: { businessId: user.businessId, ...cleanData },
       });

@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
+import { requireQuota } from "@/lib/plan-quota";
 
 const createSchema = z.object({
   title: z.string().min(2, "Title must be at least 2 characters").max(200),
@@ -56,6 +57,8 @@ export async function POST(req: NextRequest) {
       const first = parsed.error.issues[0];
       throw new Error(first?.message || "Invalid input");
     }
+
+    await requireQuota(user.businessId, "kbItems");
 
     const item = await db.knowledgeBaseItem.create({
       data: {

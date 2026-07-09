@@ -17,7 +17,7 @@ export async function getPlanLimits(businessId: string) {
 
 export async function checkChatRateLimit(businessId: string, identifier: string) {
   const limits = await getPlanLimits(businessId);
-  const result = baseRateLimit(`chat:${businessId}:${identifier}`, limits.chatPerHour, 60 * 60 * 1000);
+  const result = await baseRateLimit(`chat:${businessId}:${identifier}`, limits.chatPerHour, 60 * 60 * 1000);
   return { allowed: result.success, limit: limits.chatPerHour, remaining: result.remaining };
 }
 

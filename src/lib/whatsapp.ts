@@ -32,22 +32,69 @@ export async function sendWhatsAppMessage(
     const url = `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`;
     result = { success: true, clickToChatUrl: url };
     await db.whatsAppMessage.update({ where: { id: msgRecord.id }, data: { status: "sent", sentAt: new Date() } });
+  } else if (provider === "meta_cloud_api") {
+    result = await sendViaMetaCloudApi(integration!, normalized, message);
+    await db.whatsAppMessage.update({
+      where: { id: msgRecord.id },
+      data: result.success
+        ? { status: "sent", providerRef: result.providerRef, sentAt: new Date() }
+        : { status: "failed", errorMessage: result.error },
+    });
   } else {
-    try {
-      // In production: call provider API (Meta Cloud API / Twilio / Termii)
-      console.log(`[whatsapp] ${provider} send (simulated): to=${normalized}`);
-      result = { success: true, providerRef: `${provider}_sim_${Date.now()}` };
-      await db.whatsAppMessage.update({
-        where: { id: msgRecord.id },
-        data: { status: "sent", providerRef: result.providerRef, sentAt: new Date() },
-      });
-    } catch (e: any) {
-      result = { success: false, error: e?.message || "Send failed" };
-      await db.whatsAppMessage.update({ where: { id: msgRecord.id }, data: { status: "failed", errorMessage: result.error } });
-    }
+    result = {
+      success: false,
+      error: `Live send for provider "${provider}" is not configured. Use manual mode or Meta Cloud API.`,
+    };
+    await db.whatsAppMessage.update({
+      where: { id: msgRecord.id },
+      data: { status: "failed", errorMessage: result.error },
+    });
   }
 
   return result;
+}
+
+async function sendViaMetaCloudApi(
+  integration: { apiKey: string | null; phoneNumberId: string | null },
+  phone: string,
+  message: string
+): Promise<SendResult> {
+  const token = integration.apiKey?.trim();
+  const phoneNumberId = integration.phoneNumberId?.trim();
+
+  if (!token || !phoneNumberId) {
+    return {
+      success: false,
+      error: "Meta Cloud API requires an access token and phone number ID.",
+    };
+  }
+
+  const res = await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: phone,
+      type: "text",
+      text: { body: message },
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return {
+      success: false,
+      error: data?.error?.message || `Meta API error (${res.status})`,
+    };
+  }
+
+  return {
+    success: true,
+    providerRef: data.messages?.[0]?.id || `meta_${Date.now()}`,
+  };
 }
 
 function normalizePhone(phone: string): string {

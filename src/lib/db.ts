@@ -10,4 +10,4 @@ export const db =
     log: ['warn', 'error'],
   })
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db// force reload Mon Jun 29 13:11:10 UTC 2026
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db // reload after schema changes

@@ -8,7 +8,7 @@ import { generateInvoiceNumber } from "@/lib/subscription-billing";
 // GET /api/super-admin/invoices — platform-wide invoice list
 export async function GET(req: NextRequest) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
 
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status") || undefined;
@@ -61,7 +61,7 @@ const createSchema = z.object({
 // POST /api/super-admin/invoices — create a manual invoice for a tenant
 export async function POST(req: NextRequest) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
   const { user } = auth;
 
   const body = await req.json().catch(() => ({}));
@@ -119,7 +119,7 @@ const patchSchema = z.object({
 // PATCH /api/super-admin/invoices — void, mark paid, sent, overdue
 export async function PATCH(req: NextRequest) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
   const { user } = auth;
 
   const body = await req.json().catch(() => ({}));

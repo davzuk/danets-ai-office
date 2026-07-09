@@ -22,7 +22,7 @@ import {
   Zap,
   Plug,
   CreditCard,
-  Shield,
+  Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DanetsLogo } from "@/components/dashboard/shared/danets-logo";
@@ -30,6 +30,7 @@ import { ThemeToggle } from "@/components/dashboard/shared/theme-toggle";
 import { NotificationBell } from "@/components/dashboard/shared/notification-bell";
 import { CommandPalette } from "@/components/dashboard/shared/command-palette";
 import { PlatformAnnouncementBanner } from "@/components/dashboard/shared/platform-announcement-banner";
+import { SubscriptionStatusBanner } from "@/components/dashboard/shared/subscription-status-banner";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -50,8 +51,7 @@ export type ViewId =
   | "integrations"
   | "subscription"
   | "settings"
-  | "audit"
-  | "super-admin";
+  | "audit";
 
 interface NavItem {
   id: ViewId;
@@ -79,7 +79,6 @@ const NAV: NavItem[] = [
   { id: "subscription", label: "Subscription", icon: CreditCard, group: "system", desc: "Plan & billing" },
   { id: "audit", label: "Audit Logs", icon: History, group: "system", desc: "Activity tracking" },
   { id: "settings", label: "Settings", icon: Settings, group: "system", desc: "Business settings" },
-  { id: "super-admin", label: "Super Admin", icon: Shield, group: "system", desc: "Internal management" },
 ];
 
 export function AppShell({
@@ -88,6 +87,8 @@ export function AppShell({
   onNavigate,
   onLogout,
   onSessionChange,
+  subscription,
+  moduleAccess,
   children,
 }: {
   user: {
@@ -95,8 +96,6 @@ export function AppShell({
     email: string;
     businessName: string;
     businessId: string;
-    isSuperAdmin?: boolean;
-    isPlatformAdmin?: boolean;
     isImpersonating?: boolean;
   };
   active: ViewId;
@@ -112,6 +111,16 @@ export function AppShell({
     isSuperAdmin: boolean;
     isImpersonating?: boolean;
   }) => void;
+  subscription?: {
+    status: string;
+    level: "full" | "read_only" | "blocked";
+    message?: string;
+  } | null;
+  moduleAccess?: {
+    plan: string;
+    modules: Record<string, { enabled: boolean; label: string; requiredPlanLabel: string }>;
+    enabledModules: string[];
+  } | null;
   children: React.ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -151,16 +160,29 @@ export function AppShell({
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error || "Failed to exit");
       }
-      const data = await res.json();
-      toast.success("Returned to super admin session");
-      onSessionChange?.(data.user);
-      onNavigate(data.user.isPlatformAdmin || data.user.isSuperAdmin ? "super-admin" : "overview");
+      toast.success("Returned to platform console");
+      window.location.href = "/platform";
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to exit impersonation");
     }
   }
 
   const activeItem = NAV.find((n) => n.id === active);
+
+  function handleNavigate(v: ViewId) {
+    const mod = moduleAccess?.modules[v];
+    if (mod && !mod.enabled) {
+      toast.message(`${mod.label} requires ${mod.requiredPlanLabel} plan`, {
+        description: "Upgrade your subscription to unlock this module.",
+        action: {
+          label: "View plans",
+          onClick: () => onNavigate("subscription"),
+        },
+      });
+      return;
+    }
+    onNavigate(v);
+  }
 
   return (
     <div className="min-h-screen flex bg-muted/30">
@@ -185,11 +207,11 @@ export function AppShell({
         <SidebarContent
           active={active}
           onNavigate={(v) => {
-            onNavigate(v);
+            handleNavigate(v);
             setMobileOpen(false);
           }}
-          isSuperAdmin={user.isSuperAdmin || user.isPlatformAdmin}
           groups={groups}
+          moduleAccess={moduleAccess}
         />
         <SidebarFooter user={user} onLogout={logout} />
       </aside>
@@ -216,11 +238,11 @@ export function AppShell({
             <SidebarContent
               active={active}
               onNavigate={(v) => {
-                onNavigate(v);
+                handleNavigate(v);
                 setMobileOpen(false);
               }}
-              isSuperAdmin={user.isSuperAdmin || user.isPlatformAdmin}
               groups={groups}
+              moduleAccess={moduleAccess}
             />
             <SidebarFooter user={user} onLogout={logout} />
           </aside>
@@ -275,7 +297,7 @@ export function AppShell({
               Agent online
             </div>
             <ThemeToggle />
-            <NotificationBell businessId={user.businessId} onNavigate={onNavigate} />
+            <NotificationBell businessId={user.businessId} onNavigate={handleNavigate} />
             <div className="text-right hidden sm:block">
               <div className="text-xs font-medium leading-tight">{user.name}</div>
               <div className="text-[11px] text-muted-foreground leading-tight">
@@ -286,9 +308,10 @@ export function AppShell({
         </header>
 
         {/* Content */}
-        <PlatformAnnouncementBanner
-          isSuperAdmin={user.isSuperAdmin}
-          isPlatformAdmin={user.isPlatformAdmin}
+        <PlatformAnnouncementBanner />
+        <SubscriptionStatusBanner
+          subscription={subscription ?? null}
+          onNavigate={onNavigate}
         />
         <main className="flex-1 p-4 lg:p-6 overflow-x-hidden">
           {children}
@@ -309,7 +332,8 @@ export function AppShell({
       <CommandPalette
         open={cmdOpen}
         onOpenChange={setCmdOpen}
-        onNavigate={onNavigate}
+        onNavigate={handleNavigate}
+        moduleAccess={moduleAccess}
       />
     </div>
   );
@@ -319,14 +343,15 @@ function SidebarContent({
   active,
   onNavigate,
   groups,
-  isSuperAdmin,
+  moduleAccess,
 }: {
   active: ViewId;
   onNavigate: (v: ViewId) => void;
   groups: { key: NavItem["group"]; label: string }[];
-  isSuperAdmin?: boolean;
+  moduleAccess?: {
+    modules: Record<string, { enabled: boolean; requiredPlanLabel: string }>;
+  } | null;
 }) {
-  const visibleNav = NAV.filter((n) => n.id !== "super-admin" || isSuperAdmin);
   return (
     <div className="flex-1 flex flex-col overflow-y-auto scroll-thin">
       <div className="p-4 border-b border-sidebar-border">
@@ -338,9 +363,10 @@ function SidebarContent({
             <div className="px-2 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/50">
               {g.label}
             </div>
-            {visibleNav.filter((n) => n.group === g.key).map((item) => {
+            {NAV.filter((n) => n.group === g.key).map((item) => {
               const Icon = item.icon;
               const isActive = active === item.id;
+              const locked = moduleAccess?.modules[item.id]?.enabled === false;
               return (
                 <button
                   key={item.id}
@@ -349,7 +375,9 @@ function SidebarContent({
                     "w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all group relative",
                     isActive
                       ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-md"
-                      : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                      : locked
+                        ? "text-sidebar-foreground/45 hover:bg-sidebar-accent/50"
+                        : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                   )}
                 >
                   {isActive && (
@@ -359,11 +387,14 @@ function SidebarContent({
                     size={18}
                     className={cn(
                       "shrink-0 transition-transform",
-                      !isActive && "group-hover:scale-110"
+                      !isActive && !locked && "group-hover:scale-110"
                     )}
                   />
                   <span className="flex-1 text-left">{item.label}</span>
-                  {isActive && <ChevronRight size={14} className="opacity-70" />}
+                  {locked && (
+                    <Lock size={12} className="opacity-60 shrink-0" aria-label="Plan upgrade required" />
+                  )}
+                  {isActive && !locked && <ChevronRight size={14} className="opacity-70" />}
                 </button>
               );
             })}

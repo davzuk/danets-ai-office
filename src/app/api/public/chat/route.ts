@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { aiChat, logUsage, retrieveKnowledge } from "@/lib/ai";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { checkChatRateLimit, checkMonthlyAiQuota } from "@/lib/plan-limits";
+import { checkQuota } from "@/lib/plan-quota";
 
 const chatSchema = z.object({
   pk: z.string().min(1),
@@ -18,7 +19,7 @@ const chatSchema = z.object({
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
   // Rate limit: 30 messages / 10 min per IP (generous for real visitors)
-  const rl = rateLimit(`chat:${ip}`, 30, 10 * 60 * 1000);
+  const rl = await rateLimit(`chat:${ip}`, 30, 10 * 60 * 1000);
   if (!rl.success) {
     return NextResponse.json(
       { error: "Rate limit exceeded. Please slow down." },
@@ -88,6 +89,17 @@ export async function POST(req: NextRequest) {
     : null;
 
   if (!session) {
+    const chatQuota = await checkQuota(business.id, "chats");
+    if (!chatQuota.allowed) {
+      return NextResponse.json(
+        {
+          error:
+            "This business has reached its monthly chat session limit. Please contact them directly.",
+        },
+        { status: 429 }
+      );
+    }
+
     session = await db.chatSession.create({
       data: {
         businessId: business.id,

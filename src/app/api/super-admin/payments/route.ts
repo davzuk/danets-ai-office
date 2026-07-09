@@ -8,7 +8,7 @@ import { activateSubscriptionFromPayment } from "@/lib/subscription-billing";
 // GET /api/super-admin/payments — platform-wide payment list
 export async function GET(req: NextRequest) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
 
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status") || undefined;
@@ -61,7 +61,7 @@ const patchSchema = z.object({
 // PATCH /api/super-admin/payments — mark paid, failed, or refund
 export async function PATCH(req: NextRequest) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
   const { user } = auth;
 
   const body = await req.json().catch(() => ({}));

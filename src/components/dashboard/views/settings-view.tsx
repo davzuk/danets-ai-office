@@ -36,6 +36,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { TeamMembers } from "@/components/dashboard/views/team-members";
+import { TotpSecurityCard } from "@/components/dashboard/shared/totp-security-card";
+import { planRank, formatPlanLabel } from "@/lib/module-registry";
+import { Lock, Sparkles } from "lucide-react";
 
 interface BusinessInfo {
   business: {
@@ -72,7 +75,13 @@ interface WhiteLabelConfig {
   isActive: boolean;
 }
 
-export function SettingsView({ user }: { user: any }) {
+export function SettingsView({
+  user,
+  onNavigate,
+}: {
+  user: any;
+  onNavigate?: (view: string) => void;
+}) {
   const [info, setInfo] = useState<BusinessInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -124,6 +133,11 @@ export function SettingsView({ user }: { user: any }) {
   }, []);
 
   useEffect(() => {
+    if (!info?.business?.plan) return;
+    if (planRank(info.business.plan) < planRank("enterprise")) {
+      setWlLoading(false);
+      return;
+    }
     fetch("/api/white-label")
       .then((r) => r.json())
       .then((d) => {
@@ -142,7 +156,7 @@ export function SettingsView({ user }: { user: any }) {
       })
       .catch(() => toast.error("Failed to load white-label configuration"))
       .finally(() => setWlLoading(false));
-  }, []);
+  }, [info?.business?.plan]);
 
   async function save() {
     setSaving(true);
@@ -378,7 +392,27 @@ export function SettingsView({ user }: { user: any }) {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {wlLoading ? (
+              {info?.business && planRank(info.business.plan) < planRank("enterprise") ? (
+                <div className="rounded-lg border border-dashed p-6 text-center space-y-3">
+                  <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+                    <Lock className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    White-label branding is available on the{" "}
+                    <strong>{formatPlanLabel("enterprise")}</strong> plan. Your current plan is{" "}
+                    <strong>{formatPlanLabel(info.business.plan)}</strong>.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => onNavigate?.("subscription")}
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    View plans & upgrade
+                  </Button>
+                </div>
+              ) : wlLoading ? (
                 <div className="space-y-2">
                   <Skeleton className="h-9 w-full" />
                   <Skeleton className="h-9 w-full" />
@@ -746,12 +780,32 @@ export function SettingsView({ user }: { user: any }) {
               <CardTitle className="text-base flex items-center gap-2">
                 <ShieldCheck size={16} /> Security
               </CardTitle>
+              <CardDescription>
+                Account protection and platform security practices.
+              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2 text-xs text-muted-foreground">
-              <p>• All AI keys are stored server-side only (never exposed to the browser).</p>
-              <p>• Public chat endpoint is rate-limited (30 messages / 10 min / IP).</p>
-              <p>• Business-level data isolation enforced on every query.</p>
-              <p>• All AI usage is logged with token & cost tracking.</p>
+            <CardContent className="space-y-4">
+              <TotpSecurityCard
+                setupPath="/api/auth/totp/setup"
+                loadStatus={async () => {
+                  const res = await fetch("/api/auth/me", { cache: "no-store" });
+                  const data = await res.json();
+                  if (!data.user) return null;
+                  return {
+                    email: data.user.email,
+                    totpEnabled: !!data.user.totpEnabled,
+                  };
+                }}
+                title="Two-factor authentication"
+                description="Optional TOTP for your tenant account. Required at sign-in when enabled."
+              />
+              <Separator />
+              <div className="space-y-2 text-xs text-muted-foreground">
+                <p>• All AI keys are stored server-side only (never exposed to the browser).</p>
+                <p>• Public chat endpoint is rate-limited (30 messages / 10 min / IP).</p>
+                <p>• Business-level data isolation enforced on every query.</p>
+                <p>• All AI usage is logged with token & cost tracking.</p>
+              </div>
             </CardContent>
           </Card>
         </div>

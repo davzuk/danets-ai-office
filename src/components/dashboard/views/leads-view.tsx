@@ -510,6 +510,8 @@ function LeadDetailDialog({
   onToggleTask,
   onDeleteTask,
   onDeleted,
+  onScoreLead,
+  scoring,
   saving,
 }: {
   lead: LeadDetail | null;
@@ -521,6 +523,8 @@ function LeadDetailDialog({
   onToggleTask: (id: string, taskId: string, completed: boolean) => Promise<boolean>;
   onDeleteTask: (id: string, taskId: string) => Promise<boolean>;
   onDeleted: (id: string) => void;
+  onScoreLead: (id: string) => Promise<void>;
+  scoring: boolean;
   saving: boolean;
 }) {
   const [confirmDelete, setConfirmDelete] = React.useState(false);
@@ -669,22 +673,39 @@ function LeadDetailDialog({
                   }
                   disabled={saving}
                 />
-                <CrmFieldEditor
-                  label="Lead Score"
-                  icon={Target}
-                  value={lead.leadScore ?? 0}
-                  type="number"
-                  min={0}
-                  max={100}
-                  suffix="/ 100"
-                  showProgress
-                  onSave={(v) =>
-                    onSave(lead.id, {
-                      leadScore: typeof v === "number" ? v : 0,
-                    })
-                  }
-                  disabled={saving}
-                />
+                <div className="space-y-1.5">
+                  <CrmFieldEditor
+                    label="Lead Score"
+                    icon={Target}
+                    value={lead.leadScore ?? 0}
+                    type="number"
+                    min={0}
+                    max={100}
+                    suffix="/ 100"
+                    showProgress
+                    onSave={(v) =>
+                      onSave(lead.id, {
+                        leadScore: typeof v === "number" ? v : 0,
+                      })
+                    }
+                    disabled={saving || scoring}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full gap-1.5 h-8 text-xs"
+                    disabled={saving || scoring}
+                    onClick={() => onScoreLead(lead.id)}
+                  >
+                    {scoring ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <Sparkles size={13} />
+                    )}
+                    AI score lead
+                  </Button>
+                </div>
                 <CrmFieldEditor
                   label="Company"
                   icon={Building2}
@@ -1679,6 +1700,7 @@ export function LeadsView({ user }: { user: UserProp }) {
   );
   const [detailLoading, setDetailLoading] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
+  const [scoring, setScoring] = React.useState(false);
 
   const [deleteTarget, setDeleteTarget] = React.useState<Lead | null>(null);
   const [viewMode, setViewMode] = React.useState<"list" | "pipeline">("list");
@@ -1759,6 +1781,33 @@ export function LeadsView({ user }: { user: UserProp }) {
       toast.error("Failed to load lead details");
     } finally {
       setDetailLoading(false);
+    }
+  }
+
+  // ─── AI lead scoring ───────────────────────────────────────────
+  async function scoreLeadWithAi(leadId: string) {
+    setScoring(true);
+    try {
+      const res = await fetch("/api/ai/score-lead", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Scoring failed");
+      const score = data.score ?? 0;
+      toast.success(`Lead scored: ${score}/100`);
+      setSelectedLead((prev) =>
+        prev && prev.id === leadId ? { ...prev, leadScore: score } : prev
+      );
+      setLeads((prev) =>
+        prev.map((l) => (l.id === leadId ? { ...l, leadScore: score } : l))
+      );
+      fetchStats();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to score lead");
+    } finally {
+      setScoring(false);
     }
   }
 
@@ -2548,6 +2597,8 @@ export function LeadsView({ user }: { user: UserProp }) {
         onToggleTask={toggleTask}
         onDeleteTask={deleteTask}
         onDeleted={handleDelete}
+        onScoreLead={scoreLeadWithAi}
+        scoring={scoring}
         saving={saving || detailLoading}
       />
 

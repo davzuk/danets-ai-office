@@ -6,7 +6,7 @@ import { getTenantUsage } from "@/lib/tenant-usage";
 // GET /api/super-admin/usage — per-tenant quota usage across the platform
 export async function GET(req: NextRequest) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
 
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q")?.trim() || undefined;

@@ -1,6 +1,9 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { db } from "@/lib/db";
 import { randomBytes } from "crypto";
+import { enforceSubscriptionAccess } from "@/lib/subscription-access";
+import { enforceModuleAccess } from "@/lib/module-access";
+import { getPlatformConfig } from "@/lib/platform-config";
 
 export const SESSION_COOKIE = "danets_session";
 export const IMPERSONATOR_COOKIE = "danets_impersonator";
@@ -149,12 +152,18 @@ export async function getSession(): Promise<SessionUser | null> {
     businessName: u.business.name,
     isSuperAdmin: impersonating ? false : u.isSuperAdmin,
     isImpersonating: impersonating,
+    totpEnabled: u.totpEnabled,
   };
 }
 
 export async function requireSession(): Promise<SessionUser> {
   const s = await getSession();
   if (!s) throw new Error("UNAUTHORIZED");
+
+  const platformConfig = await getPlatformConfig();
+  if (platformConfig.maintenanceMode && !s.isImpersonating) {
+    throw new Error("MAINTENANCE");
+  }
 
   // Super admins can operate across tenants even if their "home" business
   // is suspended — they manage the platform itself.
@@ -166,6 +175,12 @@ export async function requireSession(): Promise<SessionUser> {
     if (business?.status === "suspended") {
       throw new Error("SUSPENDED");
     }
+
+    const h = await headers();
+    const method = h.get("x-danets-method") || "GET";
+    const pathname = h.get("x-danets-pathname") || "";
+    await enforceSubscriptionAccess(s.businessId, { method, pathname });
+    await enforceModuleAccess(s.businessId, pathname);
   }
 
   return s;

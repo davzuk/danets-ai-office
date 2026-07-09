@@ -48,7 +48,7 @@ const upsertSchema = z.object({
   provider: z.string().min(1).max(60),
   name: z.string().min(1).max(100),
   status: z.enum(["active", "inactive", "testing", "error"]).default("inactive"),
-  config: z.record(z.any()).optional(),
+  config: z.record(z.string(), z.any()).optional(),
   notes: z.string().max(2000).optional().nullable(),
 });
 

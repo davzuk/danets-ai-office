@@ -54,9 +54,9 @@ const createSchema = z.object({
   name: z.string().min(2).max(100),
   description: z.string().max(500).optional().or(z.literal("")),
   triggerType: z.enum(TRIGGERS as [string, ...string[]]),
-  triggerConfig: z.record(z.any()).optional(),
+  triggerConfig: z.record(z.string(), z.any()).optional(),
   actionType: z.enum(ACTIONS as [string, ...string[]]),
-  actionConfig: z.record(z.any()).optional(),
+  actionConfig: z.record(z.string(), z.any()).optional(),
   isActive: z.boolean().default(true),
 });
 

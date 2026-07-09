@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
+import { checkQuota, LimitExceededError } from "@/lib/plan-quota";
 
 // POST /api/knowledge-base/import
 // Bulk import knowledge base items from pasted text.
@@ -92,6 +93,11 @@ export async function POST(req: NextRequest) {
       sourceType: "doc",
       status: "active" as const,
     }));
+
+    const quota = await checkQuota(user.businessId, "kbItems", toCreate.length);
+    if (!quota.allowed) {
+      throw new LimitExceededError("kbItems", quota.limit, quota.used);
+    }
 
     const result = await db.knowledgeBaseItem.createMany({ data: toCreate });
 

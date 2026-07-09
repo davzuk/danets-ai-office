@@ -16,7 +16,7 @@ const createSchema = z.object({
 // GET /api/super-admin/announcements
 export async function GET() {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
 
   const announcements = await db.platformAnnouncement.findMany({
     orderBy: { createdAt: "desc" },
@@ -41,7 +41,7 @@ export async function GET() {
 // POST /api/super-admin/announcements
 export async function POST(req: NextRequest) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
   const { user } = auth;
 
   const body = await req.json().catch(() => null);

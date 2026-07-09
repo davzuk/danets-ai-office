@@ -112,6 +112,17 @@ interface WorkflowsResponse {
   workflows: Workflow[];
 }
 
+interface AutomationRun {
+  id: string;
+  workflowId: string;
+  workflowName: string;
+  triggerType: string;
+  actionType: string;
+  status: string;
+  error: string | null;
+  createdAt: string;
+}
+
 // ─── Static configuration ───────────────────────────────────────────
 // Trigger types + friendly labels + icons + accent classes.
 interface NodeConfig {
@@ -1071,6 +1082,91 @@ function DeleteDialog({
   );
 }
 
+// ─── Run history panel ──────────────────────────────────────────────
+function RunHistoryPanel() {
+  const [runs, setRuns] = React.useState<AutomationRun[]>([]);
+  const [loading, setLoading] = React.useState(true);
+
+  const fetchRuns = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/automations/runs?limit=30", { cache: "no-store" });
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json();
+      setRuns(data.runs ?? []);
+    } catch {
+      toast.error("Failed to load run history");
+      setRuns([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    fetchRuns();
+  }, [fetchRuns]);
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between gap-3 px-6 py-4 border-b">
+        <div className="flex items-center gap-2">
+          <History className="text-primary" size={18} />
+          <div>
+            <h2 className="text-base font-semibold">Run History</h2>
+            <p className="text-xs text-muted-foreground">Recent automation executions</p>
+          </div>
+        </div>
+        <Button variant="outline" size="sm" onClick={fetchRuns} disabled={loading}>
+          <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+        </Button>
+      </div>
+      <CardContent className="p-0">
+        {loading && runs.length === 0 ? (
+          <div className="p-6 space-y-2">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        ) : runs.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8">
+            No runs yet. Active workflows log here when their triggers fire.
+          </p>
+        ) : (
+          <div className="divide-y max-h-80 overflow-y-auto scroll-thin">
+            {runs.map((run) => (
+              <div key={run.id} className="px-6 py-3 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{run.workflowName}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {run.triggerType.replace(/_/g, " ")} → {run.actionType.replace(/_/g, " ")}
+                  </p>
+                  {run.error && (
+                    <p className="text-xs text-destructive mt-1 truncate">{run.error}</p>
+                  )}
+                </div>
+                <div className="text-right shrink-0">
+                  <Badge
+                    variant={run.status === "success" ? "secondary" : "outline"}
+                    className={cn(
+                      "text-xs",
+                      run.status === "success" && "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+                      run.status === "failed" && "text-destructive border-destructive/30"
+                    )}
+                  >
+                    {run.status}
+                  </Badge>
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    {new Date(run.createdAt).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Main view ──────────────────────────────────────────────────────
 export function AutomationsView({ user }: { user: UserProp }) {
   const [workflows, setWorkflows] = React.useState<Workflow[]>([]);
@@ -1245,6 +1341,8 @@ export function AutomationsView({ user }: { user: UserProp }) {
           ))}
         </div>
       )}
+
+      <RunHistoryPanel />
 
       {/* Footer hint */}
       {workflows.length > 0 && (

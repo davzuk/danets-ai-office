@@ -18,7 +18,7 @@ const createSchema = z.object({
 // GET /api/super-admin/feature-flags
 export async function GET() {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
 
   const flags = await db.platformFeatureFlag.findMany({
     orderBy: { name: "asc" },
@@ -42,7 +42,7 @@ export async function GET() {
 // POST /api/super-admin/feature-flags
 export async function POST(req: NextRequest) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
   const { user } = auth;
 
   const body = await req.json().catch(() => null);
@@ -89,7 +89,7 @@ const overrideSchema = z.object({
 // PATCH /api/super-admin/feature-flags — toggle global flag or set per-tenant override
 export async function PATCH(req: NextRequest) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
 
   const body = await req.json().catch(() => ({}));
 

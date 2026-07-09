@@ -2,15 +2,26 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireSuperAdmin } from "@/lib/super-admin";
 
-// DELETE /api/super-admin/feature-flags/[key]
+// DELETE /api/super-admin/feature-flags/[key]?businessId= — remove tenant override
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ key: string }> }
 ) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
 
   const { key } = await params;
+  const businessId = new URL(req.url).searchParams.get("businessId");
+
+  if (businessId) {
+    await db.businessFeatureFlag
+      .delete({
+        where: { businessId_flagKey: { businessId, flagKey: key } },
+      })
+      .catch(() => null);
+    return NextResponse.json({ ok: true });
+  }
+
   await db.platformFeatureFlag.delete({ where: { key } }).catch(() => null);
   return NextResponse.json({ ok: true });
 }
@@ -21,7 +32,7 @@ export async function GET(
   { params }: { params: Promise<{ key: string }> }
 ) {
   const auth = await requireSuperAdmin();
-  if (auth.error) return auth.error;
+  if (!auth.success) return auth.error;
 
   const { key } = await params;
   const businessId = new URL(req.url).searchParams.get("businessId");

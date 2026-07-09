@@ -32,7 +32,7 @@ import {
   Zap,
   Plug,
   CreditCard,
-  Shield,
+  Lock,
 } from "lucide-react";
 import type { ViewId } from "@/components/dashboard/app-shell";
 import { useTheme } from "next-themes";
@@ -41,6 +41,9 @@ interface CommandPaletteProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onNavigate: (v: ViewId) => void;
+  moduleAccess?: {
+    modules: Record<string, { enabled: boolean; requiredPlanLabel: string }>;
+  } | null;
 }
 
 const NAV_ITEMS: {
@@ -66,13 +69,13 @@ const NAV_ITEMS: {
   { id: "subscription", label: "Subscription", icon: CreditCard, hint: "Plan & billing" },
   { id: "audit", label: "Audit Logs", icon: History, hint: "Activity tracking" },
   { id: "settings", label: "Settings", icon: Settings, hint: "Business settings" },
-  { id: "super-admin", label: "Super Admin", icon: Shield, hint: "Internal management" },
 ];
 
 export function CommandPalette({
   open,
   onOpenChange,
   onNavigate,
+  moduleAccess,
 }: CommandPaletteProps) {
   const { theme, setTheme } = useTheme();
 
@@ -88,20 +91,31 @@ export function CommandPalette({
         <CommandEmpty>No results found.</CommandEmpty>
 
         <CommandGroup heading="Navigation">
-          {NAV_ITEMS.map((item) => (
-            <CommandItem
-              key={item.id}
-              value={`${item.label} ${item.hint} navigate go to`}
-              onSelect={() => run(() => onNavigate(item.id))}
-              className="gap-2"
-            >
-              <item.icon size={16} className="text-muted-foreground" />
-              <span>{item.label}</span>
-              <span className="ml-auto text-xs text-muted-foreground">
-                {item.hint}
-              </span>
-            </CommandItem>
-          ))}
+          {NAV_ITEMS.map((item) => {
+            const locked = moduleAccess?.modules[item.id]?.enabled === false;
+            return (
+              <CommandItem
+                key={item.id}
+                value={`${item.label} ${item.hint} navigate go to`}
+                onSelect={() => run(() => onNavigate(item.id))}
+                className="gap-2"
+                disabled={locked}
+              >
+                <item.icon size={16} className="text-muted-foreground" />
+                <span>{item.label}</span>
+                {locked ? (
+                  <span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
+                    <Lock size={10} />
+                    {moduleAccess?.modules[item.id]?.requiredPlanLabel}+
+                  </span>
+                ) : (
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    {item.hint}
+                  </span>
+                )}
+              </CommandItem>
+            );
+          })}
         </CommandGroup>
 
         <CommandSeparator />

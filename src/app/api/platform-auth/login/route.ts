@@ -11,6 +11,7 @@ import { destroySession } from "@/lib/auth";
 import { verifyTotpCode } from "@/lib/totp";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { logActivity } from "@/lib/activity";
+import { getPlatformConfig } from "@/lib/platform-config";
 
 const schema = z.object({
   email: z.string().email(),
@@ -21,7 +22,7 @@ const schema = z.object({
 // POST /api/platform-auth/login — dedicated platform admin login
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
-  const rl = rateLimit(`platform-login:${ip}`, 8, 60_000);
+  const rl = await rateLimit(`platform-login:${ip}`, 8, 60_000);
   if (!rl.success) {
     return NextResponse.json({ error: "Too many attempts." }, { status: 429 });
   }
@@ -37,6 +38,18 @@ export async function POST(req: NextRequest) {
   });
   if (!admin || !(await bcrypt.compare(parsed.data.password, admin.password))) {
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+  }
+
+  const platformConfig = await getPlatformConfig();
+  if (platformConfig.enforcePlatform2fa && !admin.totpEnabled) {
+    return NextResponse.json(
+      {
+        error:
+          "Two-factor authentication is required for all platform admins. Enable 2FA before signing in.",
+        code: "PLATFORM_2FA_REQUIRED",
+      },
+      { status: 403 }
+    );
   }
 
   if (admin.totpEnabled) {

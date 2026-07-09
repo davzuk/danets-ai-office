@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
+import { computeDashboardInsights } from "@/lib/dashboard-insights";
 
 export async function GET(_req: NextRequest) {
   return withSession(async (user) => {
@@ -21,6 +22,7 @@ export async function GET(_req: NextRequest) {
       usageByFeature,
       leadsByDay,
       sessionsByDay,
+      dashboardInsights,
     ] = await Promise.all([
       db.chatSession.count({ where: { businessId } }),
       db.lead.count({ where: { businessId } }),
@@ -65,6 +67,7 @@ export async function GET(_req: NextRequest) {
         where: { businessId, createdAt: { gte: sevenDaysAgo } },
         select: { createdAt: true },
       }),
+      computeDashboardInsights(businessId),
     ]);
 
     // Build 7-day series
@@ -126,6 +129,10 @@ export async function GET(_req: NextRequest) {
         tokens: u._sum.totalTokens || 0,
       })),
       series: days,
+      insights: dashboardInsights.insights,
+      topQuestions: dashboardInsights.topQuestions,
+      leadQuality: dashboardInsights.leadQuality,
+      hourly: dashboardInsights.hourly,
     };
   });
 }

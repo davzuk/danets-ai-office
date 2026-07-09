@@ -1,46 +1,47 @@
 # Danets AI Automation — Worklog
 
 ## Project Overview
-**Danets AI Automation** — a multi-tenant SaaS platform (by Danets TecPro Limited) for AI-powered website chat, lead capture, and quote/proposal generation.
+**Danets AI Automation** — a multi-tenant SaaS platform (by Danets TecPro Limited) for AI-powered website chat, lead capture, CRM, quotes/proposals, and platform operations.
 
-Original brief requested Laravel; adapted to the available sandbox stack: **Next.js 16 (App Router) + TypeScript + Prisma (SQLite) + shadcn/ui + z-ai-web-dev-sdk**.
+**Stack (current):** Next.js 16 (App Router) + TypeScript + **Prisma (MySQL 8)** + shadcn/ui + custom dual-auth + OpenAI.
 
 ## Architecture & Conventions (IMPORTANT — read before coding)
 
 ### Stack
 - Next.js 16 App Router, TypeScript 5, Tailwind CSS 4, shadcn/ui (New York).
-- Prisma + SQLite. Client: `import { db } from "@/lib/db"`.
-- AI: `z-ai-web-dev-sdk` — **backend only**. Use `import { aiChat, logUsage, retrieveKnowledge } from "@/lib/ai"`.
-- Auth: custom DB-backed sessions (httpOnly cookie `danets_session`).
-  - `import { getSession, requireSession, createSession, destroySession } from "@/lib/auth"`.
-  - `requireSession()` throws `"UNAUTHORIZED"` if no session; returns `SessionUser` `{ userId, businessId, name, email, role, businessName }`.
+- Prisma + **MySQL**. Client: `import { db } from "@/lib/db"`.
+- AI: OpenAI — **backend only**. Use `import { aiChat, logUsage, retrieveKnowledge } from "@/lib/ai"`.
+- Auth (dual realm):
+  - **Tenant:** cookie `danets_session` — `import { getSession, requireSession, createSession } from "@/lib/auth"`.
+  - **Platform:** cookie `danets_platform_session` — `import { requirePlatformSession } from "@/lib/platform-auth"`.
 - API helper: `import { apiHandler, withSession } from "@/lib/api"`.
-  - `withSession((user) => ...)` wraps a handler, auto-returns 401 if not authed.
-- Rate limiting: `import { rateLimit, getClientIp } from "@/lib/rate-limit"`. `rateLimit(key, limit, windowMs)` returns `{ success, remaining, resetAt }`.
+- Rate limiting: `import { rateLimit, getClientIp } from "@/lib/rate-limit"` (async; Redis when `REDIS_URL` set).
 
 ### Multi-tenancy / Security
 - **Every** authenticated query MUST filter by `user.businessId`. Never trust a client-supplied businessId.
 - Public endpoints (widget chat) identify the business via `publicKey` (NOT internal id).
-- All AI calls server-side. Keys never exposed to client.
+- Enforcement layers: subscription status → module access (plan + flags) → numeric quotas.
 
-### Database schema (prisma/schema.prisma) — 12 models
-`Business`, `BusinessUser`, `Session`, `AiAgent`, `KnowledgeBaseItem`, `ChatSession`, `ChatMessage`, `Lead`, `AiPromptTemplate`, `AiUsageLog`, `QuoteRequest`, `GeneratedDocument`, `SubscriptionPlan`.
+### Database schema (prisma/schema.prisma) — 46 models
+Core: `Business`, `BusinessUser`, `Session`, `AiAgent`, `KnowledgeBaseItem`, `ChatSession`, `ChatMessage`, `Lead`, `SubscriptionPlan`, `BusinessSubscription`, `Payment`, `PlatformAdmin`, `PlatformSession`, `PlatformConfig`, `AutomationWorkflow`, `WhatsAppIntegration`, `Integration`, `WhiteLabelConfig`, … (see schema for full list).
 
 ### Frontend structure
-- Single user route `/` (src/app/page.tsx) — SPA with client-side view switching.
-- Dashboard shell: `src/components/dashboard/app-shell.tsx` (sidebar + topbar + footer). `ViewId` type lists all views.
-- Views live in `src/components/dashboard/views/<name>-view.tsx`. Each receives `user` prop: `{ userId, businessId, name, email, role, businessName }`.
-- Brand: blue primary (`bg-primary`), lemon green accent (`bg-accent`). `.brand-gradient` / `.brand-text` utilities available. Sidebar is dark by default.
+- **Tenant SPA:** `/` — `src/app/page.tsx` + `AppShell` + views in `src/components/dashboard/views/`.
+- **Platform console:** `/platform` — vertical side menu, dedicated auth realm.
+- Views receive `user` prop: `{ userId, businessId, name, email, role, businessName }`.
 
 ### API routes layout
-`src/app/api/<resource>/route.ts`. Authenticated routes use `withSession`. Public routes under `src/app/api/public/`.
+`src/app/api/<resource>/route.ts`. Authenticated routes use `withSession` or `requireSession`. Platform ops under `/api/super-admin/*` and `/api/platform-auth/*`.
 
 ### Seeded demo
-- Login: `admin@danetstecpro.com` / `danets123`
-- Business publicKey: see DB (printed by seed). Embed code uses `/widget.js?pk=<publicKey>`.
+- Tenant: `admin@danetstecpro.com` / `danets123`
+- Platform: `superadmin@danetstecpro.com` / `super123`
+- Embed: `/widget.js?pk=<publicKey>`
 
-### Skills
-- LLM skill loaded. Pattern: `const zai = await ZAI.create(); const c = await zai.chat.completions.create({ messages, thinking:{type:'disabled'} })`. Wrapped in `src/lib/ai.ts` → `aiChat(messages)`.
+### Deployment & ops
+- See `DEPLOYMENT.md` and `README.md`.
+- CI: `.github/workflows/ci.yml`
+- Scheduled retention: `GET /api/cron/retention` with `Authorization: Bearer $CRON_SECRET`
 
 ---
 Task ID: 1
