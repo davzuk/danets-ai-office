@@ -1,4 +1,5 @@
 // Rate limiter with optional Redis backend (REDIS_URL) and in-memory fallback.
+import { logger, serializeError } from "@/lib/logger";
 
 interface Bucket {
   count: number;
@@ -92,17 +93,18 @@ async function getRedisClient(): Promise<RedisClient | null> {
         const { createClient } = await import("redis");
         const client = createClient({ url }) as unknown as RedisClient;
         client.on("error", (err) => {
-          console.warn("[rate-limit] Redis error:", err.message);
+          logger.warn("rate-limit redis client error", {
+            errMessage: err.message,
+          });
         });
         await client.connect();
         redisClient = client;
         return client;
       } catch (e: unknown) {
         redisUnavailable = true;
-        console.warn(
-          "[rate-limit] Redis unavailable, using in-memory limiter:",
-          e instanceof Error ? e.message : e
-        );
+        logger.warn("rate-limit redis unavailable — falling back to in-memory", {
+          ...serializeError(e),
+        });
         return null;
       }
     })();
@@ -137,10 +139,10 @@ async function rateLimitRedis(
       backend: "redis",
     };
   } catch (e: unknown) {
-    console.warn(
-      "[rate-limit] Redis op failed, falling back to memory:",
-      e instanceof Error ? e.message : e
-    );
+    logger.warn("rate-limit redis op failed — falling back to memory", {
+      key,
+      ...serializeError(e),
+    });
     return rateLimitMemory(key, limit, windowMs);
   }
 }

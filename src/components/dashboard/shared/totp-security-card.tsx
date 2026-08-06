@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { ShieldCheck, Loader2 } from "lucide-react";
+import { ShieldCheck, Loader2, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,6 +39,9 @@ export function TotpSecurityCard({
   const [disablePassword, setDisablePassword] = React.useState("");
   const [disableCode, setDisableCode] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  // Backup codes returned from the enable endpoint — shown ONCE then cleared.
+  const [backupCodes, setBackupCodes] = React.useState<string[] | null>(null);
+  const [copiedAll, setCopiedAll] = React.useState(false);
 
   const refresh = React.useCallback(async () => {
     setLoading(true);
@@ -83,12 +86,29 @@ export function TotpSecurityCard({
       toast.success("2FA enabled");
       setSetup(null);
       setVerifyCode("");
+      // Surface the freshly minted backup codes exactly once. The server only
+      // returns them in this response; reloads do not re-fetch them.
+      if (Array.isArray(data.backupCodes) && data.backupCodes.length > 0) {
+        setBackupCodes(data.backupCodes);
+      }
       refresh();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Verification failed");
     } finally {
       setBusy(false);
     }
+  }
+
+  function copyAllBackupCodes() {
+    if (!backupCodes) return;
+    navigator.clipboard
+      .writeText(backupCodes.join("\n"))
+      .then(() => {
+        setCopiedAll(true);
+        toast.success("Backup codes copied to clipboard");
+        setTimeout(() => setCopiedAll(false), 1500);
+      })
+      .catch(() => toast.error("Could not copy — please save them by hand"));
   }
 
   async function disable2fa() {
@@ -214,6 +234,48 @@ export function TotpSecurityCard({
               </Button>
             </div>
           )}
+        </div>
+      )}
+
+      {backupCodes && backupCodes.length > 0 && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 space-y-3">
+          <div>
+            <p className="text-sm font-medium">Save your backup codes</p>
+            <p className="text-xs text-muted-foreground">
+              Each code below can sign you in once if you lose access to your
+              authenticator app. They will <strong>not</strong> be shown again.
+              Save them in a password manager or print this page.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {backupCodes.map((code) => (
+              <code
+                key={code}
+                className="block rounded bg-background border px-2 py-1 text-xs font-mono text-center"
+              >
+                {code}
+              </code>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={copyAllBackupCodes}>
+              {copiedAll ? (
+                <Check className="h-3 w-3 mr-1.5" />
+              ) : (
+                <Copy className="h-3 w-3 mr-1.5" />
+              )}
+              {copiedAll ? "Copied" : "Copy all"}
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                setBackupCodes(null);
+                setCopiedAll(false);
+              }}
+            >
+              I've saved my codes
+            </Button>
+          </div>
         </div>
       )}
     </div>

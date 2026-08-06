@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
+import { requireQuota } from "@/lib/plan-quota";
 
 const TEMPLATE_TYPES = [
   "website_dev", "software_dev", "ai_chatbot", "cloud_hosting",
@@ -65,6 +66,8 @@ export function POST(req: NextRequest) {
     }
 
     const d = parsed.data;
+    await requireQuota(user.businessId, "proposalTemplates");
+
     const template = await db.proposalTemplate.create({
       data: {
         businessId: user.businessId,

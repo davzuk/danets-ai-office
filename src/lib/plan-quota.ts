@@ -1,6 +1,19 @@
 import { db } from "@/lib/db";
 
-export type QuotaResource = "leads" | "kbItems" | "agents" | "chats" | "aiRequests";
+export type QuotaResource =
+  | "leads"
+  | "kbItems"
+  | "agents"
+  | "chats"
+  | "aiRequests"
+  | "tickets"
+  | "documents"
+  | "automations"
+  | "seats"
+  | "whatsappTemplates"
+  | "integrations"
+  | "proposalTemplates"
+  | "quotes";
 
 export interface EffectiveLimits {
   plan: string;
@@ -10,6 +23,30 @@ export interface EffectiveLimits {
   kbLimit: number;
   agentLimit: number;
   aiLimit: number;
+  ticketLimit: number;
+  documentLimit: number;
+  automationLimit: number;
+  seatLimit: number;
+  whatsappTemplateLimit: number;
+  integrationLimit: number;
+  proposalTemplateLimit: number;
+  quoteLimit: number;
+}
+
+export interface QuotaUsage {
+  chats: number;
+  leads: number;
+  kbItems: number;
+  agents: number;
+  aiRequests: number;
+  tickets: number;
+  documents: number;
+  automations: number;
+  seats: number;
+  whatsappTemplates: number;
+  integrations: number;
+  proposalTemplates: number;
+  quotes: number;
 }
 
 export interface QuotaCheckResult {
@@ -29,12 +66,20 @@ const FALLBACK_AGENT_LIMITS: Record<string, number> = {
   enterprise: 9999,
 };
 
-const RESOURCE_LABELS: Record<QuotaResource, string> = {
+export const RESOURCE_LABELS: Record<QuotaResource, string> = {
   leads: "monthly leads",
   kbItems: "knowledge base items",
   agents: "AI agents",
   chats: "monthly chats",
   aiRequests: "monthly AI requests",
+  tickets: "support tickets",
+  documents: "documents",
+  automations: "automation workflows",
+  seats: "team members",
+  whatsappTemplates: "WhatsApp templates",
+  integrations: "integrations",
+  proposalTemplates: "proposal templates",
+  quotes: "monthly quotes",
 };
 
 export class LimitExceededError extends Error {
@@ -77,6 +122,14 @@ export async function getEffectiveLimits(
     leadLimit: planRow?.leadLimit ?? 50,
     kbLimit: planRow?.kbLimit ?? 25,
     agentLimit: planRow?.agentLimit ?? FALLBACK_AGENT_LIMITS[plan] ?? 1,
+    ticketLimit: planRow?.ticketLimit ?? 100,
+    documentLimit: planRow?.documentLimit ?? 25,
+    automationLimit: planRow?.automationLimit ?? 5,
+    seatLimit: planRow?.seatLimit ?? 3,
+    whatsappTemplateLimit: planRow?.whatsappTemplateLimit ?? 5,
+    integrationLimit: planRow?.integrationLimit ?? 3,
+    proposalTemplateLimit: planRow?.proposalTemplateLimit ?? 10,
+    quoteLimit: planRow?.quoteLimit ?? 50,
   };
 
   return {
@@ -87,12 +140,36 @@ export async function getEffectiveLimits(
     kbLimit: override?.kbLimit ?? base.kbLimit,
     agentLimit: override?.agentLimit ?? base.agentLimit,
     aiLimit: override?.chatLimit ?? base.chatLimit,
+    ticketLimit: override?.ticketLimit ?? base.ticketLimit,
+    documentLimit: override?.documentLimit ?? base.documentLimit,
+    automationLimit: override?.automationLimit ?? base.automationLimit,
+    seatLimit: override?.seatLimit ?? base.seatLimit,
+    whatsappTemplateLimit:
+      override?.whatsappTemplateLimit ?? base.whatsappTemplateLimit,
+    integrationLimit: override?.integrationLimit ?? base.integrationLimit,
+    proposalTemplateLimit:
+      override?.proposalTemplateLimit ?? base.proposalTemplateLimit,
+    quoteLimit: override?.quoteLimit ?? base.quoteLimit,
   };
 }
 
-export async function getQuotaUsage(businessId: string) {
+export async function getQuotaUsage(businessId: string): Promise<QuotaUsage> {
   const monthStart = startOfMonth();
-  const [chats, leads, kbItems, agents, aiRequests] = await Promise.all([
+  const [
+    chats,
+    leads,
+    kbItems,
+    agents,
+    aiRequests,
+    tickets,
+    documents,
+    automations,
+    seats,
+    whatsappTemplates,
+    integrations,
+    proposalTemplates,
+    quotes,
+  ] = await Promise.all([
     db.chatSession.count({
       where: { businessId, createdAt: { gte: monthStart } },
     }),
@@ -104,9 +181,35 @@ export async function getQuotaUsage(businessId: string) {
     db.aiUsageLog.count({
       where: { businessId, createdAt: { gte: monthStart } },
     }),
+    db.supportTicket.count({
+      where: { businessId, createdAt: { gte: monthStart } },
+    }),
+    db.document.count({ where: { businessId } }),
+    db.automationWorkflow.count({ where: { businessId } }),
+    db.businessUser.count({ where: { businessId } }),
+    db.whatsAppTemplate.count({ where: { businessId } }),
+    db.integration.count({ where: { businessId } }),
+    db.proposalTemplate.count({ where: { businessId } }),
+    db.quoteRequest.count({
+      where: { businessId, createdAt: { gte: monthStart } },
+    }),
   ]);
 
-  return { chats, leads, kbItems, agents, aiRequests };
+  return {
+    chats,
+    leads,
+    kbItems,
+    agents,
+    aiRequests,
+    tickets,
+    documents,
+    automations,
+    seats,
+    whatsappTemplates,
+    integrations,
+    proposalTemplates,
+    quotes,
+  };
 }
 
 function limitForResource(
@@ -124,11 +227,27 @@ function limitForResource(
       return limits.chatLimit;
     case "aiRequests":
       return limits.aiLimit;
+    case "tickets":
+      return limits.ticketLimit;
+    case "documents":
+      return limits.documentLimit;
+    case "automations":
+      return limits.automationLimit;
+    case "seats":
+      return limits.seatLimit;
+    case "whatsappTemplates":
+      return limits.whatsappTemplateLimit;
+    case "integrations":
+      return limits.integrationLimit;
+    case "proposalTemplates":
+      return limits.proposalTemplateLimit;
+    case "quotes":
+      return limits.quoteLimit;
   }
 }
 
 function usedForResource(
-  usage: Awaited<ReturnType<typeof getQuotaUsage>>,
+  usage: QuotaUsage,
   resource: QuotaResource
 ): number {
   switch (resource) {
@@ -142,6 +261,22 @@ function usedForResource(
       return usage.chats;
     case "aiRequests":
       return usage.aiRequests;
+    case "tickets":
+      return usage.tickets;
+    case "documents":
+      return usage.documents;
+    case "automations":
+      return usage.automations;
+    case "seats":
+      return usage.seats;
+    case "whatsappTemplates":
+      return usage.whatsappTemplates;
+    case "integrations":
+      return usage.integrations;
+    case "proposalTemplates":
+      return usage.proposalTemplates;
+    case "quotes":
+      return usage.quotes;
   }
 }
 

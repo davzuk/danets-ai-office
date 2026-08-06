@@ -17,6 +17,7 @@ export async function GET(_req: NextRequest) {
         whatsapp: true,
         plan: true,
         status: true,
+        enforce2fa: true,
         createdAt: true,
       },
     });
@@ -39,10 +40,17 @@ const updateSchema = z.object({
   email: z.string().email().optional().or(z.literal("")),
   phone: z.string().max(40).optional().or(z.literal("")),
   whatsapp: z.string().max(40).optional().or(z.literal("")),
+  // Tenant-level 2FA policy toggle. Only admins may flip this — enforced
+  // here so the business PUT endpoint is the single source of truth.
+  enforce2fa: z.boolean().optional(),
 });
 
 export async function PUT(req: NextRequest) {
   return withSession(async (user) => {
+    if (user.role !== "admin") {
+      throw new Error("FORBIDDEN");
+    }
+
     const body = await req.json().catch(() => ({}));
     const parsed = updateSchema.safeParse(body);
     if (!parsed.success) {
@@ -54,11 +62,23 @@ export async function PUT(req: NextRequest) {
     if (parsed.data.email !== undefined) data.email = parsed.data.email || null;
     if (parsed.data.phone !== undefined) data.phone = parsed.data.phone || null;
     if (parsed.data.whatsapp !== undefined) data.whatsapp = parsed.data.whatsapp || null;
+    if (parsed.data.enforce2fa !== undefined) {
+      data.enforce2fa = parsed.data.enforce2fa;
+    }
 
     const updated = await db.business.update({
       where: { id: user.businessId },
       data,
-      select: { id: true, name: true, industry: true, email: true, phone: true, whatsapp: true, publicKey: true },
+      select: {
+        id: true,
+        name: true,
+        industry: true,
+        email: true,
+        phone: true,
+        whatsapp: true,
+        publicKey: true,
+        enforce2fa: true,
+      },
     });
     return { business: updated };
   });

@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { randomBytes } from "crypto";
+import { createInvoiceForPayment } from "@/lib/invoice";
 
 export async function activateSubscriptionFromPayment(
   paymentId: string,
@@ -74,36 +74,17 @@ export async function activateSubscriptionFromPayment(
       data: { subscriptionId: subscription.id },
     });
 
-    const existingInvoice = await tx.invoice.findFirst({
-      where: { paymentId: payment.id },
+    const invoice = await createInvoiceForPayment(tx, {
+      businessId: payment.businessId,
+      subscriptionId: subscription.id,
+      paymentId: payment.id,
+      planName,
+      billingCycle,
+      amount: payment.amount,
+      currency: payment.currency,
+      provider: payment.provider,
+      reference: payment.reference,
     });
-
-    let invoice = existingInvoice;
-    if (!invoice) {
-      const invoiceNumber = `INV-${Date.now()}-${randomBytes(2).toString("hex").toUpperCase()}`;
-      invoice = await tx.invoice.create({
-        data: {
-          businessId: payment.businessId,
-          subscriptionId: subscription.id,
-          paymentId: payment.id,
-          invoiceNumber,
-          amount: payment.amount,
-          currency: payment.currency,
-          status: "paid",
-          paidAt: new Date(),
-          dueDate: new Date(),
-          items: JSON.stringify([
-            {
-              description: `${planName} plan (${billingCycle})`,
-              quantity: 1,
-              unitPrice: payment.amount,
-              total: payment.amount,
-            },
-          ]),
-          notes: `Payment via ${payment.provider}. Reference: ${payment.reference}`,
-        },
-      });
-    }
 
     return { payment: updatedPayment, subscription, invoice };
   });
@@ -111,6 +92,6 @@ export async function activateSubscriptionFromPayment(
   return result;
 }
 
-export function generateInvoiceNumber() {
-  return `INV-${Date.now()}-${randomBytes(2).toString("hex").toUpperCase()}`;
-}
+// Re-export so existing callers (`generateInvoiceNumber()` from
+// `subscription-billing.ts`) keep working without a churn migration.
+export { generateInvoiceNumber } from "@/lib/invoice";

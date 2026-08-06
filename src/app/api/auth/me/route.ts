@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { getSubscriptionAccess } from "@/lib/subscription-access";
 import { getTenantModuleAccess } from "@/lib/module-access";
@@ -17,8 +18,19 @@ export async function GET() {
       ? null
       : await getTenantModuleAccess(s.businessId);
 
+  // Surface the tenant-level 2FA policy so the settings view can render
+  // the "require 2FA for all members" toggle and lock the disable button.
+  let enforce2fa = false;
+  if (!s.isSuperAdmin) {
+    const business = await db.business.findUnique({
+      where: { id: s.businessId },
+      select: { enforce2fa: true },
+    });
+    enforce2fa = !!business?.enforce2fa;
+  }
+
   return NextResponse.json({
-    user: s,
+    user: { ...s, enforce2fa },
     subscription,
     modules: moduleAccess,
   });

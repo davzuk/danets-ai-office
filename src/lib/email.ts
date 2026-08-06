@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
+import { logger, serializeError } from "@/lib/logger";
 
 /**
  * Email Notification Service
@@ -225,7 +226,10 @@ export async function sendEmailNotification(
     const provider = process.env.EMAIL_PROVIDER || "none";
     if (provider === "none") {
       // Development mode — log but don't send
-      console.log(`[email] Skipped (no provider): type=${type} to=${users.length} users`);
+      logger.info("email skipped — no provider configured", {
+        type,
+        recipients: users.length,
+      });
       return;
     }
 
@@ -262,7 +266,11 @@ export async function sendEmailNotification(
       });
     }
   } catch (e) {
-    console.error(`[email] sendEmailNotification failed for type=${type}:`, e);
+    logger.error("sendEmailNotification failed", {
+      businessId,
+      type,
+      ...serializeError(e),
+    });
   }
 }
 
@@ -339,7 +347,10 @@ async function sendEmail(params: EmailParams): Promise<{ success: boolean; error
       return { success: true };
     }
 
-    console.log(`[email] No provider — skipped: to=${params.to} subject="${params.subject}"`);
+    logger.info("email skipped — no provider configured", {
+      to: params.to,
+      subject: params.subject,
+    });
     return { success: false, error: "No email provider configured" };
   } catch (e: unknown) {
     return { success: false, error: e instanceof Error ? e.message : "Send failed" };

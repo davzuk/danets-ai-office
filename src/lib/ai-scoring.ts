@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { aiChat, logUsage } from "@/lib/ai";
+import { logger, serializeError } from "@/lib/logger";
 
 export async function scoreLead(leadId: string, businessId: string): Promise<number> {
   try {
@@ -52,7 +53,7 @@ export async function scoreLead(leadId: string, businessId: string): Promise<num
     await db.lead.update({ where: { id: leadId }, data: { leadScore: heuristicScore } });
     return heuristicScore;
   } catch (e) {
-    console.error("[scoreLead] failed:", e);
+    logger.error("scoreLead failed", { leadId, ...serializeError(e) });
     return 0;
   }
 }
@@ -108,7 +109,7 @@ export async function analyzeDeflection(businessId: string): Promise<{
 
     return { unansweredQuestions, deflectionRate };
   } catch (e) {
-    console.error("[analyzeDeflection] failed:", e);
+    logger.error("analyzeDeflection failed", { businessId, ...serializeError(e) });
     return { unansweredQuestions: [], deflectionRate: 0 };
   }
 }

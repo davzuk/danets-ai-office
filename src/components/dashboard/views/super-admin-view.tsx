@@ -40,6 +40,7 @@ import {
   History,
   Settings2,
   Download,
+  ShieldCheck,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -49,6 +50,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -104,6 +106,7 @@ import { SuperAdminUsagePanel, UsageQuotaSummary } from "@/components/dashboard/
 import { TenantLimitOverrides } from "@/components/dashboard/views/tenant-limit-overrides";
 import { SuperAdminHealthPanel } from "@/components/dashboard/views/super-admin-health-panel";
 import { TenantWhiteLabelEditor } from "@/components/dashboard/views/tenant-white-label-editor";
+import { TenantTwoFactorPolicy } from "@/components/dashboard/views/tenant-two-factor-policy";
 import type { PlatformTabId } from "@/lib/platform-nav";
 import { SuperAdminUsersPanel } from "@/components/dashboard/views/super-admin-users-panel";
 import { SuperAdminAuditPanel } from "@/components/dashboard/views/super-admin-audit-panel";
@@ -198,6 +201,7 @@ interface BusinessDetail {
   whatsapp: string | null;
   plan: string;
   status: string;
+  enforce2fa?: boolean;
   createdAt: string;
   updatedAt: string;
   users: {
@@ -1121,6 +1125,17 @@ function SuperAdminInner({
                 businessId={detail.id}
                 businessName={detail.name}
                 onSaved={() => {
+                  fetch(`/api/super-admin/businesses/${detail.id}`, { cache: "no-store" })
+                    .then((r) => r.json())
+                    .then((json) => setDetail(json.business as BusinessDetail))
+                    .catch(() => {});
+                }}
+              />
+
+              <TenantTwoFactorPolicy
+                businessId={detail.id}
+                enforce2fa={!!detail.enforce2fa}
+                onChanged={() => {
                   fetch(`/api/super-admin/businesses/${detail.id}`, { cache: "no-store" })
                     .then((r) => r.json())
                     .then((json) => setDetail(json.business as BusinessDetail))

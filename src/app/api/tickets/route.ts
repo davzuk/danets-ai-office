@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
 import { logActivity, createNotification } from "@/lib/activity";
 import { fireTrigger } from "@/lib/automation";
+import { requireQuota } from "@/lib/plan-quota";
 
 const VALID_STATUSES = ["open", "pending", "in_progress", "resolved", "closed"];
 const VALID_PRIORITIES = ["low", "medium", "high", "urgent"];
@@ -82,6 +83,8 @@ export function POST(req: NextRequest) {
     }
 
     const d = parsed.data;
+    await requireQuota(user.businessId, "tickets");
+
     const ticket = await db.supportTicket.create({
       data: {
         businessId: user.businessId,

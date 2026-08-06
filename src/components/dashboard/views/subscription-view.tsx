@@ -83,6 +83,14 @@ interface PlanInfo {
   chatLimit: number;
   leadLimit: number;
   kbLimit: number;
+  ticketLimit: number;
+  documentLimit: number;
+  automationLimit: number;
+  seatLimit: number;
+  whatsappTemplateLimit: number;
+  integrationLimit: number;
+  proposalTemplateLimit: number;
+  quoteLimit: number;
   features: string[];
 }
 
@@ -95,6 +103,8 @@ interface SubscriptionRecord {
   trialEndsAt: string | null;
   monthlyFee: number;
   paymentMethod: string | null;
+  downgradeScheduledFor: string | null;
+  downgradeTargetPlan: string | null;
 }
 
 interface UsageStats {
@@ -102,6 +112,14 @@ interface UsageStats {
   leads: number;
   kbItems: number;
   aiRequests: number;
+  tickets: number;
+  documents: number;
+  automations: number;
+  seats: number;
+  whatsappTemplates: number;
+  integrations: number;
+  proposalTemplates: number;
+  quotes: number;
 }
 
 interface SubscriptionData {
@@ -675,6 +693,19 @@ function CurrentPlanCard({
                 </span>
                 <span className="text-sm text-muted-foreground">/month</span>
               </div>
+              {subscription.downgradeScheduledFor && subscription.downgradeTargetPlan && (
+                <Badge
+                  variant="outline"
+                  className="mt-2 gap-1.5 text-amber-600 border-amber-500/40 bg-amber-500/10"
+                  title={`Your plan will switch to ${planLabel(
+                    subscription.downgradeTargetPlan
+                  )} at the end of the current billing period.`}
+                >
+                  <Clock className="h-3 w-3" />
+                  Scheduled to switch to {planLabel(subscription.downgradeTargetPlan)} on{" "}
+                  {formatDate(subscription.downgradeScheduledFor)}
+                </Badge>
+              )}
             </div>
           </div>
           <Badge className={`gap-1.5 ${meta.className}`}>
@@ -780,6 +811,14 @@ function UsageThisMonth({
   const kbLimit = plan?.kbLimit ?? 0;
   // AI requests share the chat limit as a proxy per spec.
   const aiLimit = chatLimit;
+  const ticketLimit = plan?.ticketLimit ?? 0;
+  const documentLimit = plan?.documentLimit ?? 0;
+  const automationLimit = plan?.automationLimit ?? 0;
+  const seatLimit = plan?.seatLimit ?? 0;
+  const whatsappTemplateLimit = plan?.whatsappTemplateLimit ?? 0;
+  const integrationLimit = plan?.integrationLimit ?? 0;
+  const proposalTemplateLimit = plan?.proposalTemplateLimit ?? 0;
+  const quoteLimit = plan?.quoteLimit ?? 0;
 
   const bars: UsageBarSpec[] = [
     {
@@ -809,6 +848,62 @@ function UsageThisMonth({
       used: usage.aiRequests,
       limit: aiLimit,
       description: "AI completions this month (proxy: chat limit)",
+    },
+    {
+      key: "tickets",
+      label: "Support tickets",
+      used: usage.tickets,
+      limit: ticketLimit,
+      description: "Tickets opened this month",
+    },
+    {
+      key: "documents",
+      label: "Documents",
+      used: usage.documents,
+      limit: documentLimit,
+      description: "Uploaded or pasted documents (lifetime)",
+    },
+    {
+      key: "automations",
+      label: "Automation workflows",
+      used: usage.automations,
+      limit: automationLimit,
+      description: "Active and draft workflows",
+    },
+    {
+      key: "seats",
+      label: "Team members",
+      used: usage.seats,
+      limit: seatLimit,
+      description: "Admins and members on your account",
+    },
+    {
+      key: "whatsappTemplates",
+      label: "WhatsApp templates",
+      used: usage.whatsappTemplates,
+      limit: whatsappTemplateLimit,
+      description: "Reusable message templates",
+    },
+    {
+      key: "integrations",
+      label: "Integrations",
+      used: usage.integrations,
+      limit: integrationLimit,
+      description: "External service connections",
+    },
+    {
+      key: "proposalTemplates",
+      label: "Proposal templates",
+      used: usage.proposalTemplates,
+      limit: proposalTemplateLimit,
+      description: "Your business-specific templates",
+    },
+    {
+      key: "quotes",
+      label: "Quotes",
+      used: usage.quotes,
+      limit: quoteLimit,
+      description: "AI-generated quotes this month",
     },
   ];
 
@@ -1005,6 +1100,26 @@ function PlanCard({
         <LimitRow
           label="KB items"
           value={formatNumber(plan.kbLimit)}
+        />
+        <LimitRow
+          label="Tickets"
+          value={`${formatNumber(plan.ticketLimit)}/mo`}
+        />
+        <LimitRow
+          label="Documents"
+          value={formatNumber(plan.documentLimit)}
+        />
+        <LimitRow
+          label="Automations"
+          value={formatNumber(plan.automationLimit)}
+        />
+        <LimitRow
+          label="Team seats"
+          value={formatNumber(plan.seatLimit)}
+        />
+        <LimitRow
+          label="Quotes"
+          value={`${formatNumber(plan.quoteLimit)}/mo`}
         />
       </div>
 
@@ -1809,7 +1924,26 @@ function InvoiceHistory({
                         {methodLabel ?? "—"}
                       </TableCell>
                       <TableCell className="text-right">
-                        <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-primary"
+                            title={`Download ${inv.invoiceNumber}.pdf`}
+                            aria-label={`Download ${inv.invoiceNumber} as PDF`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              window.open(
+                                `/api/invoices/${inv.id}/pdf`,
+                                "_blank",
+                                "noopener,noreferrer"
+                              );
+                            }}
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                          </Button>
+                          <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -1817,12 +1951,6 @@ function InvoiceHistory({
               </TableBody>
             </Table>
           </div>
-        )}
-        {invoices.length > 0 && (
-          <p className="text-xs text-muted-foreground mt-3 flex items-center gap-1.5">
-            <Download className="h-3.5 w-3.5" />
-            PDF invoice download coming soon.
-          </p>
         )}
       </CardContent>
     </Card>
@@ -2000,20 +2128,35 @@ function InvoiceDetailDialog({
           <Alert className="border-primary/20 bg-primary/5">
             <Download className="h-4 w-4 text-primary" />
             <AlertDescription className="text-xs">
-              PDF invoice download coming soon.
+              Download a PDF copy of this invoice for your records.
             </AlertDescription>
           </Alert>
         </div>
 
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            className="w-full"
-          >
-            <X className="h-4 w-4" />
-            Close
-          </Button>
+          <div className="flex w-full gap-2">
+            <Button
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              className="flex-1"
+            >
+              <X className="h-4 w-4" />
+              Close
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={() =>
+                window.open(
+                  `/api/invoices/${invoice.id}/pdf`,
+                  "_blank",
+                  "noopener,noreferrer"
+                )
+              }
+            >
+              <Download className="h-4 w-4" />
+              Download PDF
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -4,11 +4,16 @@ import { db } from "@/lib/db";
 import { requireSuperAdmin } from "@/lib/super-admin";
 import { logActivity } from "@/lib/activity";
 import { getTenantUsage } from "@/lib/tenant-usage";
+import { applyPlanTransition, validatePlanTransition } from "@/lib/plan-transitions";
 
 const patchSchema = z.object({
   status: z.enum(["active", "suspended"]).optional(),
   plan: z.enum(["free", "starter", "pro", "enterprise"]).optional(),
   name: z.string().min(2).max(120).optional(),
+  // Tenant-level 2FA policy: when true, every member of this business is
+  // required to use TOTP on sign-in. Mirrors the tenant-side toggle at
+  // /api/business (admin-only) but is privileged to platform operators.
+  enforce2fa: z.boolean().optional(),
 });
 
 type RouteCtx = { params: Promise<{ id: string }> };
@@ -55,6 +60,8 @@ export async function GET(_req: NextRequest, { params }: RouteCtx) {
         trialEndsAt: rawSub.trialEndsAt?.toISOString() || null,
         paymentMethod: rawSub.paymentMethod,
         paymentRef: rawSub.paymentRef,
+        downgradeScheduledFor: rawSub.downgradeScheduledFor?.toISOString() || null,
+        downgradeTargetPlan: rawSub.downgradeTargetPlan ?? null,
         // UI-friendly aliases
         currentPeriodEnd: rawSub.endDate?.toISOString() || null,
         cancelAtPeriodEnd: rawSub.status === "canceled",
@@ -86,41 +93,40 @@ export async function PATCH(req: NextRequest, { params }: RouteCtx) {
   if (parsed.data.status) data.status = parsed.data.status;
   if (parsed.data.plan) data.plan = parsed.data.plan;
   if (parsed.data.name) data.name = parsed.data.name.trim();
+  if (parsed.data.enforce2fa !== undefined) data.enforce2fa = parsed.data.enforce2fa;
+
+  // When a plan change is requested, validate the transition first — the
+  // same rules apply to super-admin actions as to tenant self-service.
+  if (parsed.data.plan && parsed.data.plan !== business.plan) {
+    const validation = await validatePlanTransition(id, parsed.data.plan, business.plan);
+    if (!validation.ok) {
+      return NextResponse.json(
+        {
+          error: validation.reason,
+          conflicts: validation.conflicts,
+        },
+        { status: 409 }
+      );
+    }
+    const applied = await applyPlanTransition(id, business.plan, parsed.data.plan, {
+      userId: user.userId,
+      name: `${user.name} (Super Admin)`,
+      isSuperAdmin: true,
+    });
+    if (!applied.ok) {
+      return NextResponse.json({ error: applied.reason }, { status: 400 });
+    }
+    // Mark Business.plan so quota reads pick up the target. For downgrades
+    // this is a no-op (BusinessSubscription retains the current plan).
+    if (!applied.scheduled) {
+      data.plan = parsed.data.plan;
+    }
+  }
 
   // Run business + subscription sync inside a transaction so plan changes
   // stay consistent across Business.plan and BusinessSubscription.planName.
   const updated = await db.$transaction(async (tx) => {
-    const business = await tx.business.update({ where: { id }, data });
-
-    if (parsed.data.plan) {
-      const planRow = await tx.subscriptionPlan.findUnique({
-        where: { name: parsed.data.plan },
-        select: { priceUsd: true },
-      });
-      const monthlyFee = planRow?.priceUsd ?? 0;
-      const existingSub = await tx.businessSubscription.findUnique({
-        where: { businessId: id },
-        select: { id: true },
-      });
-      if (existingSub) {
-        await tx.businessSubscription.update({
-          where: { id: existingSub.id },
-          data: { planName: parsed.data.plan, monthlyFee },
-        });
-      } else {
-        await tx.businessSubscription.create({
-          data: {
-            businessId: id,
-            planName: parsed.data.plan,
-            status: "active",
-            monthlyFee,
-            startDate: new Date(),
-          },
-        });
-      }
-    }
-
-    return business;
+    return tx.business.update({ where: { id }, data });
   });
 
   // Log to the business's audit log

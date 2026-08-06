@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { aiChat, logUsage } from "@/lib/ai";
 import { withSession } from "@/lib/api";
 import { requireAiQuota } from "@/lib/plan-limits";
+import { requireQuota } from "@/lib/plan-quota";
 
 const createSchema = z.object({
   clientName: z.string().min(1, "Client name is required").max(120),
@@ -154,6 +155,7 @@ export async function POST(req: NextRequest) {
     }
 
     await requireAiQuota(user.businessId);
+    await requireQuota(user.businessId, "quotes");
 
     const {
       clientName,

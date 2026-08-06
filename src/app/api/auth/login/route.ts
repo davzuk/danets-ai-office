@@ -6,7 +6,7 @@ import { createSession } from "@/lib/auth";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { destroyPlatformSession } from "@/lib/platform-auth";
 import { logActivity } from "@/lib/activity";
-import { verifyTotpCode } from "@/lib/totp";
+import { consumeBackupCode, verifyTotpCode } from "@/lib/totp";
 
 const schema = z.object({
   email: z.string().email(),
@@ -42,15 +42,36 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Business suspended" }, { status: 403 });
   }
 
-  if (user.totpEnabled) {
+  // 2FA gate: per-user opt-in OR tenant policy (Business.enforce2fa).
+  // If policy requires 2FA but the user has never set it up, force the
+  // setup flow before issuing a session.
+  const requiresTotp = user.totpEnabled || user.business.enforce2fa;
+  let usedBackupCode = false;
+  if (requiresTotp) {
+    if (!user.totpSecret) {
+      // Policy says 2FA is mandatory, but the user hasn't enrolled yet.
+      // Return a dedicated code so the auth screen can redirect to setup.
+      return NextResponse.json({
+        requiresTotpSetup: true,
+        email: user.email,
+        reason: user.business.enforce2fa && !user.totpEnabled
+          ? "tenant_policy"
+          : "user_opt_in",
+      });
+    }
     if (!parsed.data.totpCode) {
       return NextResponse.json({ requiresTotp: true, email: user.email });
     }
-    if (
-      !user.totpSecret ||
-      !(await verifyTotpCode(user.totpSecret, parsed.data.totpCode))
-    ) {
-      return NextResponse.json({ error: "Invalid 2FA code" }, { status: 401 });
+    // Accept either a fresh 6-digit TOTP or a one-time backup code. The
+    // backup code path is a fallback for users who have lost access to
+    // their authenticator device — see `consumeBackupCode` in totp.ts.
+    const totpValid = await verifyTotpCode(user.totpSecret, parsed.data.totpCode);
+    if (!totpValid) {
+      const backupOk = await consumeBackupCode(db, user.id, parsed.data.totpCode);
+      if (!backupOk) {
+        return NextResponse.json({ error: "Invalid 2FA code" }, { status: 401 });
+      }
+      usedBackupCode = true;
     }
   }
 
@@ -63,7 +84,8 @@ export async function POST(req: NextRequest) {
     userName: user.name,
     action: "login",
     module: "auth",
-    description: `${user.name} signed in`,
+    description: `${user.name} signed in${usedBackupCode ? " (via backup code)" : ""}`,
+    metadata: usedBackupCode ? { viaBackupCode: true } : undefined,
   });
 
   return NextResponse.json({

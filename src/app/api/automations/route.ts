@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
 import { logActivity } from "@/lib/activity";
+import { requireQuota } from "@/lib/plan-quota";
 
 const TRIGGERS = [
   "new_lead", "new_ticket", "proposal_generated", "proposal_accepted",
@@ -70,6 +71,8 @@ export function POST(req: NextRequest) {
     }
 
     const d = parsed.data;
+    await requireQuota(user.businessId, "automations");
+
     const workflow = await db.automationWorkflow.create({
       data: {
         businessId: user.businessId,

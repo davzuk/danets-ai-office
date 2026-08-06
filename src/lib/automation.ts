@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { createNotification } from "@/lib/activity";
+import { logger, serializeError } from "@/lib/logger";
 
 /**
  * Automation Execution Engine
@@ -48,7 +49,11 @@ export async function fireTrigger(
     }
   } catch (e) {
     // Never let automation errors break the parent operation
-    console.error(`[automation] fireTrigger("${triggerType}") failed:`, e);
+    logger.error("fireTrigger failed", {
+      businessId: ctx.businessId,
+      triggerType,
+      ...serializeError(e),
+    });
   }
 }
 

@@ -4,6 +4,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ServiceWorkerRegister } from "@/components/pwa/register-sw";
+import { CsrfProvider } from "@/components/csrf-provider";
 
 const inter = Inter({
   variable: "--font-geist-sans",
@@ -70,7 +71,9 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          <CsrfProvider>
+            {children}
+          </CsrfProvider>
           <Toaster />
           <ServiceWorkerRegister />
         </ThemeProvider>

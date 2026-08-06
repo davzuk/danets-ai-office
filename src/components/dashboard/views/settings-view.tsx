@@ -785,20 +785,8 @@ export function SettingsView({
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <TotpSecurityCard
-                setupPath="/api/auth/totp/setup"
-                loadStatus={async () => {
-                  const res = await fetch("/api/auth/me", { cache: "no-store" });
-                  const data = await res.json();
-                  if (!data.user) return null;
-                  return {
-                    email: data.user.email,
-                    totpEnabled: !!data.user.totpEnabled,
-                  };
-                }}
-                title="Two-factor authentication"
-                description="Optional TOTP for your tenant account. Required at sign-in when enabled."
-              />
+              <TenantTotpSecurityCard />
+              <Enforce2faToggle />
               <Separator />
               <div className="space-y-2 text-xs text-muted-foreground">
                 <p>• All AI keys are stored server-side only (never exposed to the browser).</p>
@@ -850,6 +838,123 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
     <div className="flex items-center justify-between">
       <span className="text-muted-foreground">{label}</span>
       <span className="font-medium">{value}</span>
+    </div>
+  );
+}
+
+/**
+ * Tenant-wrapped TotpSecurityCard that pulls the enforce2fa policy flag
+ * alongside the user's totp status so the "Disable 2FA" button is locked
+ * when the tenant has forced 2FA on.
+ */
+function TenantTotpSecurityCard() {
+  const [enforce2fa, setEnforce2fa] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled) {
+          setEnforce2fa(!!data?.user?.enforce2fa);
+          setLoaded(true);
+        }
+      })
+      .catch(() => setLoaded(true));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <TotpSecurityCard
+      setupPath="/api/auth/totp/setup"
+      loadStatus={async () => {
+        const res = await fetch("/api/auth/me", { cache: "no-store" });
+        const data = await res.json();
+        if (!data.user) return null;
+        return {
+          email: data.user.email,
+          totpEnabled: !!data.user.totpEnabled,
+        };
+      }}
+      title="Two-factor authentication"
+      description="Optional TOTP for your tenant account. Required at sign-in when enabled or when your organization mandates it."
+      disableBlocked={enforce2fa && loaded}
+      disableBlockedMessage="2FA is required by your organization's policy and cannot be disabled."
+    />
+  );
+}
+
+/**
+ * Tenant-level policy switch: when enabled, every member of this business
+ * is required to use 2FA on sign-in. The login route enforces this on the
+ * server; the /api/auth/totp/setup DELETE endpoint refuses to disable 2FA
+ * while the policy is on.
+ */
+function Enforce2faToggle() {
+  const [enabled, setEnabled] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled) {
+          setEnabled(!!data?.user?.enforce2fa);
+          setLoaded(true);
+        }
+      })
+      .catch(() => setLoaded(true));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function toggle(next: boolean) {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/business", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enforce2fa: next }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update policy");
+      setEnabled(next);
+      toast.success(
+        next
+          ? "2FA is now required for every member of your organization."
+          : "2FA requirement removed for your organization."
+      );
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to update policy");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!loaded) return null;
+
+  return (
+    <div className="rounded-lg border p-3 flex items-start justify-between gap-3">
+      <div className="space-y-1">
+        <div className="text-sm font-medium">Require 2FA for all members</div>
+        <p className="text-xs text-muted-foreground">
+          When enabled, every member of your organization must set up
+          two-factor authentication before signing in. Members who haven&apos;t
+          set up 2FA will be blocked at sign-in and guided through setup.
+        </p>
+      </div>
+      <Switch
+        checked={enabled}
+        onCheckedChange={toggle}
+        disabled={busy}
+        aria-label="Require 2FA for all members"
+      />
     </div>
   );
 }

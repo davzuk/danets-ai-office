@@ -1,5 +1,25 @@
 import "server-only";
 import { db } from "@/lib/db";
+import { decryptApiKey } from "@/lib/crypto";
+
+/**
+ * Read an apiKey column, transparently decrypting if it's our envelope and
+ * returning the legacy plaintext otherwise. Centralized so every consumer
+ * sees the same migration path without each route re-implementing it.
+ */
+export function resolveApiKey(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  let envelope: unknown = null;
+  try {
+    envelope = JSON.parse(raw);
+  } catch {
+    return raw; // legacy plaintext
+  }
+  if (envelope && typeof envelope === "object" && (envelope as any).__enc === 1) {
+    return decryptApiKey(envelope);
+  }
+  return raw; // unrecognized shape — fail open to the legacy value
+}
 
 export interface SendResult {
   success: boolean;
@@ -59,7 +79,7 @@ async function sendViaMetaCloudApi(
   phone: string,
   message: string
 ): Promise<SendResult> {
-  const token = integration.apiKey?.trim();
+  const token = resolveApiKey(integration.apiKey)?.trim() || null;
   const phoneNumberId = integration.phoneNumberId?.trim();
 
   if (!token || !phoneNumberId) {

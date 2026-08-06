@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, ShieldCheck, Sparkles, Lock, Mail, User, Building2, KeyRound } from "lucide-react";
+import { Loader2, ShieldCheck, Sparkles, Lock, Mail, User, Building2, KeyRound, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,6 +27,10 @@ export function AuthScreen({ onAuthed }: { onAuthed: (u: AuthUser) => void }) {
   const [mode, setMode] = useState<AuthMode>("login");
   const [loading, setLoading] = useState(false);
   const [needsTotp, setNeedsTotp] = useState(false);
+  const [needsTotpSetup, setNeedsTotpSetup] = useState<{
+    email: string;
+    reason: "tenant_policy" | "user_opt_in";
+  } | null>(null);
   const [platformStatus, setPlatformStatus] = useState<{
     platformName: string;
     maintenanceMode: boolean;
@@ -80,6 +84,19 @@ export function AuthScreen({ onAuthed }: { onAuthed: (u: AuthUser) => void }) {
         setNeedsTotp(true);
         setForm((f) => ({ ...f, email: data.email || f.email }));
         toast.message("Enter your 2FA code to continue");
+        return;
+      }
+      if (data.requiresTotpSetup) {
+        setNeedsTotpSetup({
+          email: data.email,
+          reason: data.reason || "tenant_policy",
+        });
+        setForm((f) => ({ ...f, email: data.email || f.email }));
+        toast.message(
+          data.reason === "tenant_policy"
+            ? "Your organization requires 2FA. Please set it up to continue."
+            : "Please set up 2FA to continue."
+        );
         return;
       }
       if (!res.ok) throw new Error(data.error || "Authentication failed");
@@ -177,6 +194,26 @@ export function AuthScreen({ onAuthed }: { onAuthed: (u: AuthUser) => void }) {
           </div>
 
           <form onSubmit={submit} className="space-y-4">
+            {needsTotpSetup && (
+              <div
+                role="alert"
+                className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-4 flex items-start gap-3 text-amber-900 dark:text-amber-200"
+              >
+                <AlertTriangle className="size-4 mt-0.5 shrink-0" />
+                <div className="space-y-1.5 text-sm">
+                  <div className="font-semibold">
+                    2FA setup required
+                  </div>
+                  <p>
+                    {needsTotpSetup.reason === "tenant_policy"
+                      ? "Your organization requires two-factor authentication for all members."
+                      : "Two-factor authentication is required for this account."}
+                    {" "}Please contact your administrator or sign in once 2FA
+                    has been enabled on your account.
+                  </p>
+                </div>
+              </div>
+            )}
             {mode === "register" && (
               <>
                 <Field
@@ -236,10 +273,12 @@ export function AuthScreen({ onAuthed }: { onAuthed: (u: AuthUser) => void }) {
             <Button
               type="submit"
               className="w-full h-11 text-base font-semibold"
-              disabled={loading}
+              disabled={loading || !!needsTotpSetup}
             >
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {mode === "login"
+              {needsTotpSetup
+                ? "Sign in disabled — set up 2FA first"
+                : mode === "login"
                 ? needsTotp
                   ? "Verify & sign in"
                   : "Sign in"

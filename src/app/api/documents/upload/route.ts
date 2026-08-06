@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
 import { logActivity } from "@/lib/activity";
 import { isFeatureEnabled } from "@/lib/feature-flags";
+import { requireQuota } from "@/lib/plan-quota";
+import { splitIntoChunks } from "@/lib/text-chunker";
 
 export const runtime = "nodejs";
 
@@ -12,36 +14,6 @@ const ALLOWED_TYPES = new Set([
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "text/plain",
 ]);
-
-function splitIntoChunks(text: string, chunkSize: number, overlap: number): string[] {
-  if (text.length <= chunkSize) return [text];
-
-  const chunks: string[] = [];
-  let start = 0;
-  while (start < text.length) {
-    const end = Math.min(start + chunkSize, text.length);
-    let chunk = text.slice(start, end);
-
-    if (end < text.length) {
-      const lastPeriod = chunk.lastIndexOf(". ");
-      const lastNewline = chunk.lastIndexOf("\n");
-      const breakPoint = Math.max(lastPeriod, lastNewline);
-      if (breakPoint > chunkSize * 0.5) {
-        chunk = text.slice(start, start + breakPoint + 1);
-        start = start + breakPoint + 1 - overlap;
-      } else {
-        start = end - overlap;
-      }
-    } else {
-      start = end;
-    }
-
-    chunks.push(chunk.trim());
-    if (chunks.length >= 50) break;
-  }
-
-  return chunks.filter((c) => c.length > 0);
-}
 
 async function extractText(
   buffer: Buffer,
@@ -108,6 +80,8 @@ export async function POST(req: NextRequest) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const { content, sourceType } = await extractText(buffer, file.name, file.type);
+
+    await requireQuota(user.businessId, "documents");
 
     const document = await db.document.create({
       data: {

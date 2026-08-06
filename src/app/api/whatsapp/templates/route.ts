@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
+import { requireQuota } from "@/lib/plan-quota";
 
 // GET /api/whatsapp/templates — list templates
 export function GET(req: NextRequest) {
@@ -51,6 +52,8 @@ export function POST(req: NextRequest) {
     if (!parsed.success) {
       throw new Error(parsed.error.issues[0]?.message || "Invalid input");
     }
+
+    await requireQuota(user.businessId, "whatsappTemplates");
 
     const template = await db.whatsAppTemplate.create({
       data: {

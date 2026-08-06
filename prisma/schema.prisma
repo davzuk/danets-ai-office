@@ -13,44 +13,45 @@ datasource db {
 // ─── Tenancy & Auth ────────────────────────────────────────────────
 
 model Business {
-  id            String   @id @default(cuid())
-  name          String
-  publicKey     String   @unique @default(cuid())
-  industry      String?
-  email         String?
-  phone         String?
-  whatsapp      String?
-  plan          String   @default("free") // free | starter | pro | enterprise
-  status        String   @default("active") // active | suspended
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id         String   @id @default(cuid())
+  name       String
+  publicKey  String   @unique @default(cuid())
+  industry   String?
+  email      String?
+  phone      String?
+  whatsapp   String?
+  plan       String   @default("free") // free | starter | pro | enterprise
+  status     String   @default("active") // active | suspended
+  enforce2fa Boolean  @default(false) // require 2FA for all members of this business
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  users              BusinessUser[]
-  aiAgents           AiAgent[]
-  knowledgeBaseItems KnowledgeBaseItem[]
-  chatSessions       ChatSession[]
-  leads              Lead[]
-  promptTemplates    AiPromptTemplate[]
-  quoteRequests      QuoteRequest[]
-  generatedDocuments GeneratedDocument[]
-  usageLogs          AiUsageLog[]
-  sessions           Session[]
-  ticketCategories   SupportTicketCategory[]
-  supportTickets     SupportTicket[]
-  notifications      Notification[]
-  activityLogs       ActivityLog[]
-  documents          Document[]
-  whatsappTemplates  WhatsAppTemplate[]
-  whatsappIntegration WhatsAppIntegration[]
-  automationWorkflows AutomationWorkflow[]
-  integrations       Integration[]
-  subscription       BusinessSubscription?
-  payments           Payment[]
-  invoices           Invoice[]
-  whatsappMessages   WhatsAppMessage[]
-  whiteLabel         WhiteLabelConfig?
+  users                BusinessUser[]
+  aiAgents             AiAgent[]
+  knowledgeBaseItems   KnowledgeBaseItem[]
+  chatSessions         ChatSession[]
+  leads                Lead[]
+  promptTemplates      AiPromptTemplate[]
+  quoteRequests        QuoteRequest[]
+  generatedDocuments   GeneratedDocument[]
+  usageLogs            AiUsageLog[]
+  sessions             Session[]
+  ticketCategories     SupportTicketCategory[]
+  supportTickets       SupportTicket[]
+  notifications        Notification[]
+  activityLogs         ActivityLog[]
+  documents            Document[]
+  whatsappTemplates    WhatsAppTemplate[]
+  whatsappIntegration  WhatsAppIntegration[]
+  automationWorkflows  AutomationWorkflow[]
+  integrations         Integration[]
+  subscription         BusinessSubscription?
+  payments             Payment[]
+  invoices             Invoice[]
+  whatsappMessages     WhatsAppMessage[]
+  whiteLabel           WhiteLabelConfig?
   featureFlagOverrides BusinessFeatureFlag[]
-  limitOverride      BusinessLimitOverride?
+  limitOverride        BusinessLimitOverride?
 }
 
 model BusinessUser {
@@ -61,57 +62,65 @@ model BusinessUser {
   password     String // bcrypt hash
   role         String   @default("admin") // admin | member
   isSuperAdmin Boolean  @default(false) // Danets TecPro internal super admin
-  totpSecret   String?  // base32 secret when 2FA enabled
-  totpPending  String?  // pending secret during setup
-  totpEnabled  Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  totpSecret      String? // base32 secret when 2FA enabled
+  totpPending     String? // pending secret during setup
+  totpEnabled     Boolean  @default(false)
+  totpBackupCodes Json? // SHA-256 hashes of one-time backup codes (array of strings)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  business  Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  sessions  Session[]
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  sessions Session[]
 
   @@index([businessId])
 }
 
 model Session {
-  id              String   @id @default(cuid())
-  token           String   @unique
-  businessUserId  String
-  businessId      String
-  expiresAt       DateTime
-  createdAt       DateTime @default(now())
+  id                String    @id @default(cuid())
+  token             String    @unique
+  csrfToken         String?   @unique
+  businessUserId    String
+  businessId        String
+  expiresAt         DateTime
+  /// Hard cap — session is rejected once we are past this, regardless of activity.
+  /// Set equal to `expiresAt` at creation; the sliding window lives on `lastSeenAt`.
+  absoluteExpiresAt DateTime
+  /// Last time `requireSession` validated this session. Used for the idle timeout.
+  lastSeenAt        DateTime?
+  createdAt         DateTime  @default(now())
 
   businessUser BusinessUser @relation(fields: [businessUserId], references: [id], onDelete: Cascade)
   business     Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
   @@index([token])
+  @@index([absoluteExpiresAt])
 }
 
 // ─── AI Configuration ──────────────────────────────────────────────
 
 model AiAgent {
-  id              String   @id @default(cuid())
-  businessId      String
-  botName         String   @default("Assistant")
-  businessName    String?
-  industry        String?
-  welcomeMessage  String   @default("Hi! How can I help you today?")
-  fallbackMessage String   @default("I'm not fully sure about that. Please contact our team for confirmation.")
-  handoverMessage String   @default("Let me connect you with our team for further assistance.")
-  tone            String   @default("professional") // professional | friendly | formal
-  contactPhone    String?
-  whatsappNumber  String?
-  email           String?
-  brandColor      String   @default("#1d4ed8")
-  quickReplies    String   @default("[]") // JSON array of suggested question strings
-  status          String   @default("active") // active | inactive
-  leadCaptureEnabled Boolean @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  businessId         String
+  botName            String   @default("Assistant")
+  businessName       String?
+  industry           String?
+  welcomeMessage     String   @default("Hi! How can I help you today?")
+  fallbackMessage    String   @default("I'm not fully sure about that. Please contact our team for confirmation.")
+  handoverMessage    String   @default("Let me connect you with our team for further assistance.")
+  tone               String   @default("professional") // professional | friendly | formal
+  contactPhone       String?
+  whatsappNumber     String?
+  email              String?
+  brandColor         String   @default("#1d4ed8")
+  quickReplies       String   @default("[]") // JSON array of suggested question strings
+  status             String   @default("active") // active | inactive
+  leadCaptureEnabled Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  business      Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  chatSessions  ChatSession[]
+  business     Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  chatSessions ChatSession[]
 
   @@index([businessId])
 }
@@ -158,18 +167,18 @@ model ChatSession {
   visitorName  String?
   visitorEmail String?
   visitorPhone String?
-  visitorId    String?  // anonymous browser id
+  visitorId    String? // anonymous browser id
   status       String   @default("active") // active | ended | handover
   summary      String?
-  leadQuality  String?  // low | medium | high
+  leadQuality  String? // low | medium | high
   nextAction   String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  business Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  agent    AiAgent?      @relation(fields: [agentId], references: [id], onDelete: SetNull)
-  messages ChatMessage[]
-  lead     Lead?
+  business       Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  agent          AiAgent?        @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  messages       ChatMessage[]
+  lead           Lead?
   supportTickets SupportTicket[]
 
   @@index([businessId])
@@ -179,10 +188,10 @@ model ChatSession {
 model ChatMessage {
   id         String   @id @default(cuid())
   sessionId  String
-  role       String   // user | assistant | system
+  role       String // user | assistant | system
   content    String
   tokensUsed Int      @default(0)
-  meta       String?  // JSON string for extra data
+  meta       String? // JSON string for extra data
   createdAt  DateTime @default(now())
 
   session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
@@ -191,30 +200,30 @@ model ChatMessage {
 }
 
 model Lead {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   businessId        String
-  sessionId         String?  @unique
+  sessionId         String?   @unique
   name              String
   email             String?
   phone             String?
   service           String?
   message           String?
-  quality           String   @default("medium") // low | medium | high
-  status            String   @default("new") // new | contacted | qualified | proposal_sent | negotiation | won | lost
-  source            String   @default("chatbot") // chatbot | website_form | manual | whatsapp | referral | social_media
+  quality           String    @default("medium") // low | medium | high
+  status            String    @default("new") // new | contacted | qualified | proposal_sent | negotiation | won | lost
+  source            String    @default("chatbot") // chatbot | website_form | manual | whatsapp | referral | social_media
   // CRM fields
-  dealValue         Float    @default(0)
-  leadScore         Int      @default(0) // 0-100
+  dealValue         Float     @default(0)
+  leadScore         Int       @default(0) // 0-100
   expectedCloseDate DateTime?
-  assignedTo        String?  // BusinessUser id
+  assignedTo        String? // BusinessUser id
   company           String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  business  Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  session   ChatSession?   @relation(fields: [sessionId], references: [id], onDelete: SetNull)
-  notes     LeadNote[]
-  tasks     LeadTask[]
+  business   Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  session    ChatSession?   @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  notes      LeadNote[]
+  tasks      LeadTask[]
   activities LeadActivity[]
 
   @@index([businessId])
@@ -225,13 +234,13 @@ model Lead {
 // ─── CRM: Lead Notes, Tasks, Activities ───────────────────────────
 
 model LeadNote {
-  id        String   @id @default(cuid())
-  leadId    String
+  id         String   @id @default(cuid())
+  leadId     String
   businessId String
-  authorId  String?  // BusinessUser id
+  authorId   String? // BusinessUser id
   authorName String
-  content   String
-  createdAt DateTime @default(now())
+  content    String
+  createdAt  DateTime @default(now())
 
   lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
@@ -240,17 +249,17 @@ model LeadNote {
 }
 
 model LeadTask {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   leadId      String
   businessId  String
   title       String
   description String?
   dueDate     DateTime?
-  completed   Boolean  @default(false)
+  completed   Boolean   @default(false)
   completedAt DateTime?
-  assigneeId  String?  // BusinessUser id
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  assigneeId  String? // BusinessUser id
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
@@ -263,10 +272,10 @@ model LeadActivity {
   id          String   @id @default(cuid())
   leadId      String
   businessId  String
-  type        String   // status_change | note_added | task_created | task_completed | lead_created | lead_updated | call | email | whatsapp
+  type        String // status_change | note_added | task_created | task_completed | lead_created | lead_updated | call | email | whatsapp
   description String
-  metadata    String?  // JSON string for extra context
-  actorId     String?  // BusinessUser id (null for system)
+  metadata    String? // JSON string for extra context
+  actorId     String? // BusinessUser id (null for system)
   actorName   String?
   createdAt   DateTime @default(now())
 
@@ -287,42 +296,42 @@ model SupportTicketCategory {
   color       String   @default("#1d4ed8")
   createdAt   DateTime @default(now())
 
-  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
   tickets  SupportTicket[]
 
   @@index([businessId])
 }
 
 model SupportTicket {
-  id          String   @id @default(cuid())
-  businessId  String
-  categoryId  String?
-  chatSessionId String? // link to chat session if converted from chat
-  subject     String
-  description String
-  status      String   @default("open") // open | pending | in_progress | resolved | closed
-  priority    String   @default("medium") // low | medium | high | urgent
+  id               String    @id @default(cuid())
+  businessId       String
+  categoryId       String?
+  chatSessionId    String? // link to chat session if converted from chat
+  subject          String
+  description      String
+  status           String    @default("open") // open | pending | in_progress | resolved | closed
+  priority         String    @default("medium") // low | medium | high | urgent
   // AI-detected fields
-  aiSummary   String?
-  aiPriority  String?  // low | medium | high | urgent
-  aiSentiment String?  // positive | neutral | negative | frustrated
-  aiNextAction String?
+  aiSummary        String?
+  aiPriority       String? // low | medium | high | urgent
+  aiSentiment      String? // positive | neutral | negative | frustrated
+  aiNextAction     String?
   // Customer info
-  customerName  String?
-  customerEmail String?
-  customerPhone String?
+  customerName     String?
+  customerEmail    String?
+  customerPhone    String?
   // Assignment
-  assignedTo  String?  // BusinessUser id
-  assignedName String?
+  assignedTo       String? // BusinessUser id
+  assignedName     String?
   // AI suggested reply (stored for review, not auto-sent)
   aiSuggestedReply String?
   // Timestamps
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  resolvedAt  DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  resolvedAt       DateTime?
 
   business    Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  category    SupportTicketCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  category    SupportTicketCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   chatSession ChatSession?           @relation(fields: [chatSessionId], references: [id], onDelete: SetNull)
   messages    SupportTicketMessage[]
   notes       SupportTicketNote[]
@@ -333,13 +342,13 @@ model SupportTicket {
 }
 
 model SupportTicketMessage {
-  id          String   @id @default(cuid())
-  ticketId    String
-  role        String   // customer | agent | system
-  content     String
-  authorId    String?  // BusinessUser id (for agent messages)
-  authorName  String?
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  ticketId   String
+  role       String // customer | agent | system
+  content    String
+  authorId   String? // BusinessUser id (for agent messages)
+  authorName String?
+  createdAt  DateTime @default(now())
 
   ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
@@ -347,13 +356,13 @@ model SupportTicketMessage {
 }
 
 model SupportTicketNote {
-  id          String   @id @default(cuid())
-  ticketId    String
-  businessId  String
-  authorId    String?
-  authorName  String
-  content     String
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  ticketId   String
+  businessId String
+  authorId   String?
+  authorName String
+  content    String
+  createdAt  DateTime @default(now())
 
   ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
@@ -364,16 +373,16 @@ model SupportTicketNote {
 // ─── Usage & Documents ─────────────────────────────────────────────
 
 model AiUsageLog {
-  id         String   @id @default(cuid())
-  businessId String
-  feature    String   // chat | suggested_reply | quote | summary
-  promptTokens  Int   @default(0)
-  completionTokens Int @default(0)
-  totalTokens   Int   @default(0)
-  costUsd     Float    @default(0)
-  status      String   @default("success") // success | error
-  error       String?
-  createdAt   DateTime @default(now())
+  id               String   @id @default(cuid())
+  businessId       String
+  feature          String // chat | suggested_reply | quote | summary
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  totalTokens      Int      @default(0)
+  costUsd          Float    @default(0)
+  status           String   @default("success") // success | error
+  error            String?
+  createdAt        DateTime @default(now())
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -382,39 +391,39 @@ model AiUsageLog {
 }
 
 model QuoteRequest {
-  id           String   @id @default(cuid())
-  businessId   String
-  clientName   String
-  companyName  String?
-  service      String
-  requirements String
-  budgetRange  String?
-  timeline     String?
-  notes        String?
-  status       String   @default("draft") // draft | generated | sent | viewed | accepted | rejected
+  id              String    @id @default(cuid())
+  businessId      String
+  clientName      String
+  companyName     String?
+  service         String
+  requirements    String
+  budgetRange     String?
+  timeline        String?
+  notes           String?
+  status          String    @default("draft") // draft | generated | sent | viewed | accepted | rejected
   // Pricing fields
-  subtotal     Float    @default(0)
-  discount     Float    @default(0) // percentage or flat amount
-  discountType String   @default("percentage") // percentage | flat
-  taxRate      Float    @default(0) // percentage
-  taxAmount    Float    @default(0)
-  total        Float    @default(0)
-  currency     String   @default("USD")
+  subtotal        Float     @default(0)
+  discount        Float     @default(0) // percentage or flat amount
+  discountType    String    @default("percentage") // percentage | flat
+  taxRate         Float     @default(0) // percentage
+  taxAmount       Float     @default(0)
+  total           Float     @default(0)
+  currency        String    @default("USD")
   // Acceptance
-  acceptedAt   DateTime?
-  acceptedByName String?
+  acceptedAt      DateTime?
+  acceptedByName  String?
   acceptedByEmail String?
-  clientFeedback String?
+  clientFeedback  String?
   // Template
-  templateId   String?
+  templateId      String?
   // Timestamps
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  business   Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  documents  GeneratedDocument[]
-  items      ProposalItem[]
-  followups  ProposalFollowup[]
+  business  Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  documents GeneratedDocument[]
+  items     ProposalItem[]
+  followups ProposalFollowup[]
 
   @@index([businessId])
   @@index([status])
@@ -423,31 +432,31 @@ model QuoteRequest {
 // ─── Proposal Templates & Items ───────────────────────────────────
 
 model ProposalTemplate {
-  id          String   @id @default(cuid())
-  businessId  String?  // null = global template, set = business-specific
-  name        String
-  type        String   // website_dev | software_dev | ai_chatbot | cloud_hosting | cybersecurity_audit | website_maintenance | isp_software | construction_erp | custom
-  industry    String?
-  description String?
-  sections    String   @default("[]") // JSON array of section names
-  defaultItems String  @default("[]") // JSON array of { description, quantity, unitPrice }
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(cuid())
+  businessId   String? // null = global template, set = business-specific
+  name         String
+  type         String // website_dev | software_dev | ai_chatbot | cloud_hosting | cybersecurity_audit | website_maintenance | isp_software | construction_erp | custom
+  industry     String?
+  description  String?
+  sections     String   @default("[]") // JSON array of section names
+  defaultItems String   @default("[]") // JSON array of { description, quantity, unitPrice }
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@index([businessId])
   @@index([type])
 }
 
 model ProposalItem {
-  id            String   @id @default(cuid())
+  id             String   @id @default(cuid())
   quoteRequestId String
-  description   String
-  quantity      Int      @default(1)
-  unitPrice     Float    @default(0)
-  total         Float    @default(0)
-  sortOrder     Int      @default(0)
-  createdAt     DateTime @default(now())
+  description    String
+  quantity       Int      @default(1)
+  unitPrice      Float    @default(0)
+  total          Float    @default(0)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
 
   quoteRequest QuoteRequest @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
 
@@ -455,16 +464,16 @@ model ProposalItem {
 }
 
 model ProposalFollowup {
-  id            String   @id @default(cuid())
+  id             String    @id @default(cuid())
   quoteRequestId String
-  businessId    String
-  type          String   // email | whatsapp | call | note
-  content       String
-  scheduledFor  DateTime?
-  completedAt   DateTime?
-  createdBy     String?
-  createdByName String?
-  createdAt     DateTime @default(now())
+  businessId     String
+  type           String // email | whatsapp | call | note
+  content        String
+  scheduledFor   DateTime?
+  completedAt    DateTime?
+  createdBy      String?
+  createdByName  String?
+  createdAt      DateTime  @default(now())
 
   quoteRequest QuoteRequest @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
 
@@ -473,13 +482,13 @@ model ProposalFollowup {
 }
 
 model GeneratedDocument {
-  id            String   @id @default(cuid())
-  businessId    String
+  id             String   @id @default(cuid())
+  businessId     String
   quoteRequestId String?
-  type          String   @default("proposal") // proposal | summary | quote
-  title         String
-  content       String
-  createdAt     DateTime @default(now())
+  type           String   @default("proposal") // proposal | summary | quote
+  title          String
+  content        String
+  createdAt      DateTime @default(now())
 
   business     Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
   quoteRequest QuoteRequest? @relation(fields: [quoteRequestId], references: [id], onDelete: SetNull)
@@ -488,32 +497,48 @@ model GeneratedDocument {
 }
 
 model SubscriptionPlan {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  priceUsd    Float    @default(0)
-  chatLimit   Int      @default(100)
-  leadLimit   Int      @default(50)
-  kbLimit     Int      @default(25)
-  agentLimit  Int      @default(1)
-  auditRetentionDays Int @default(30)
-  chatRetentionDays  Int @default(90)
-  leadRetentionDays  Int @default(365)
-  features    String   @default("[]") // JSON array
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  name                  String   @unique
+  priceUsd              Float    @default(0)
+  chatLimit             Int      @default(100)
+  leadLimit             Int      @default(50)
+  kbLimit               Int      @default(25)
+  agentLimit            Int      @default(1)
+  ticketLimit           Int      @default(100)
+  documentLimit         Int      @default(25)
+  automationLimit       Int      @default(5)
+  seatLimit             Int      @default(3)
+  whatsappTemplateLimit Int      @default(5)
+  integrationLimit      Int      @default(3)
+  proposalTemplateLimit Int      @default(10)
+  quoteLimit            Int      @default(50)
+  auditRetentionDays    Int      @default(30)
+  chatRetentionDays     Int      @default(90)
+  leadRetentionDays     Int      @default(365)
+  features              String   @default("[]") // JSON array
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 }
 
 model BusinessLimitOverride {
-  id         String   @id @default(cuid())
-  businessId String   @unique
-  chatLimit  Int?
-  leadLimit  Int?
-  kbLimit    Int?
-  agentLimit Int?
-  notes      String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  businessId            String   @unique
+  chatLimit             Int?
+  leadLimit             Int?
+  kbLimit               Int?
+  agentLimit            Int?
+  ticketLimit           Int?
+  documentLimit         Int?
+  automationLimit       Int?
+  seatLimit             Int?
+  whatsappTemplateLimit Int?
+  integrationLimit      Int?
+  proposalTemplateLimit Int?
+  quoteLimit            Int?
+  notes                 String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 }
@@ -521,15 +546,15 @@ model BusinessLimitOverride {
 // ─── Notifications ─────────────────────────────────────────────────
 
 model Notification {
-  id          String    @id @default(cuid())
-  businessId  String
-  userId      String?   // targeted user (null = all business users)
-  type        String    // new_lead | new_ticket | urgent_ticket | proposal_generated | proposal_accepted | follow_up_reminder | high_quality_lead | ai_usage_warning | subscription_expiry | integration_failed | new_chat_session
-  title       String
-  message     String
-  data        String?   // JSON string for extra context (leadId, ticketId, etc.)
-  readAt      DateTime?
-  createdAt   DateTime  @default(now())
+  id         String    @id @default(cuid())
+  businessId String
+  userId     String? // targeted user (null = all business users)
+  type       String // new_lead | new_ticket | urgent_ticket | proposal_generated | proposal_accepted | follow_up_reminder | high_quality_lead | ai_usage_warning | subscription_expiry | integration_failed | new_chat_session
+  title      String
+  message    String
+  data       String? // JSON string for extra context (leadId, ticketId, etc.)
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -544,12 +569,12 @@ model ActivityLog {
   businessId  String
   userId      String?
   userName    String?
-  action      String   // login | user_created | user_updated | user_deleted | business_settings_changed | ai_agent_updated | kb_updated | lead_status_changed | proposal_generated | ticket_updated | document_uploaded | integration_changed | subscription_changed
-  module      String   // auth | team | business | agent | knowledge | leads | quotes | tickets | documents | integrations | subscription
+  action      String // login | user_created | user_updated | user_deleted | business_settings_changed | ai_agent_updated | kb_updated | lead_status_changed | proposal_generated | ticket_updated | document_uploaded | integration_changed | subscription_changed
+  module      String // auth | team | business | agent | knowledge | leads | quotes | tickets | documents | integrations | subscription
   description String
   ipAddress   String?
   userAgent   String?
-  metadata    String?  // JSON string for extra context
+  metadata    String? // JSON string for extra context
   createdAt   DateTime @default(now())
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
@@ -561,14 +586,14 @@ model ActivityLog {
 }
 
 model NotificationPreference {
-  id          String   @id @default(cuid())
-  businessId  String
-  userId      String
-  type        String   // matches Notification.type
-  inApp       Boolean  @default(true)
-  email       Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  businessId String
+  userId     String
+  type       String // matches Notification.type
+  inApp      Boolean  @default(true)
+  email      Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@unique([businessId, userId, type])
   @@index([businessId, userId])
@@ -577,21 +602,21 @@ model NotificationPreference {
 // ─── AI Document Assistant ────────────────────────────────────────
 
 model Document {
-  id          String   @id @default(cuid())
-  businessId  String
-  title       String
-  category    String   @default("General")
-  sourceType  String   @default("text") // text | pdf | docx | txt
-  content     String   // full text content (for text-based docs) or extracted text
-  fileName    String?  // original file name if uploaded
-  fileSize    Int?     // bytes
-  summary     String?  // AI-generated summary
-  status      String   @default("active") // active | processing | archived
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  businessId String
+  title      String
+  category   String   @default("General")
+  sourceType String   @default("text") // text | pdf | docx | txt
+  content    String // full text content (for text-based docs) or extracted text
+  fileName   String? // original file name if uploaded
+  fileSize   Int? // bytes
+  summary    String? // AI-generated summary
+  status     String   @default("active") // active | processing | archived
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  business Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  chunks   DocumentChunk[]
+  business  Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  chunks    DocumentChunk[]
   questions DocumentAiQuestion[]
 
   @@index([businessId])
@@ -599,11 +624,11 @@ model Document {
 }
 
 model DocumentChunk {
-  id          String   @id @default(cuid())
-  documentId  String
-  content     String
-  chunkIndex  Int
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  documentId String
+  content    String
+  chunkIndex Int
+  createdAt  DateTime @default(now())
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
@@ -611,13 +636,13 @@ model DocumentChunk {
 }
 
 model DocumentAiQuestion {
-  id          String   @id @default(cuid())
-  documentId  String
-  businessId  String
-  question    String
-  answer      String?
-  tokensUsed  Int      @default(0)
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  documentId String
+  businessId String
+  question   String
+  answer     String?
+  tokensUsed Int      @default(0)
+  createdAt  DateTime @default(now())
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
@@ -628,14 +653,14 @@ model DocumentAiQuestion {
 // ─── WhatsApp Automation ──────────────────────────────────────────
 
 model WhatsAppTemplate {
-  id          String   @id @default(cuid())
-  businessId  String
-  name        String
-  type        String   // new_lead_followup | missed_chat | quotation_followup | payment_reminder | appointment_confirmation | ticket_update | custom
-  content     String   // template text with {name}, {service}, {company} placeholders
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  businessId String
+  name       String
+  type       String // new_lead_followup | missed_chat | quotation_followup | payment_reminder | appointment_confirmation | ticket_update | custom
+  content    String // template text with {name}, {service}, {company} placeholders
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -644,18 +669,18 @@ model WhatsAppTemplate {
 }
 
 model WhatsAppIntegration {
-  id          String   @id @default(cuid())
-  businessId  String
-  provider    String   @default("manual") // manual | meta_cloud_api | twilio | termii | other
-  phoneNumber String?
+  id            String    @id @default(cuid())
+  businessId    String
+  provider      String    @default("manual") // manual | meta_cloud_api | twilio | termii | other
+  phoneNumber   String?
   phoneNumberId String? // Meta Cloud API phone number ID
-  apiKey      String?  // stored server-side only, never exposed to frontend
-  webhookUrl  String?
-  status      String   @default("inactive") // active | inactive | testing
-  lastTestedAt DateTime?
-  notes       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  apiKey        String? // stored server-side only, never exposed to frontend
+  webhookUrl    String?
+  status        String    @default("inactive") // active | inactive | testing
+  lastTestedAt  DateTime?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -665,21 +690,21 @@ model WhatsAppIntegration {
 // ─── Automation Workflows ─────────────────────────────────────────
 
 model AutomationWorkflow {
-  id          String   @id @default(cuid())
-  businessId  String
-  name        String
-  description String?
-  triggerType String   // new_lead | new_ticket | proposal_generated | proposal_accepted | lead_status_changed | document_uploaded | no_response_days
+  id            String    @id @default(cuid())
+  businessId    String
+  name          String
+  description   String?
+  triggerType   String // new_lead | new_ticket | proposal_generated | proposal_accepted | lead_status_changed | document_uploaded | no_response_days
   triggerConfig String? // JSON: { days?: number, leadStatus?: string }
-  actionType  String   // create_task | send_notification | generate_ai_followup | add_lead_note | change_lead_status | create_ticket | create_proposal_reminder
-  actionConfig String? // JSON: { taskTitle?, noteContent?, leadStatus?, notificationType? }
-  isActive    Boolean  @default(true)
-  runCount    Int      @default(0)
-  lastRunAt   DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  actionType    String // create_task | send_notification | generate_ai_followup | add_lead_note | change_lead_status | create_ticket | create_proposal_reminder
+  actionConfig  String? // JSON: { taskTitle?, noteContent?, leadStatus?, notificationType? }
+  isActive      Boolean   @default(true)
+  runCount      Int       @default(0)
+  lastRunAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  business Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
   runs     AutomationRun[]
 
   @@index([businessId])
@@ -691,8 +716,8 @@ model AutomationRun {
   id          String   @id @default(cuid())
   workflowId  String
   businessId  String
-  triggerData String?  // JSON: what triggered this run
-  actionData  String?  // JSON: what action was taken
+  triggerData String? // JSON: what triggered this run
+  actionData  String? // JSON: what action was taken
   status      String   @default("success") // success | error
   error       String?
   createdAt   DateTime @default(now())
@@ -706,17 +731,17 @@ model AutomationRun {
 // ─── Integrations ─────────────────────────────────────────────────
 
 model Integration {
-  id          String   @id @default(cuid())
-  businessId  String
-  category    String   // ai_provider | whatsapp | email | sms | payment | crm | website_widget
-  provider    String   // e.g. openai, zai, meta, twilio, sendgrid, paystack, flutterwave, manual
-  name        String   // display name
-  status      String   @default("inactive") // active | inactive | testing | error
-  config      String?  // JSON: provider-specific config (apiKey masked in frontend)
+  id           String    @id @default(cuid())
+  businessId   String
+  category     String // ai_provider | whatsapp | email | sms | payment | crm | website_widget
+  provider     String // e.g. openai, zai, meta, twilio, sendgrid, paystack, flutterwave, manual
+  name         String // display name
+  status       String    @default("inactive") // active | inactive | testing | error
+  config       String? // JSON: provider-specific config (apiKey masked in frontend)
   lastTestedAt DateTime?
-  notes       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -727,22 +752,25 @@ model Integration {
 // ─── Subscription Management ──────────────────────────────────────
 
 model BusinessSubscription {
-  id          String   @id @default(cuid())
-  businessId  String   @unique
-  planName    String   // free | starter | business | premium | enterprise
-  status      String   @default("active") // active | trial | past_due | canceled | expired
-  startDate   DateTime @default(now())
-  endDate     DateTime?
-  trialEndsAt DateTime?
-  monthlyFee  Float    @default(0)
-  paymentMethod String? // paystack | flutterwave | bank_transfer | manual
-  paymentRef  String?  // transaction reference
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                      String    @id @default(cuid())
+  businessId              String    @unique
+  planName                String // free | starter | business | premium | enterprise
+  status                  String    @default("active") // active | trial | past_due | canceled | expired
+  startDate               DateTime  @default(now())
+  endDate                 DateTime?
+  trialEndsAt             DateTime?
+  monthlyFee              Float     @default(0)
+  paymentMethod           String? // paystack | flutterwave | bank_transfer | manual
+  paymentRef              String? // transaction reference
+  downgradeScheduledFor   DateTime? // when a scheduled downgrade takes effect
+  downgradeTargetPlan     String? // target plan for the scheduled downgrade
+  metadata                Json? // free-form JSON for additional transition state
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
   payments Payment[]
-  invoices  Invoice[]
+  invoices Invoice[]
 
   @@index([status])
 }
@@ -750,26 +778,26 @@ model BusinessSubscription {
 // ─── Payments & Invoices ──────────────────────────────────────────
 
 model Payment {
-  id              String   @id @default(cuid())
-  businessId      String
-  subscriptionId  String?
-  amount          Float
-  currency        String   @default("USD")
-  provider        String   // paystack | flutterwave | bank_transfer | manual
-  reference       String   @unique // unique transaction reference
-  status          String   @default("pending") // pending | success | failed | refunded
-  providerRef     String?  // provider's transaction reference
-  payerEmail      String?
-  payerName       String?
-  metadata        String?  // JSON for extra data
-  paidAt          DateTime?
-  verifiedAt      DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             String    @id @default(cuid())
+  businessId     String
+  subscriptionId String?
+  amount         Float
+  currency       String    @default("USD")
+  provider       String // paystack | flutterwave | bank_transfer | manual
+  reference      String    @unique // unique transaction reference
+  status         String    @default("pending") // pending | success | failed | refunded
+  providerRef    String? // provider's transaction reference
+  payerEmail     String?
+  payerName      String?
+  metadata       String? // JSON for extra data
+  paidAt         DateTime?
+  verifiedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  business      Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  subscription  BusinessSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
-  invoice       Invoice?
+  business     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  subscription BusinessSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  invoice      Invoice?
 
   @@index([businessId])
   @@index([status])
@@ -777,48 +805,47 @@ model Payment {
 }
 
 model Invoice {
-  id              String   @id @default(cuid())
-  businessId      String
-  subscriptionId  String?
-  paymentId       String?  @unique
-  invoiceNumber   String   @unique
-  amount          Float
-  currency        String   @default("USD")
-  status          String   @default("draft") // draft | sent | paid | void | overdue
+  id             String    @id @default(cuid())
+  businessId     String
+  subscriptionId String?
+  paymentId      String?   @unique
+  invoiceNumber  String    @unique
+  amount         Float
+  currency       String    @default("USD")
+  status         String    @default("draft") // draft | sent | paid | void | overdue
   dueDate        DateTime?
-  paidAt          DateTime?
-  items           String   @default("[]") // JSON array of { description, quantity, unitPrice, total }
-  notes           String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  paidAt         DateTime?
+  items          String    @default("[]") // JSON array of { description, quantity, unitPrice, total }
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  business      Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  subscription  BusinessSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
-  payment       Payment?            @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  business     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  subscription BusinessSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  payment      Payment?              @relation(fields: [paymentId], references: [id], onDelete: SetNull)
 
   @@index([businessId])
   @@index([status])
   @@index([invoiceNumber])
 }
 
-
 // ─── WhatsApp Messages ────────────────────────────────────────────
 
 model WhatsAppMessage {
-  id          String   @id @default(cuid())
-  businessId  String
-  direction   String   // outbound | inbound
-  status      String   @default("pending") // pending | sent | delivered | read | failed
-  phoneNumber String
-  message     String
-  templateId  String?
-  leadId      String?
-  sentBy      String?
-  sentByName  String?
-  providerRef String?
+  id           String    @id @default(cuid())
+  businessId   String
+  direction    String // outbound | inbound
+  status       String    @default("pending") // pending | sent | delivered | read | failed
+  phoneNumber  String
+  message      String
+  templateId   String?
+  leadId       String?
+  sentBy       String?
+  sentByName   String?
+  providerRef  String?
   errorMessage String?
-  createdAt   DateTime @default(now())
-  sentAt      DateTime?
+  createdAt    DateTime  @default(now())
+  sentAt       DateTime?
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -831,19 +858,19 @@ model WhatsAppMessage {
 // ─── White-Label / Multi-Brand ────────────────────────────────────
 
 model WhiteLabelConfig {
-  id          String   @id @default(cuid())
-  businessId  String   @unique
-  customDomain String?
+  id            String   @id @default(cuid())
+  businessId    String   @unique
+  customDomain  String?
   customLogoUrl String?
-  primaryColor String  @default("#1d4ed8")
-  accentColor String  @default("#84cc16")
-  appName     String   @default("Danets AI Automation")
-  appShortName String  @default("Danets AI")
-  hideBranding Boolean @default(false)
-  customCss   String?
-  isActive    Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  primaryColor  String   @default("#1d4ed8")
+  accentColor   String   @default("#84cc16")
+  appName       String   @default("Danets AI Automation")
+  appShortName  String   @default("Danets AI")
+  hideBranding  Boolean  @default(false)
+  customCss     String?
+  isActive      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -918,11 +945,11 @@ model PlatformAdmin {
   id             String   @id @default(cuid())
   name           String
   email          String   @unique
-  password       String   // bcrypt hash
-  totpSecret     String?  // base32 secret when 2FA enabled
-  totpPending    String?  // pending secret during setup
+  password       String // bcrypt hash
+  totpSecret     String? // base32 secret when 2FA enabled
+  totpPending    String? // pending secret during setup
   totpEnabled    Boolean  @default(false)
-  homeBusinessId String?  // audit-log context (Danets internal tenant)
+  homeBusinessId String? // audit-log context (Danets internal tenant)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

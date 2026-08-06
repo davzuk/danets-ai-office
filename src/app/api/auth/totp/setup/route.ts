@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
-import { generateTotpSecret, getTotpUri, verifyTotpCode } from "@/lib/totp";
+import {
+  generateBackupCodes,
+  generateTotpSecret,
+  getTotpUri,
+  hashBackupCode,
+  verifyTotpCode,
+} from "@/lib/totp";
 
 // GET /api/auth/totp/setup — begin tenant 2FA setup
 export async function GET() {
@@ -27,7 +34,7 @@ export async function GET() {
 
   return NextResponse.json({
     secret,
-    otpauthUrl: getTotpUri(row.email, secret, "Danets AI"),
+    otpauthUrl: getTotpUri(row.email, secret),
   });
 }
 
@@ -65,7 +72,17 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  return NextResponse.json({ ok: true, totpEnabled: true });
+  // Mint a fresh batch of one-time backup codes. The cleartext codes are
+  // returned in this response exactly once — the database only stores the
+  // SHA-256 hashes, so a leaked DB row cannot be used to sign in.
+  const backupCodes = generateBackupCodes(8);
+  const backupCodeHashes = backupCodes.map(hashBackupCode);
+  await db.businessUser.update({
+    where: { id: row.id },
+    data: { totpBackupCodes: backupCodeHashes as any },
+  });
+
+  return NextResponse.json({ ok: true, totpEnabled: true, backupCodes });
 }
 
 const disableSchema = z.object({
@@ -88,8 +105,20 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "Password and 2FA code required" }, { status: 400 });
   }
 
-  const row = await db.businessUser.findUnique({ where: { id: session.userId } });
+  const row = await db.businessUser.findUnique({
+    where: { id: session.userId },
+    include: { business: { select: { enforce2fa: true } } },
+  });
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Block disable when the tenant enforces 2FA. Mirrors the platform-level
+  // "required by policy" guard on platform-auth's TOTP endpoint.
+  if (row.business.enforce2fa) {
+    return NextResponse.json(
+      { error: "2FA is required by your organization's policy and cannot be disabled." },
+      { status: 403 }
+    );
+  }
 
   const bcrypt = await import("bcryptjs");
   if (!(await bcrypt.compare(parsed.data.password, row.password))) {
@@ -101,7 +130,12 @@ export async function DELETE(req: NextRequest) {
 
   await db.businessUser.update({
     where: { id: row.id },
-    data: { totpSecret: null, totpPending: null, totpEnabled: false },
+    data: {
+      totpSecret: null,
+      totpPending: null,
+      totpEnabled: false,
+      totpBackupCodes: Prisma.JsonNull,
+    },
   });
 
   return NextResponse.json({ ok: true, totpEnabled: false });

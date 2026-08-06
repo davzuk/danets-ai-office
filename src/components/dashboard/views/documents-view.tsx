@@ -628,126 +628,165 @@ export function DocumentsView({ user: _user }: { user: DocUser }) {
               New Document
             </DialogTitle>
             <DialogDescription>
-              Paste document text and the AI will automatically split it into
-              searchable sections for Q&amp;A.
+              Paste text or upload a PDF, DOCX, or TXT file — the AI will
+              automatically split it into searchable sections for Q&amp;A.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4">
-            <div className="grid gap-1.5">
-              <Label htmlFor="doc-title">
-                Title <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="doc-title"
-                value={form.title}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, title: e.target.value }))
-                }
-                placeholder="e.g. Service Agreement 2025"
-                autoFocus
-              />
-            </div>
+          <Tabs defaultValue="paste" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="paste" className="gap-1.5">
+                <FileText className="size-3.5" />
+                Paste text
+              </TabsTrigger>
+              <TabsTrigger value="upload" className="gap-1.5">
+                <Upload className="size-3.5" />
+                Upload file
+              </TabsTrigger>
+            </TabsList>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <TabsContent value="paste" className="space-y-4 mt-4">
               <div className="grid gap-1.5">
-                <Label htmlFor="doc-category">
-                  Category <span className="text-destructive">*</span>
+                <Label htmlFor="doc-title">
+                  Title <span className="text-destructive">*</span>
                 </Label>
                 <Input
-                  id="doc-category"
-                  list="doc-category-options"
-                  value={form.category}
+                  id="doc-title"
+                  value={form.title}
                   onChange={(e) =>
-                    setForm((f) => ({ ...f, category: e.target.value }))
+                    setForm((f) => ({ ...f, title: e.target.value }))
                   }
-                  placeholder="General"
+                  placeholder="e.g. Service Agreement 2025"
+                  autoFocus
                 />
-                <datalist id="doc-category-options">
-                  {CATEGORY_SUGGESTIONS.map((c) => (
-                    <option key={c} value={c} />
-                  ))}
-                </datalist>
-                <p className="text-xs text-muted-foreground">
-                  Type or pick a suggested category.
-                </p>
               </div>
-              <div className="grid gap-1.5">
-                <Label>Source Type</Label>
-                <Select
-                  value={form.sourceType}
-                  onValueChange={(v) =>
-                    setForm((f) => ({ ...f, sourceType: v as SourceType }))
-                  }
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SOURCE_TYPE_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        <span className="inline-flex items-center gap-2">
-                          <o.icon className="size-3.5" />
-                          {o.label}
-                        </span>
-                      </SelectItem>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="doc-category">
+                    Category <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    id="doc-category"
+                    list="doc-category-options"
+                    value={form.category}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, category: e.target.value }))
+                    }
+                    placeholder="General"
+                  />
+                  <datalist id="doc-category-options">
+                    {CATEGORY_SUGGESTIONS.map((c) => (
+                      <option key={c} value={c} />
                     ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Used as a label for filtering.
+                  </datalist>
+                  <p className="text-xs text-muted-foreground">
+                    Type or pick a suggested category.
+                  </p>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label>Source Type</Label>
+                  <Select
+                    value={form.sourceType}
+                    onValueChange={(v) =>
+                      setForm((f) => ({ ...f, sourceType: v as SourceType }))
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SOURCE_TYPE_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          <span className="inline-flex items-center gap-2">
+                            <o.icon className="size-3.5" />
+                            {o.label}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Used as a label for filtering.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-1.5">
+                <Label htmlFor="doc-content">
+                  Content <span className="text-destructive">*</span>
+                </Label>
+                <Textarea
+                  id="doc-content"
+                  value={form.content}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, content: e.target.value }))
+                  }
+                  rows={8}
+                  className="min-h-[180px] resize-y font-mono text-[13px] leading-relaxed"
+                  placeholder="Paste the full document text here. The AI will split it into chunks automatically."
+                />
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>{form.content.length} characters</span>
+                </div>
+              </div>
+
+              <DialogFooter className="mt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setCreateOpen(false)}
+                  disabled={creating}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleCreate}
+                  disabled={creating}
+                  className="gap-2"
+                >
+                  {creating && <Loader2 className="size-4 animate-spin" />}
+                  Create document
+                </Button>
+              </DialogFooter>
+            </TabsContent>
+
+            <TabsContent value="upload" className="mt-4">
+              <div className="rounded-lg border-2 border-dashed border-primary/30 bg-primary/5 p-8 text-center">
+                <Upload className="size-10 text-primary mx-auto mb-3" />
+                <h3 className="font-semibold text-base mb-1">
+                  Upload a PDF, DOCX, or TXT file
+                </h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  We'll extract the text automatically, split it into chunks,
+                  and add it to your knowledge base.
                 </p>
+                <p className="text-xs text-muted-foreground mb-4">
+                  Maximum file size: 10 MB
+                </p>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setCreateOpen(false);
+                    setForm(EMPTY_FORM);
+                    setUploadOpen(true);
+                  }}
+                  className="gap-2"
+                >
+                  <Upload className="size-4" />
+                  Open file uploader
+                </Button>
               </div>
-            </div>
 
-            <div className="grid gap-1.5">
-              <Label htmlFor="doc-content">
-                Content <span className="text-destructive">*</span>
-              </Label>
-              <Textarea
-                id="doc-content"
-                value={form.content}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, content: e.target.value }))
-                }
-                rows={8}
-                className="min-h-[180px] resize-y font-mono text-[13px] leading-relaxed"
-                placeholder="Paste the full document text here. The AI will split it into chunks automatically."
-              />
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>{form.content.length} characters</span>
-              </div>
-            </div>
-
-            <div className="rounded-lg border bg-amber-50/60 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900 p-3 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2">
-              <Info className="size-3.5 mt-0.5 shrink-0" />
-              <span>
-                Tip: use the{" "}
-                <span className="font-medium">Upload File</span> button to
-                auto-extract text from PDF, DOCX, or TXT files. Otherwise,
-                paste the text below and the AI will still split it into
-                searchable chunks.
-              </span>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setCreateOpen(false)}
-              disabled={creating}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleCreate}
-              disabled={creating}
-              className="gap-2"
-            >
-              {creating && <Loader2 className="size-4 animate-spin" />}
-              Create document
-            </Button>
-          </DialogFooter>
+              <DialogFooter className="mt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setCreateOpen(false)}
+                >
+                  Cancel
+                </Button>
+              </DialogFooter>
+            </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
 

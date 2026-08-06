@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
+import { logger } from "@/lib/logger";
 
 export const PLATFORM_CONFIG_ID = "default";
 
@@ -71,8 +72,8 @@ function defaultConfig(): PlatformConfigData {
 export async function getPlatformConfig(): Promise<PlatformConfigData> {
   const delegate = platformConfigDelegate();
   if (!delegate) {
-    console.warn(
-      "[platform-config] Prisma client is missing PlatformConfig — run: npx prisma generate && restart dev server"
+    logger.warn(
+      "platform-config: Prisma client is missing PlatformConfig — run `npx prisma generate && restart dev server`"
     );
     return defaultConfig();
   }

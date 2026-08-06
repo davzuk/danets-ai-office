@@ -7,6 +7,7 @@ import {
   verifyFlutterwaveTransaction,
   verifyPaystackTransaction,
 } from "@/lib/payment-gateway";
+import { createInvoiceForPayment } from "@/lib/invoice";
 
 const verifySchema = z.object({
   reference: z.string().min(1),
@@ -126,29 +127,22 @@ export async function POST(req: NextRequest) {
       data: { subscriptionId: subscription.id },
     });
 
-    const invoiceNumber = `INV-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-    const invoice = await db.invoice.create({
-      data: {
+    // Idempotent invoice creation shared with `activateSubscriptionFromPayment`
+    // — re-submitted verify calls won't create a duplicate row.
+    const invoice = await db.$transaction(async (tx) => {
+      return createInvoiceForPayment(tx, {
         businessId: user.businessId,
         subscriptionId: subscription.id,
         paymentId: payment.id,
-        invoiceNumber,
+        planName,
+        billingCycle,
         amount: payment.amount,
         currency: payment.currency,
-        status: "paid",
-        paidAt: new Date(),
-        dueDate: new Date(),
-        items: JSON.stringify([
-          {
-            description: `${planName} plan (${billingCycle})`,
-            quantity: 1,
-            unitPrice: payment.amount,
-            total: payment.amount,
-          },
-        ]),
-        notes: `Payment via ${payment.provider}. Reference: ${reference}`,
-      },
+        provider: payment.provider,
+        reference,
+      });
     });
+    const invoiceNumber = invoice.invoiceNumber;
 
     await logActivity({
       businessId: user.businessId,

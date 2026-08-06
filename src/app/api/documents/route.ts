@@ -3,6 +3,8 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
 import { logActivity } from "@/lib/activity";
+import { requireQuota } from "@/lib/plan-quota";
+import { splitIntoChunks } from "@/lib/text-chunker";
 
 // GET /api/documents — list documents for the business
 export function GET(req: NextRequest) {
@@ -80,6 +82,8 @@ export function POST(req: NextRequest) {
     const d = parsed.data;
     const content = d.content.trim();
 
+    await requireQuota(user.businessId, "documents");
+
     const document = await db.document.create({
       data: {
         businessId: user.businessId,
@@ -117,36 +121,4 @@ export function POST(req: NextRequest) {
 
     return { document, chunkCount: chunks.length };
   });
-}
-
-// Helper: split text into overlapping chunks for RAG
-function splitIntoChunks(text: string, chunkSize: number, overlap: number): string[] {
-  if (text.length <= chunkSize) return [text];
-
-  const chunks: string[] = [];
-  let start = 0;
-  while (start < text.length) {
-    const end = Math.min(start + chunkSize, text.length);
-    let chunk = text.slice(start, end);
-
-    // Try to break at a sentence or word boundary
-    if (end < text.length) {
-      const lastPeriod = chunk.lastIndexOf(". ");
-      const lastNewline = chunk.lastIndexOf("\n");
-      const breakPoint = Math.max(lastPeriod, lastNewline);
-      if (breakPoint > chunkSize * 0.5) {
-        chunk = text.slice(start, start + breakPoint + 1);
-        start = start + breakPoint + 1 - overlap;
-      } else {
-        start = end - overlap;
-      }
-    } else {
-      start = end;
-    }
-
-    chunks.push(chunk.trim());
-    if (chunks.length >= 50) break; // cap at 50 chunks
-  }
-
-  return chunks.filter((c) => c.length > 0);
 }

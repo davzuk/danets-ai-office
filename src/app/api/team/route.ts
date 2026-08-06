@@ -3,6 +3,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
+import { requireQuota } from "@/lib/plan-quota";
 
 // GET /api/team — list team members for the business
 export async function GET(_req: NextRequest) {
@@ -52,6 +53,8 @@ export async function POST(req: NextRequest) {
     if (existing) {
       throw new Error("Email already registered");
     }
+
+    await requireQuota(user.businessId, "seats");
 
     const member = await db.businessUser.create({
       data: {

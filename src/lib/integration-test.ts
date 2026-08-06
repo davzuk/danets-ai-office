@@ -1,4 +1,5 @@
 import "server-only";
+import { decryptApiKey } from "@/lib/crypto";
 
 export type IntegrationTestResult = {
   success: boolean;
@@ -121,7 +122,16 @@ export async function testIntegrationConnection(
   integration: IntegrationRecord
 ): Promise<IntegrationTestResult> {
   const config = parseConfig(integration.config);
-  const apiKey = String(config.apiKey || "");
+  // apiKey on disk is now an encrypted envelope (or legacy plaintext). The
+  // decrypt helper returns null on shape mismatch so we can fall through to
+  // the legacy-String path during the rollout window.
+  const raw = config.apiKey;
+  let apiKey = "";
+  if (typeof raw === "string") {
+    apiKey = raw; // legacy plaintext
+  } else if (raw && typeof raw === "object" && (raw as any).__enc === 1) {
+    apiKey = decryptApiKey(raw) || "";
+  }
 
   switch (integration.category) {
     case "ai_provider": {

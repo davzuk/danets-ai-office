@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { headers } from "next/headers";
+import { logger, serializeError } from "@/lib/logger";
 
 /**
  * Log an activity for audit trail.
@@ -39,7 +40,11 @@ export async function logActivity(params: {
     });
   } catch (e) {
     // Never throw from logging — it's a side effect
-    console.error("[logActivity] failed:", e);
+    logger.error("logActivity failed", {
+      businessId: params.businessId,
+      action: params.action,
+      ...serializeError(e),
+    });
   }
 }
 
@@ -72,6 +77,10 @@ export async function createNotification(params: {
     const { sendEmailNotification } = await import("@/lib/email");
     sendEmailNotification(params.businessId, params.type, params.data || {}).catch(() => {});
   } catch (e) {
-    console.error("[createNotification] failed:", e);
+    logger.error("createNotification failed", {
+      businessId: params.businessId,
+      type: params.type,
+      ...serializeError(e),
+    });
   }
 }
