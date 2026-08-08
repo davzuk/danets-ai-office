@@ -31,6 +31,12 @@ export interface SessionUser {
   isImpersonating?: boolean;
   isPlatformAdmin?: boolean;
   totpEnabled?: boolean;
+  /**
+   * The row ID of the active session. Needed by callers that bind
+   * secondary cookies (e.g. the reauth marker) to the session so a
+   * stolen session cookie without the secondary cookie still fails.
+   */
+  sessionId?: string;
 }
 
 function generateToken() {
@@ -114,36 +120,37 @@ export async function rotateSessionIfStale(
   if (minutesAgo(session.lastSeenAt) < REFRESH_ROTATE_MINUTES) {
     return null;
   }
-  // Expensive rotation: new token, new CSRF, new cookie. The old row is
-  // replaced atomically — a request that uses the old token will 401
-  // (acceptable: a single-tab product; multi-tab is documented as a known
-  // limitation in the P10 plan).
+  // Atomic rotation: a single update swaps the token + bumps lastSeenAt.
+  // If the row was deleted concurrently (P2025), we silently bail — the
+  // caller already has the old session and the next request will re-auth.
   const newToken = generateToken();
   const now = new Date();
-  const newExpires = session.absoluteExpiresAt; // keep the absolute cap
-  const created = await db.$transaction(async (tx) => {
-    await tx.session.delete({ where: { id: session.id } });
-    return tx.session.create({
+  try {
+    await db.session.update({
+      where: { id: session.id },
       data: {
         token: newToken,
-        businessUserId: session.businessUserId,
-        businessId: session.businessId,
-        expiresAt: newExpires,
-        absoluteExpiresAt: newExpires,
         lastSeenAt: now,
       },
     });
-  });
-  await ensureCsrfForSession(created.id, newExpires);
+  } catch (e: any) {
+    if (e?.code === "P2025") {
+      logger.info("session rotation skipped — row already gone", { sessionId: session.id });
+      return null;
+    }
+    throw e;
+  }
+
+  await ensureCsrfForSession(session.id, session.absoluteExpiresAt);
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE, newToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    expires: newExpires,
+    expires: session.absoluteExpiresAt,
   });
-  logger.info("session rotated", { sessionId: created.id });
+  logger.info("session rotated", { sessionId: session.id });
   return newToken;
 }
 
@@ -155,6 +162,9 @@ export async function destroySession() {
   }
   cookieStore.delete(SESSION_COOKIE);
   cookieStore.delete(IMPERSONATOR_COOKIE);
+  // Drop any reauth marker so the next session starts in the
+  // "fresh credential required" state.
+  cookieStore.delete("danets_reauth");
 }
 
 export async function isImpersonating(): Promise<boolean> {
@@ -246,6 +256,18 @@ export async function getSession(): Promise<SessionUser | null> {
     await db.session.delete({ where: { id: session.id } }).catch(() => {});
     return null;
   }
+  // Idle window — if the session has been unused for longer than the
+  // configured idle timeout, treat it as logged out. The authoritative
+  // side is `rotateSessionIfStale` which also deletes the row; this
+  // check just makes `/api/auth/me` report the truth without forcing
+  // every bootstrap call through the heavier rotation path.
+  if (minutesAgo(session.lastSeenAt) > IDLE_TIMEOUT_MINUTES) {
+    await db.session.delete({ where: { id: session.id } }).catch(() => {});
+    logger.info("session idle timeout (getSession) — destroyed", {
+      sessionId: session.id,
+    });
+    return null;
+  }
   // Idle window — best-effort: the authoritative check is rotateSessionIfStale
   // which throws "UNAUTHORIZED". getSession is read-only, so we just return
   // the user and let requireSession enforce.
@@ -263,6 +285,7 @@ export async function getSession(): Promise<SessionUser | null> {
     isSuperAdmin: impersonating ? false : u.isSuperAdmin,
     isImpersonating: impersonating,
     totpEnabled: u.totpEnabled,
+    sessionId: session.id,
   };
 }
 
@@ -318,6 +341,7 @@ export async function requireSession(): Promise<SessionUser> {
     isSuperAdmin: impersonating ? false : u.isSuperAdmin,
     isImpersonating: impersonating,
     totpEnabled: u.totpEnabled,
+    sessionId: session.id,
   };
 
   const platformConfig = await getPlatformConfig();

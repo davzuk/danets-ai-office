@@ -78,6 +78,7 @@ export async function MarketingShell({
         nav={nav}
         supportEmail={site?.supportEmail ?? null}
         tagline={site?.tagline ?? null}
+        socialLinks={site?.socialLinks ?? null}
       />
     </div>
   );

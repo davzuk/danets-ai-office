@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
+import { requireReauth } from "@/lib/reauth";
 import { logActivity, createNotification } from "@/lib/activity";
 import {
   verifyFlutterwaveTransaction,
@@ -20,6 +21,20 @@ export async function POST(req: NextRequest) {
     user = await requireSession();
   } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Success path upgrades the subscription to a paid plan. The audit
+  // requires a fresh credential for any state change that crosses a trust
+  // boundary; gate verify behind reauth so a stolen session cookie
+  // can't silently activate a paid plan after the payment row was
+  // already created.
+  try {
+    await requireReauth({ userId: user.userId, sessionId: user.sessionId ?? "" });
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: e?.message || "Reauthentication required", code: "REAUTH_REQUIRED" },
+      { status: e?.status || 401 }
+    );
   }
 
   const body = await req.json().catch(() => null);
