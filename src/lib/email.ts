@@ -278,7 +278,7 @@ export async function sendEmailNotification(
  * Send a single email via the configured provider.
  * In production, this would use Nodemailer (SMTP) or SendGrid SDK.
  */
-async function sendEmail(params: EmailParams): Promise<{ success: boolean; error?: string }> {
+export async function sendEmail(params: EmailParams): Promise<{ success: boolean; error?: string }> {
   const provider = process.env.EMAIL_PROVIDER || "none";
   const from =
     process.env.SMTP_FROM ||

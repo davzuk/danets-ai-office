@@ -11,7 +11,6 @@ import { createInvoiceForPayment } from "@/lib/invoice";
 
 const verifySchema = z.object({
   reference: z.string().min(1),
-  status: z.enum(["success", "failed"]).optional(),
 });
 
 // POST /api/payments/verify — verify/confirm a payment (client callback or manual)
@@ -44,32 +43,36 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Payment already processed" }, { status: 400 });
   }
 
-  let status: "success" | "failed" = parsed.data.status ?? "success";
+  let status: "success" | "failed";
   let providerRef: string | undefined;
 
   if (payment.provider === "paystack") {
+    if (!process.env.PAYSTACK_SECRET_KEY) {
+      return NextResponse.json(
+        { error: "Payment provider not configured" },
+        { status: 503 }
+      );
+    }
     const verified = await verifyPaystackTransaction(reference);
-    if (process.env.PAYSTACK_SECRET_KEY) {
-      status = verified.success ? "success" : "failed";
-      providerRef = verified.providerRef;
-    }
+    status = verified.success ? "success" : "failed";
+    providerRef = verified.providerRef;
   } else if (payment.provider === "flutterwave") {
-    const verified = await verifyFlutterwaveTransaction(reference);
-    if (process.env.FLUTTERWAVE_SECRET_KEY) {
-      status = verified.success ? "success" : "failed";
-      providerRef = verified.providerRef;
+    if (!process.env.FLUTTERWAVE_SECRET_KEY) {
+      return NextResponse.json(
+        { error: "Payment provider not configured" },
+        { status: 503 }
+      );
     }
+    const verified = await verifyFlutterwaveTransaction(reference);
+    status = verified.success ? "success" : "failed";
+    providerRef = verified.providerRef;
+  } else {
+    // Unknown provider — refuse rather than default to success.
+    return NextResponse.json(
+      { error: "Unknown payment provider" },
+      { status: 400 }
+    );
   }
-
-  const updated = await db.payment.update({
-    where: { id: payment.id },
-    data: {
-      status,
-      paidAt: status === "success" ? new Date() : null,
-      verifiedAt: new Date(),
-      providerRef: providerRef ?? `${payment.provider}_verified_${Date.now()}`,
-    },
-  });
 
   if (status === "success") {
     let planName = "pro";
@@ -87,62 +90,81 @@ export async function POST(req: NextRequest) {
     const endDate = new Date();
     endDate.setMonth(endDate.getMonth() + (billingCycle === "annual" ? 12 : 1));
 
-    let subscription = await db.businessSubscription.findUnique({
-      where: { businessId: user.businessId },
-    });
+    // Activate the subscription + invoice + activity log atomically so a
+    // mid-flight failure can't leave a paid customer without an active
+    // plan or a duplicate invoice row.
+    const { updatedPayment, subscription, invoice, invoiceNumber } =
+      await db.$transaction(async (tx) => {
+        const updated = await tx.payment.update({
+          where: { id: payment.id },
+          data: {
+            status: "success",
+            paidAt: new Date(),
+            verifiedAt: new Date(),
+            providerRef: providerRef ?? `${payment.provider}_verified_${Date.now()}`,
+          },
+        });
 
-    if (subscription) {
-      subscription = await db.businessSubscription.update({
-        where: { id: subscription.id },
-        data: {
-          planName,
-          status: "active",
-          monthlyFee,
-          endDate,
-          paymentMethod: payment.provider,
-          paymentRef: reference,
-        },
-      });
-    } else {
-      subscription = await db.businessSubscription.create({
-        data: {
+        let sub = await tx.businessSubscription.findUnique({
+          where: { businessId: user.businessId },
+        });
+        if (sub) {
+          sub = await tx.businessSubscription.update({
+            where: { id: sub.id },
+            data: {
+              planName,
+              status: "active",
+              monthlyFee,
+              endDate,
+              paymentMethod: payment.provider,
+              paymentRef: reference,
+            },
+          });
+        } else {
+          sub = await tx.businessSubscription.create({
+            data: {
+              businessId: user.businessId,
+              planName,
+              status: "active",
+              monthlyFee,
+              endDate,
+              paymentMethod: payment.provider,
+              paymentRef: reference,
+            },
+          });
+        }
+
+        await tx.business.update({
+          where: { id: user.businessId },
+          data: { plan: planName },
+        });
+
+        await tx.payment.update({
+          where: { id: payment.id },
+          data: { subscriptionId: sub.id },
+        });
+
+        // Idempotent invoice creation shared with `activateSubscriptionFromPayment`
+        // — re-submitted verify calls won't create a duplicate row.
+        const inv = await createInvoiceForPayment(tx, {
           businessId: user.businessId,
+          subscriptionId: sub.id,
+          paymentId: payment.id,
           planName,
-          status: "active",
-          monthlyFee,
-          endDate,
-          paymentMethod: payment.provider,
-          paymentRef: reference,
-        },
+          billingCycle,
+          amount: payment.amount,
+          currency: payment.currency,
+          provider: payment.provider,
+          reference,
+        });
+
+        return {
+          updatedPayment: updated,
+          subscription: sub,
+          invoice: inv,
+          invoiceNumber: inv.invoiceNumber,
+        };
       });
-    }
-
-    await db.business.update({
-      where: { id: user.businessId },
-      data: { plan: planName },
-    });
-
-    await db.payment.update({
-      where: { id: payment.id },
-      data: { subscriptionId: subscription.id },
-    });
-
-    // Idempotent invoice creation shared with `activateSubscriptionFromPayment`
-    // — re-submitted verify calls won't create a duplicate row.
-    const invoice = await db.$transaction(async (tx) => {
-      return createInvoiceForPayment(tx, {
-        businessId: user.businessId,
-        subscriptionId: subscription.id,
-        paymentId: payment.id,
-        planName,
-        billingCycle,
-        amount: payment.amount,
-        currency: payment.currency,
-        provider: payment.provider,
-        reference,
-      });
-    });
-    const invoiceNumber = invoice.invoiceNumber;
 
     await logActivity({
       businessId: user.businessId,
@@ -163,12 +185,23 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({
-      payment: updated,
+      payment: updatedPayment,
       subscription,
       invoice: { id: invoice.id, invoiceNumber, amount: invoice.amount },
       message: "Payment verified successfully. Subscription activated.",
     });
   }
+
+  // status === "failed"
+  const updated = await db.payment.update({
+    where: { id: payment.id },
+    data: {
+      status: "failed",
+      paidAt: null,
+      verifiedAt: new Date(),
+      providerRef: providerRef ?? `${payment.provider}_verified_${Date.now()}`,
+    },
+  });
 
   await logActivity({
     businessId: user.businessId,

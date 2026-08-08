@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { applyRetentionAll } from "@/lib/retention";
+import { timingSafeEqual } from "crypto";
+import { applyRetentionAll, applyScheduledDowngrades } from "@/lib/retention";
 
 /**
  * GET /api/cron/retention
- * Scheduled retention purge — requires Authorization: Bearer <CRON_SECRET>
+ * Scheduled retention purge + plan downgrade application.
+ *
+ * Requires Authorization: Bearer <CRON_SECRET>.
  *
  * Configure in Vercel Cron, GitHub Actions, or any external scheduler.
  */
@@ -15,13 +18,32 @@ export async function GET(req: NextRequest) {
       { status: 503 }
     );
   }
+  if (secret.length < 32) {
+    console.error(
+      "[cron/retention] CRON_SECRET must be at least 32 characters; refusing to run"
+    );
+    return NextResponse.json({ error: "CRON_SECRET too short" }, { status: 503 });
+  }
 
-  const auth = req.headers.get("authorization");
-  if (auth !== `Bearer ${secret}`) {
+  const auth = req.headers.get("authorization") ?? "";
+  const expected = `Bearer ${secret}`;
+  const a = Buffer.from(auth);
+  const b = Buffer.from(expected);
+  const ok = a.length === b.length && (() => {
+    try {
+      return timingSafeEqual(a, b);
+    } catch {
+      return false;
+    }
+  })();
+  if (!ok) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const results = await applyRetentionAll();
+  const [results, downgrades] = await Promise.all([
+    applyRetentionAll(),
+    applyScheduledDowngrades(),
+  ]);
   const totals = results.reduce(
     (acc, r) => {
       if ("error" in r) return acc;
@@ -39,6 +61,8 @@ export async function GET(req: NextRequest) {
     tenantsProcessed: results.length,
     totals,
     results,
+    downgradesApplied: downgrades.applied.length,
+    downgrades,
     ranAt: new Date().toISOString(),
   });
 }

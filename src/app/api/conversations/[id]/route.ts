@@ -3,7 +3,9 @@ import { withSession } from "@/lib/api";
 
 // GET /api/conversations/[id]
 // Returns a single ChatSession with all messages (asc by createdAt) + lead.
-// The session MUST belong to the user's business.
+// The session MUST belong to the user's business. We use findFirst with
+// { id, businessId } so the WHERE itself enforces tenant isolation — no
+// chance of forgetting the post-load check after a future refactor.
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -11,8 +13,8 @@ export async function GET(
   return withSession(async (user) => {
     const { id } = await params;
 
-    const session = await db.chatSession.findUnique({
-      where: { id },
+    const session = await db.chatSession.findFirst({
+      where: { id, businessId: user.businessId },
       include: {
         messages: {
           orderBy: { createdAt: "asc" },
@@ -24,8 +26,7 @@ export async function GET(
       },
     });
 
-    if (!session || session.businessId !== user.businessId) {
-      // Not found or belongs to another tenant — return null (apiHandler wraps as 200)
+    if (!session) {
       return { session: null };
     }
 

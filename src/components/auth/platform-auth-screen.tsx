@@ -22,6 +22,17 @@ interface PlatformUser {
   totpEnabled?: boolean;
 }
 
+/**
+ * Demo credentials are gated to non-production builds so the live site never
+ * pre-fills or advertises them in the rendered HTML.
+ */
+function isDemoMode(): boolean {
+  return (
+    process.env.NODE_ENV !== "production" &&
+    process.env.NEXT_PUBLIC_DEMO_MODE !== "false"
+  );
+}
+
 export function PlatformAuthScreen({
   onAuthed,
 }: {
@@ -31,8 +42,8 @@ export function PlatformAuthScreen({
   const [needsTotp, setNeedsTotp] = useState(false);
   const router = useRouter();
   const [form, setForm] = useState({
-    email: "superadmin@danetstecpro.com",
-    password: "super123",
+    email: "",
+    password: "",
     totpCode: "",
   });
 
@@ -110,7 +121,7 @@ export function PlatformAuthScreen({
         <div className="w-full max-w-md space-y-6">
           <div className="space-y-2">
             <Link
-              href="/"
+              href="/login"
               className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -169,10 +180,12 @@ export function PlatformAuthScreen({
             </Button>
           </form>
 
-          <div className="rounded-lg border border-dashed bg-muted/40 p-3 text-xs text-muted-foreground text-center">
-            <span className="font-medium text-foreground">Platform demo:</span>{" "}
-            superadmin@danetstecpro.com · super123
-          </div>
+          {isDemoMode() && (
+            <div className="rounded-lg border border-dashed bg-muted/40 p-3 text-xs text-muted-foreground text-center">
+              <span className="font-medium text-foreground">Platform demo:</span>{" "}
+              superadmin@danetstecpro.com · super123
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -16,8 +16,12 @@ const schema = z.object({
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
-  const rl = await rateLimit(`login:${ip}`, 10, 60_000);
-  if (!rl.success) {
+  // Two independent rate limits:
+  //   - login:${ip}: standard per-IP brute-force defence
+  //   - login:${ip}:${email}: per-(ip,email) pair to slow down botnets
+  //     that rotate IPs but stick to a single email.
+  const ipRl = await rateLimit(`login:${ip}`, 10, 60_000);
+  if (!ipRl.success) {
     return NextResponse.json(
       { error: "Too many attempts. Try again in a minute." },
       { status: 429 }
@@ -30,12 +34,37 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   }
 
-  const { email, password } = parsed.data;
+  const { email } = parsed.data;
+  const emailLower = email.toLowerCase();
+
+  // Per-(ip, email) limit: 10 attempts in 5 minutes.
+  const pairRl = await rateLimit(`login:${ip}:${emailLower}`, 10, 5 * 60_000);
+  if (!pairRl.success) {
+    await recordAttempt(ip, emailLower, null, false, req.headers.get("user-agent"));
+    return NextResponse.json(
+      { error: "Too many attempts for this account. Try again later." },
+      { status: 429 }
+    );
+  }
+
+  // Per-account lockout: 25 failed attempts in 15 min.
+  const lockedUntil = await isAccountLocked(emailLower);
+  if (lockedUntil) {
+    return NextResponse.json(
+      {
+        error: `Account temporarily locked due to too many failed attempts. Try again in ${Math.ceil((lockedUntil.getTime() - Date.now()) / 60000)} minutes.`,
+      },
+      { status: 429 }
+    );
+  }
+
+  const { password } = parsed.data;
   const user = await db.businessUser.findUnique({
-    where: { email: email.toLowerCase() },
+    where: { email: emailLower },
     include: { business: true },
   });
   if (!user || !(await bcrypt.compare(password, user.password))) {
+    await recordAttempt(ip, emailLower, user?.businessId, false, req.headers.get("user-agent"));
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
   if (user.business.status !== "active") {
@@ -78,6 +107,8 @@ export async function POST(req: NextRequest) {
   await destroyPlatformSession();
   await createSession(user.id, user.businessId);
 
+  await recordAttempt(ip, emailLower, user.businessId, true, req.headers.get("user-agent"));
+
   await logActivity({
     businessId: user.businessId,
     userId: user.id,
@@ -100,4 +131,53 @@ export async function POST(req: NextRequest) {
       totpEnabled: user.totpEnabled,
     },
   });
+}
+
+/**
+ * Record a login attempt. Best-effort: failures here must not break login.
+ */
+async function recordAttempt(
+  ip: string,
+  email: string,
+  businessId: string | null,
+  succeeded: boolean,
+  userAgent: string | null
+) {
+  try {
+    await db.loginAttempt.create({
+      data: {
+        ip,
+        email,
+        businessId: businessId ?? null,
+        succeeded,
+        userAgent: userAgent?.slice(0, 255) ?? null,
+      },
+    });
+  } catch {
+    /* swallow — logging must not block login */
+  }
+}
+
+/**
+ * Returns the Date until which the account is locked, or null if not locked.
+ * A lock is triggered by 25+ failed attempts in a 15-minute window.
+ */
+async function isAccountLocked(email: string): Promise<Date | null> {
+  const windowMs = 15 * 60_000;
+  const since = new Date(Date.now() - windowMs);
+  const failures = await db.loginAttempt.count({
+    where: { email, succeeded: false, attemptedAt: { gt: since } },
+  });
+  if (failures < 25) return null;
+
+  // Find the 25th-most-recent failure and lock until 15 min after it.
+  const recent = await db.loginAttempt.findMany({
+    where: { email, succeeded: false, attemptedAt: { gt: since } },
+    orderBy: { attemptedAt: "desc" },
+    skip: 24,
+    take: 1,
+    select: { attemptedAt: true },
+  });
+  if (recent.length === 0) return null;
+  return new Date(recent[0].attemptedAt.getTime() + windowMs);
 }

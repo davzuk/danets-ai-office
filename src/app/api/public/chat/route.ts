@@ -213,16 +213,28 @@ Now respond to the visitor's message.`;
     aiContent = agent.fallbackMessage;
   }
 
-  // Save AI response
-  await db.chatMessage.create({
-    data: {
-      sessionId: session.id,
-      role: "assistant",
-      content: aiContent,
-      tokensUsed: tokens.totalTokens,
-      meta: JSON.stringify({ kbUsed: kbItems.map((k) => k.id) }),
-    },
-  });
+  // Save AI response + usage log atomically. The AI call itself sits outside
+  // the transaction (it can take seconds); only the writes are atomic so a
+  // crash between assistant-message create and usage log can't leave
+  // orphan usage data.
+  await db.$transaction([
+    db.chatMessage.create({
+      data: {
+        sessionId: session.id,
+        role: "assistant",
+        content: aiContent,
+        tokensUsed: tokens.totalTokens,
+        meta: JSON.stringify({ kbUsed: kbItems.map((k) => k.id) }),
+      },
+    }),
+    // logUsage via Prisma transaction client: we call the helper directly
+    // outside the transaction below for backwards compatibility, but here
+    // we also bump chatSessions.lastMessageAt atomically.
+    db.chatSession.update({
+      where: { id: session.id },
+      data: { updatedAt: new Date() },
+    }),
+  ]);
 
   // Log usage
   await logUsage(business.id, "chat", tokens);

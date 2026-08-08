@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
+import { sanitizeWhiteLabelCss } from "@/lib/white-label-css";
 
 export async function GET(_req: NextRequest) {
   let user;
@@ -39,7 +40,17 @@ export async function PUT(req: NextRequest) {
   if (d.appName) data.appName = d.appName.trim();
   if (d.appShortName) data.appShortName = d.appShortName.trim();
   if (d.hideBranding !== undefined) data.hideBranding = d.hideBranding;
-  if (d.customCss !== undefined) data.customCss = d.customCss || null;
+  if (d.customCss !== undefined) {
+    try {
+      const sanitized = sanitizeWhiteLabelCss(d.customCss || "");
+      data.customCss = sanitized || null;
+    } catch (e: any) {
+      return NextResponse.json(
+        { error: e?.message || "Invalid CSS" },
+        { status: 400 }
+      );
+    }
+  }
   if (d.isActive !== undefined) data.isActive = d.isActive;
 
   let config = await db.whiteLabelConfig.findUnique({ where: { businessId: user.businessId } });

@@ -21,8 +21,10 @@ model Business {
   phone      String?
   whatsapp   String?
   plan       String   @default("free") // free | starter | pro | enterprise
-  status     String   @default("active") // active | suspended
+  status     String   @default("active") // active | suspended | deleted
   enforce2fa Boolean  @default(false) // require 2FA for all members of this business
+  deletedAt        DateTime?
+  purgeScheduledAt DateTime?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -52,16 +54,18 @@ model Business {
   whiteLabel           WhiteLabelConfig?
   featureFlagOverrides BusinessFeatureFlag[]
   limitOverride        BusinessLimitOverride?
+
+  @@index([purgeScheduledAt])
 }
 
 model BusinessUser {
-  id           String   @id @default(cuid())
-  businessId   String
-  name         String
-  email        String   @unique
-  password     String // bcrypt hash
-  role         String   @default("admin") // admin | member
-  isSuperAdmin Boolean  @default(false) // Danets TecPro internal super admin
+  id              String   @id @default(cuid())
+  businessId      String
+  name            String
+  email           String   @unique
+  password        String // bcrypt hash
+  role            String   @default("admin") // admin | member
+  isSuperAdmin    Boolean  @default(false) // Danets TecPro internal super admin
   totpSecret      String? // base32 secret when 2FA enabled
   totpPending     String? // pending secret during setup
   totpEnabled     Boolean  @default(false)
@@ -71,8 +75,24 @@ model BusinessUser {
 
   business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
   sessions Session[]
+  passwordResetTokens PasswordResetToken[]
 
   @@index([businessId])
+}
+
+model PasswordResetToken {
+  id         String    @id @default(cuid())
+  userId     String
+  businessId String
+  tokenHash  String    @unique // SHA-256 of the cleartext token sent in the email
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  user BusinessUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model Session {
@@ -752,21 +772,21 @@ model Integration {
 // ─── Subscription Management ──────────────────────────────────────
 
 model BusinessSubscription {
-  id                      String    @id @default(cuid())
-  businessId              String    @unique
-  planName                String // free | starter | business | premium | enterprise
-  status                  String    @default("active") // active | trial | past_due | canceled | expired
-  startDate               DateTime  @default(now())
-  endDate                 DateTime?
-  trialEndsAt             DateTime?
-  monthlyFee              Float     @default(0)
-  paymentMethod           String? // paystack | flutterwave | bank_transfer | manual
-  paymentRef              String? // transaction reference
-  downgradeScheduledFor   DateTime? // when a scheduled downgrade takes effect
-  downgradeTargetPlan     String? // target plan for the scheduled downgrade
-  metadata                Json? // free-form JSON for additional transition state
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
+  id                    String    @id @default(cuid())
+  businessId            String    @unique
+  planName              String // free | starter | business | premium | enterprise
+  status                String    @default("active") // active | trial | past_due | canceled | expired
+  startDate             DateTime  @default(now())
+  endDate               DateTime?
+  trialEndsAt           DateTime?
+  monthlyFee            Float     @default(0)
+  paymentMethod         String? // paystack | flutterwave | bank_transfer | manual
+  paymentRef            String? // transaction reference
+  downgradeScheduledFor DateTime? // when a scheduled downgrade takes effect
+  downgradeTargetPlan   String? // target plan for the scheduled downgrade
+  metadata              Json? // free-form JSON for additional transition state
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
   payments Payment[]
@@ -802,6 +822,23 @@ model Payment {
   @@index([businessId])
   @@index([status])
   @@index([reference])
+}
+
+// Login attempt tracking. Per-IP and per-email rate limiting + account
+// lockout for /api/auth/login. The IP and email indexes make the per-pair
+// count query O(log n) without scanning the full table.
+model LoginAttempt {
+  id          String   @id @default(cuid())
+  ip          String
+  email       String
+  businessId  String?
+  succeeded   Boolean  @default(false)
+  userAgent   String?
+  attemptedAt DateTime @default(now())
+
+  @@index([ip, attemptedAt])
+  @@index([email, attemptedAt])
+  @@index([attemptedAt])
 }
 
 model Invoice {
@@ -954,6 +991,7 @@ model PlatformAdmin {
   updatedAt      DateTime @updatedAt
 
   sessions PlatformSession[]
+  passwordResetTokens PlatformPasswordResetToken[]
 
   @@index([email])
 }
@@ -969,4 +1007,218 @@ model PlatformSession {
 
   @@index([token])
   @@index([platformAdminId])
+}
+
+model PlatformPasswordResetToken {
+  id        String    @id @default(cuid())
+  adminId   String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  admin PlatformAdmin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([expiresAt])
+}
+
+// ─── Public Website CMS ───────────────────────────────────────────
+//
+// Powers the public marketing site (home, features, pricing, blog,
+// docs, changelog, legal). Pages and posts are block-based so marketing
+// can compose the site without redeploying. Edited from the super-admin
+// console at /platform/cms. Single-tenant for now; the CmsSite wrapper
+// is in place so multi-site / white-label publishing can be added later.
+
+model CmsSite {
+  id           String   @id @default(cuid())
+  // Single-row table for now; multi-site ready (per-domain white-label).
+  domain       String?  @unique
+  brandName    String   @default("Danets AI Automation")
+  tagline      String?
+  description  String?
+  supportEmail String?
+  logoUrl      String?
+  faviconUrl   String?
+  primaryColor String   @default("#1d4ed8")
+  accentColor  String   @default("#84cc16")
+  socialLinks  Json? // { twitter, linkedin, github, facebook, instagram }
+  seoDefaults  Json? // { title, description, ogImage }
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  pages     CmsPage[]
+  posts     CmsPost[]
+  navItems  CmsNavItem[]
+  blocks    CmsBlock[]
+  media     CmsMedia[]
+  authors   CmsAuthor[]
+  tags      CmsTag[]
+  changelog CmsChangelogEntry[]
+}
+
+model CmsPage {
+  id          String    @id @default(cuid())
+  slug        String    @unique // e.g. "features", "pricing", "about"
+  title       String
+  description String?
+  ogImage     String?
+  status      String    @default("draft") // draft | published | archived
+  publishedAt DateTime?
+  // Body is an ordered list of { blockId | blockKey, props } entries.
+  // Stored as JSON so the editor can reorder/insert without migrations.
+  blocks      Json      @default("[]")
+  // Per-page overrides for { title, description, canonical, noindex, ogImage }.
+  seo         Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  siteId String?
+  site   CmsSite? @relation(fields: [siteId], references: [id], onDelete: SetNull)
+
+  @@index([status, publishedAt])
+}
+
+model CmsPost {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  title       String
+  excerpt     String?
+  coverImage  String?
+  bodyMdx     String    @default("") // MDX source rendered with @mdxeditor/editor
+  status      String    @default("draft") // draft | published | archived
+  publishedAt DateTime?
+  seo         Json?
+  authorId    String?
+  siteId      String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  author CmsAuthor? @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  site   CmsSite?   @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  tags   CmsTag[]   @relation("PostTags")
+
+  @@index([status, publishedAt])
+}
+
+model CmsAuthor {
+  id        String   @id @default(cuid())
+  name      String
+  bio       String?
+  avatarUrl String?
+  twitter   String?
+  linkedin  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  siteId String?
+  site   CmsSite? @relation(fields: [siteId], references: [id], onDelete: SetNull)
+
+  posts CmsPost[]
+}
+
+model CmsTag {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+
+  siteId String?
+  site   CmsSite? @relation(fields: [siteId], references: [id], onDelete: SetNull)
+
+  posts CmsPost[] @relation("PostTags")
+}
+
+model CmsNavItem {
+  id        String   @id @default(cuid())
+  parentId  String?
+  label     String
+  href      String // /pricing, /blog, https://...
+  order     Int      @default(0)
+  visible   Boolean  @default(true)
+  icon      String? // lucide icon name for the mega-menu
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parent   CmsNavItem?  @relation("NavTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children CmsNavItem[] @relation("NavTree")
+  siteId   String?
+  site     CmsSite?     @relation(fields: [siteId], references: [id], onDelete: SetNull)
+
+  @@index([siteId, order])
+}
+
+model CmsBlock {
+  id           String   @id @default(cuid())
+  key          String   @unique // "hero", "feature-grid", "testimonials", ...
+  label        String
+  description  String?
+  // Zod-like schema describing the editable fields, used to generate
+  // the admin form. Stored as JSON so we can evolve block schemas
+  // without migrations.
+  schema       Json
+  defaultProps Json     @default("{}")
+  icon         String? // lucide icon name
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  siteId String?
+  site   CmsSite? @relation(fields: [siteId], references: [id], onDelete: SetNull)
+}
+
+model CmsMedia {
+  id         String   @id @default(cuid())
+  filename   String
+  mimeType   String
+  sizeBytes  Int
+  url        String
+  altText    String?
+  width      Int?
+  height     Int?
+  storageKey String? // local /uploads path or CDN key
+  uploadedBy String? // userId
+  createdAt  DateTime @default(now())
+
+  siteId String?
+  site   CmsSite? @relation(fields: [siteId], references: [id], onDelete: SetNull)
+
+  @@index([siteId, createdAt])
+}
+
+model CmsChangelogEntry {
+  id          String   @id @default(cuid())
+  version     String // e.g. "2024.05.0"
+  title       String
+  body        String // markdown
+  kind        String   @default("release") // release | improvement | fix | security
+  publishedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  siteId String?
+  site   CmsSite? @relation(fields: [siteId], references: [id], onDelete: SetNull)
+
+  @@index([publishedAt])
+}
+
+// ─── Public Site Contacts ─────────────────────────────────────────
+//
+// Submissions from the public /contact form land directly in the
+// existing Lead model so the existing CRM dashboard picks them up.
+// This view mirrors what marketing wants to see in the CMS console.
+
+model CmsContactSubmission {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  phone     String?
+  company   String?
+  message   String
+  pageSlug  String? // where the form was submitted from
+  leadId    String? // linked to existing Lead if accepted
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }
