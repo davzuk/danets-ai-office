@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createHash, randomBytes } from "crypto";
 import { db } from "@/lib/db";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
+import { verifyAnonymousCsrf } from "@/lib/csrf";
 import { logger } from "@/lib/logger";
 
 const schema = z.object({
@@ -22,6 +23,12 @@ const TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
  * returned in the response.
  */
 export async function POST(req: NextRequest) {
+  // CSRF: the browser must have hit /api/auth/csrf first to obtain a
+  // sameSite=strict cookie, then echoed it back via x-csrf-token. Without
+  // this, an attacker site could submit a hidden form that posts to this
+  // endpoint and triggers a reset email (enumeration via timing + spam).
+  await verifyAnonymousCsrf();
+
   const ip = getClientIp(req);
   const rl = await rateLimit(`forgot:${ip}`, 5, 60_000);
   if (!rl.success) {

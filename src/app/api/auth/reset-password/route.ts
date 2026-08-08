@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { createHash } from "crypto";
 import { db } from "@/lib/db";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
+import { verifyAnonymousCsrf } from "@/lib/csrf";
 import { logActivity } from "@/lib/activity";
 
 const schema = z.object({
@@ -17,6 +18,12 @@ const schema = z.object({
  * from before the reset can't keep going).
  */
 export async function POST(req: NextRequest) {
+  // CSRF: without this check, an attacker site could submit a hidden form
+  // with a stolen token (e.g. from a logged-out computer's clipboard) and
+  // force a password reset. The browser must have hit /api/auth/csrf to
+  // mint the cookie first.
+  await verifyAnonymousCsrf();
+
   const ip = getClientIp(req);
   const rl = await rateLimit(`reset:${ip}`, 10, 60_000);
   if (!rl.success) {

@@ -289,6 +289,77 @@ export function getCmsPostBySlug(
   return _getCmsPostBySlug(slug);
 }
 
+/**
+ * Find the previous / next published post relative to `slug`, ordered by
+ * `publishedAt desc`. Used to render prev/next navigation at the bottom
+ * of every blog post. Both results can be null — e.g. on the newest
+ * post there's no "next" and on the oldest there's no "prev".
+ */
+const _getCmsPostNeighbors = unstable_cache(
+  async (slug: string): Promise<{ prev: CmsPostRecord | null; next: CmsPostRecord | null }> => {
+    const current = await db.cmsPost.findUnique({
+      where: { slug },
+      select: { id: true, publishedAt: true, status: true },
+    });
+    if (!current || current.status !== "published" || !current.publishedAt) {
+      return { prev: null, next: null };
+    }
+    const [prev, next] = await Promise.all([
+      // "prev" = newer post (smaller date)
+      db.cmsPost.findFirst({
+        where: {
+          status: "published",
+          publishedAt: { gt: current.publishedAt },
+        },
+        orderBy: { publishedAt: "asc" },
+        include: {
+          author: { select: { id: true, name: true, avatarUrl: true } },
+          tags: { select: { id: true, slug: true, name: true } },
+        },
+      }),
+      // "next" = older post (larger date)
+      db.cmsPost.findFirst({
+        where: {
+          status: "published",
+          publishedAt: { lt: current.publishedAt },
+        },
+        orderBy: { publishedAt: "desc" },
+        include: {
+          author: { select: { id: true, name: true, avatarUrl: true } },
+          tags: { select: { id: true, slug: true, name: true } },
+        },
+      }),
+    ]);
+    const map = (r: typeof prev): CmsPostRecord | null =>
+      r
+        ? {
+            id: r.id,
+            slug: r.slug,
+            title: r.title,
+            excerpt: r.excerpt,
+            coverImage: r.coverImage,
+            bodyMdx: r.bodyMdx,
+            status: r.status,
+            publishedAt: r.publishedAt?.toISOString() ?? null,
+            seo: (r.seo as Record<string, unknown> | null) ?? null,
+            author: r.author
+              ? { id: r.author.id, name: r.author.name, avatarUrl: r.author.avatarUrl }
+              : null,
+            tags: r.tags,
+          }
+        : null;
+    return { prev: map(prev), next: map(next) };
+  },
+  ["cms:post-neighbors"],
+  { ...CACHE_OPTS, tags: [...TAGS_ALL, "cms:posts"] }
+);
+
+export function getCmsPostNeighbors(
+  slug: string
+): Promise<{ prev: CmsPostRecord | null; next: CmsPostRecord | null }> {
+  return _getCmsPostNeighbors(slug);
+}
+
 // ─── Changelog ────────────────────────────────────────────────────
 
 const _listCmsChangelog = unstable_cache(

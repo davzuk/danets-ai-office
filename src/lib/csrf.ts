@@ -22,11 +22,13 @@ const EXEMPT_PATH_PREFIXES = [
   "/api/auth/login",
   "/api/auth/register",
   "/api/auth/logout",
-  "/api/auth/forgot",
-  "/api/auth/reset",
   "/api/auth/csrf",
   "/api/auth/totp/", // session already gated; TOTP endpoints use a different model
   "/api/platform-auth/",
+  // forgot-password and reset-password enforce CSRF via
+  // verifyAnonymousCsrf() — the cookie is minted by /api/auth/csrf
+  // and the bootstrap is required before these endpoints will accept
+  // a request. They don't appear here.
 ];
 
 export function isCsrfExempt(pathname: string): boolean {
@@ -83,6 +85,32 @@ export async function getCsrfForCurrentSession(): Promise<string | null> {
 }
 
 /**
+ * Mint a pre-authentication CSRF token for anonymous flows (forgot-password,
+ * reset-password, register) that need to issue a mutating request before a
+ * session exists. The cookie value is the source of truth — there's no
+ * DB row to bind it to yet. `verifyCsrfAnonymous` checks that the header
+ * echoes this cookie when no session is present.
+ *
+ * The cookie is `sameSite=strict` so the browser only attaches it on
+ * same-site navigations, which is the additional layer that defeats
+ * cross-site form-POST CSRF on top of the header check.
+ */
+export async function mintAnonymousCsrfCookie(): Promise<string> {
+  const token = generateToken();
+  const cookieStore = await cookies();
+  // 1 hour — long enough for a user to fill out a password reset form,
+  // short enough that stale cookies don't accumulate.
+  cookieStore.set(CSRF_COOKIE, token, {
+    httpOnly: false,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: "/",
+    maxAge: 60 * 60,
+  });
+  return token;
+}
+
+/**
  * Verify a state-changing request carries a matching CSRF token.
  *
  * Must be invoked AFTER getSession() / requireSession() so the session
@@ -114,6 +142,34 @@ export async function verifyCsrf(
     throw new Error("CSRF_INVALID");
   }
   if (!constantTimeEqual(cookieToken, dbCsrfToken)) {
+    throw new Error("CSRF_INVALID");
+  }
+}
+
+/**
+ * Verify a CSRF token on an anonymous (pre-auth) request — for the
+ * /api/auth/forgot-password and /api/auth/reset-password endpoints. There
+ * is no DB row yet, so we only check that the header echoes the cookie
+ * value. The cookie is `sameSite=strict`, which gives the second layer.
+ *
+ * Throws "CSRF_INVALID" on mismatch.
+ */
+export async function verifyAnonymousCsrf(): Promise<void> {
+  const h = await headers();
+  const method = (h.get("x-danets-method") || "GET").toUpperCase();
+  if (!UNSAFE_METHODS.has(method)) return;
+
+  const cookieStore = await cookies();
+  const cookieToken = cookieStore.get(CSRF_COOKIE)?.value;
+  const headerToken =
+    h.get(CSRF_HEADER) ||
+    h.get("x-xsrf-token") ||
+    h.get("csrf-token");
+
+  if (!cookieToken || !headerToken) {
+    throw new Error("CSRF_INVALID");
+  }
+  if (!constantTimeEqual(cookieToken, headerToken)) {
     throw new Error("CSRF_INVALID");
   }
 }

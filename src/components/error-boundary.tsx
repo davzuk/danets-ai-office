@@ -24,7 +24,21 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error("[ErrorBoundary] caught:", error, errorInfo);
+    // Use the structured logger so the error lands in the same pipeline as
+    // server-side logs (request ID correlation, JSON serialization, alerts).
+    // The logger module is dynamic-imported because it's server-only — in the
+    // browser we fall back to console.error if the import fails.
+    import("@/lib/logger/client")
+      .then(({ logger }) =>
+        logger.error("ErrorBoundary caught", {
+          message: error.message,
+          stack: error.stack,
+          componentStack: errorInfo.componentStack,
+        })
+      )
+      .catch(() => {
+        console.error("[ErrorBoundary]", error, errorInfo);
+      });
   }
 
   render() {

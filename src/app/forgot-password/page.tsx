@@ -17,6 +17,11 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     setLoading(true);
     try {
+      // Mint a CSRF cookie first so the POST is not vulnerable to cross-site
+      // form forgery. The cookie is `sameSite=strict` so it only attaches on
+      // same-origin requests.
+      await fetch("/api/auth/csrf", { method: "GET" });
+
       const res = await fetch("/api/auth/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

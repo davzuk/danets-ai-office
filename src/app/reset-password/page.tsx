@@ -26,6 +26,9 @@ export default function ResetPasswordPage() {
     }
     setLoading(true);
     try {
+      // Mint a CSRF cookie so the reset POST isn't forgeable cross-site.
+      await fetch("/api/auth/csrf", { method: "GET" });
+
       const res = await fetch("/api/auth/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

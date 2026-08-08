@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { Loader2 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { AppShell, type ViewId } from "@/components/dashboard/app-shell";
 import {
@@ -146,13 +145,7 @@ export default function AppHome() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.3 }}
-        >
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </motion.div>
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
@@ -209,17 +202,10 @@ export default function AppHome() {
         subscription={subscription}
         moduleAccess={moduleAccess}
       >
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={view}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-          >
-            {renderView()}
-          </motion.div>
-        </AnimatePresence>
+        {/* key={view} forces a remount so the CSS fade re-runs on navigation */}
+        <div key={view} className="animate-view-fade">
+          {renderView()}
+        </div>
       </AppShell>
     </ErrorBoundary>
   );
