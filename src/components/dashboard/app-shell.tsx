@@ -334,6 +334,7 @@ export function AppShell({
         onOpenChange={setCmdOpen}
         onNavigate={handleNavigate}
         moduleAccess={moduleAccess}
+        isPlatformAdmin={!!user?.isSuperAdmin}
       />
     </div>
   );

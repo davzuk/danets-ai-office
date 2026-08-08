@@ -56,10 +56,35 @@ export async function POST(req: NextRequest) {
     if (s) validSessionId = s.id;
   }
 
-  // Prevent duplicate leads from same session
+  // Prevent duplicate leads from same session.
   if (validSessionId) {
     const existing = await db.lead.findUnique({
       where: { sessionId: validSessionId },
+    });
+    if (existing) {
+      return NextResponse.json({
+        leadId: existing.id,
+        alreadyExists: true,
+        quality: existing.quality,
+      });
+    }
+  }
+
+  // Prevent duplicate leads by (businessId, email). The unique index
+  // `Lead_businessId_email_key` enforces this at the DB layer; we do a
+  // best-effort pre-check so we don't burn a quota slot on a submission
+  // that would be rejected with P2002 anyway. The defensive catch around
+  // `db.lead.create` below handles concurrent inserts (a race between
+  // two tabs both reading "no existing lead" then both inserting).
+  const normalisedEmail = email?.trim().toLowerCase() || null;
+  if (normalisedEmail) {
+    const existing = await db.lead.findUnique({
+      where: {
+        Lead_businessId_email_key: {
+          businessId: business.id,
+          email: normalisedEmail,
+        },
+      },
     });
     if (existing) {
       return NextResponse.json({
@@ -82,20 +107,46 @@ export async function POST(req: NextRequest) {
     throw e;
   }
 
-  const lead = await db.lead.create({
-    data: {
-      businessId: business.id,
-      sessionId: validSessionId,
-      name,
-      email: email || null,
-      phone: phone || null,
-      service: service || null,
-      message: message || null,
-      quality,
-      status: "new",
-      source: "chatbot",
-    },
-  });
+  let lead;
+  try {
+    lead = await db.lead.create({
+      data: {
+        businessId: business.id,
+        sessionId: validSessionId,
+        name,
+        email: normalisedEmail,
+        phone: phone || null,
+        service: service || null,
+        message: message || null,
+        quality,
+        status: "new",
+        source: "chatbot",
+      },
+    });
+  } catch (e: any) {
+    // P2002 = unique constraint violation. If a concurrent request
+    // inserted the same (businessId, email) between our pre-check and
+    // our create, fall back to fetching that row and reporting it as
+    // `alreadyExists` so the client UX stays consistent.
+    if (e?.code === "P2002" && normalisedEmail) {
+      const existing = await db.lead.findUnique({
+        where: {
+          Lead_businessId_email_key: {
+            businessId: business.id,
+            email: normalisedEmail,
+          },
+        },
+      });
+      if (existing) {
+        return NextResponse.json({
+          leadId: existing.id,
+          alreadyExists: true,
+          quality: existing.quality,
+        });
+      }
+    }
+    throw e;
+  }
 
   // Update session visitor info if linked
   if (validSessionId) {

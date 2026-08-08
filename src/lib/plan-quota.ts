@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { getCachedQuotaUsage, getCachedEffectiveLimits } from "@/lib/quota-cache";
 
 export type QuotaResource =
   | "leads"
@@ -107,53 +108,61 @@ export async function getEffectiveLimits(
   businessId: string,
   planName?: string
 ): Promise<EffectiveLimits> {
-  const business = await db.business.findUnique({
-    where: { id: businessId },
-    select: { plan: true, limitOverride: true },
+  // Per-request memoization — same (businessId, planName) within one
+  // request reuses the result instead of re-hitting the DB. See
+  // `lib/quota-cache.ts` for the rationale.
+  return getCachedEffectiveLimits(businessId, planName, async () => {
+    const business = await db.business.findUnique({
+      where: { id: businessId },
+      select: { plan: true, limitOverride: true },
+    });
+
+    const plan = planName || business?.plan || "free";
+    const planRow = await db.subscriptionPlan.findUnique({ where: { name: plan } });
+    const override = business?.limitOverride;
+
+    const baseChat = planRow?.chatLimit ?? 100;
+    const base = {
+      chatLimit: baseChat,
+      leadLimit: planRow?.leadLimit ?? 50,
+      kbLimit: planRow?.kbLimit ?? 25,
+      agentLimit: planRow?.agentLimit ?? FALLBACK_AGENT_LIMITS[plan] ?? 1,
+      ticketLimit: planRow?.ticketLimit ?? 100,
+      documentLimit: planRow?.documentLimit ?? 25,
+      automationLimit: planRow?.automationLimit ?? 5,
+      seatLimit: planRow?.seatLimit ?? 3,
+      whatsappTemplateLimit: planRow?.whatsappTemplateLimit ?? 5,
+      integrationLimit: planRow?.integrationLimit ?? 3,
+      proposalTemplateLimit: planRow?.proposalTemplateLimit ?? 10,
+      quoteLimit: planRow?.quoteLimit ?? 50,
+    };
+
+    return {
+      plan,
+      hasOverride: !!override,
+      chatLimit: override?.chatLimit ?? base.chatLimit,
+      leadLimit: override?.leadLimit ?? base.leadLimit,
+      kbLimit: override?.kbLimit ?? base.kbLimit,
+      agentLimit: override?.agentLimit ?? base.agentLimit,
+      aiLimit: override?.chatLimit ?? base.chatLimit,
+      ticketLimit: override?.ticketLimit ?? base.ticketLimit,
+      documentLimit: override?.documentLimit ?? base.documentLimit,
+      automationLimit: override?.automationLimit ?? base.automationLimit,
+      seatLimit: override?.seatLimit ?? base.seatLimit,
+      whatsappTemplateLimit:
+        override?.whatsappTemplateLimit ?? base.whatsappTemplateLimit,
+      integrationLimit: override?.integrationLimit ?? base.integrationLimit,
+      proposalTemplateLimit:
+        override?.proposalTemplateLimit ?? base.proposalTemplateLimit,
+      quoteLimit: override?.quoteLimit ?? base.quoteLimit,
+    };
   });
-
-  const plan = planName || business?.plan || "free";
-  const planRow = await db.subscriptionPlan.findUnique({ where: { name: plan } });
-  const override = business?.limitOverride;
-
-  const baseChat = planRow?.chatLimit ?? 100;
-  const base = {
-    chatLimit: baseChat,
-    leadLimit: planRow?.leadLimit ?? 50,
-    kbLimit: planRow?.kbLimit ?? 25,
-    agentLimit: planRow?.agentLimit ?? FALLBACK_AGENT_LIMITS[plan] ?? 1,
-    ticketLimit: planRow?.ticketLimit ?? 100,
-    documentLimit: planRow?.documentLimit ?? 25,
-    automationLimit: planRow?.automationLimit ?? 5,
-    seatLimit: planRow?.seatLimit ?? 3,
-    whatsappTemplateLimit: planRow?.whatsappTemplateLimit ?? 5,
-    integrationLimit: planRow?.integrationLimit ?? 3,
-    proposalTemplateLimit: planRow?.proposalTemplateLimit ?? 10,
-    quoteLimit: planRow?.quoteLimit ?? 50,
-  };
-
-  return {
-    plan,
-    hasOverride: !!override,
-    chatLimit: override?.chatLimit ?? base.chatLimit,
-    leadLimit: override?.leadLimit ?? base.leadLimit,
-    kbLimit: override?.kbLimit ?? base.kbLimit,
-    agentLimit: override?.agentLimit ?? base.agentLimit,
-    aiLimit: override?.chatLimit ?? base.chatLimit,
-    ticketLimit: override?.ticketLimit ?? base.ticketLimit,
-    documentLimit: override?.documentLimit ?? base.documentLimit,
-    automationLimit: override?.automationLimit ?? base.automationLimit,
-    seatLimit: override?.seatLimit ?? base.seatLimit,
-    whatsappTemplateLimit:
-      override?.whatsappTemplateLimit ?? base.whatsappTemplateLimit,
-    integrationLimit: override?.integrationLimit ?? base.integrationLimit,
-    proposalTemplateLimit:
-      override?.proposalTemplateLimit ?? base.proposalTemplateLimit,
-    quoteLimit: override?.quoteLimit ?? base.quoteLimit,
-  };
 }
 
 export async function getQuotaUsage(businessId: string): Promise<QuotaUsage> {
+  // Per-request memoization — wraps the 13-count parallel query below
+  // so repeated calls within a single request don't re-hit the DB.
+  return getCachedQuotaUsage(businessId, async () => {
   const monthStart = startOfMonth();
   const [
     chats,
@@ -210,6 +219,7 @@ export async function getQuotaUsage(businessId: string): Promise<QuotaUsage> {
     proposalTemplates,
     quotes,
   };
+  });
 }
 
 function limitForResource(

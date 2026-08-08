@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
-import { timingSafeEqual } from "crypto";
+import { NextResponse } from "next/server";
 import { applyRetentionAll, applyScheduledDowngrades } from "@/lib/retention";
+import { verifyCronRequest } from "@/lib/cron-secret";
 
 /**
  * GET /api/cron/retention
@@ -8,37 +8,13 @@ import { applyRetentionAll, applyScheduledDowngrades } from "@/lib/retention";
  *
  * Requires Authorization: Bearer <CRON_SECRET>.
  *
- * Configure in Vercel Cron, GitHub Actions, or any external scheduler.
+ * The length + constant-time bearer check is delegated to
+ * `verifyCronRequest` so all cron endpoints share one policy and the
+ * startup-time warning fires from a single import point.
  */
-export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) {
-    return NextResponse.json(
-      { error: "CRON_SECRET is not configured on this server" },
-      { status: 503 }
-    );
-  }
-  if (secret.length < 32) {
-    console.error(
-      "[cron/retention] CRON_SECRET must be at least 32 characters; refusing to run"
-    );
-    return NextResponse.json({ error: "CRON_SECRET too short" }, { status: 503 });
-  }
-
-  const auth = req.headers.get("authorization") ?? "";
-  const expected = `Bearer ${secret}`;
-  const a = Buffer.from(auth);
-  const b = Buffer.from(expected);
-  const ok = a.length === b.length && (() => {
-    try {
-      return timingSafeEqual(a, b);
-    } catch {
-      return false;
-    }
-  })();
-  if (!ok) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(req: Request) {
+  const auth = await verifyCronRequest(req);
+  if (!auth.ok) return auth.response;
 
   const [results, downgrades] = await Promise.all([
     applyRetentionAll(),

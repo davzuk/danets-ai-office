@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import {
   Loader2,
   Search,
@@ -1706,10 +1707,10 @@ export function LeadsView({ user }: { user: UserProp }) {
   const [viewMode, setViewMode] = React.useState<"list" | "pipeline">("list");
 
   // ─── Debounce search input ─────────────────────────────────────
+  const debouncedSearch = useDebouncedValue(searchInput.trim(), 350);
   React.useEffect(() => {
-    const t = setTimeout(() => setSearch(searchInput.trim()), 350);
-    return () => clearTimeout(t);
-  }, [searchInput]);
+    setSearch(debouncedSearch);
+  }, [debouncedSearch]);
 
   const hasFilters = !!search || statusFilter !== "all" || qualityFilter !== "all";
 

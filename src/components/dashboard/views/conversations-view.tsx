@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import {
   ArrowLeft,
   Sparkles,
@@ -139,7 +140,6 @@ export function ConversationsView({ user }: { user: UserProp }) {
   const [followUpEdit, setFollowUpEdit] = useState<string>("");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Fetch list ──────────────────────────────────────────────────────
   const fetchList = useCallback(async () => {
@@ -167,15 +167,10 @@ export function ConversationsView({ user }: { user: UserProp }) {
   }, [fetchList]);
 
   // Debounce search input -> search term
+  const debouncedSearch = useDebouncedValue(searchInput, 300);
   useEffect(() => {
-    if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(() => {
-      setSearch(searchInput);
-    }, 300);
-    return () => {
-      if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    };
-  }, [searchInput]);
+    setSearch(debouncedSearch);
+  }, [debouncedSearch]);
 
   // ── Fetch detail when an item is selected ───────────────────────────
   useEffect(() => {

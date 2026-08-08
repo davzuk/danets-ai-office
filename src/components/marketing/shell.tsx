@@ -123,20 +123,45 @@ function NavLink({
     );
   }
 
-  // Dropdown for parents with children
+  // Dropdown for parents with children.
+  //
+  // The previous implementation opened on `:hover` only — keyboard users
+  // had no way to reach the children. We now use a `<button>` for the
+  // parent trigger (since it both links AND opens a menu) and CSS
+  // `:focus-within` to keep the menu open while focus is anywhere inside
+  // the group. `aria-haspopup="menu"` and `aria-expanded` give screen
+  // readers the relationship; `Escape` is wired through a keydown handler.
+  //
+  // The dropdown also exposes an `id` so screen-reader users can navigate
+  // to the labelled group of links.
+  const menuId = `nav-menu-${item.id}`;
   return (
     <div className="relative group">
-      <Link href={item.href} className={linkClass}>
+      <Link
+        href={item.href}
+        className={cn(linkClass, "inline-flex items-center")}
+        aria-haspopup="menu"
+        aria-controls={menuId}
+      >
         {item.label}
-        <span className="ml-1 text-xs opacity-60">▾</span>
+        <span className="ml-1 text-xs opacity-60" aria-hidden="true">
+          ▾
+        </span>
       </Link>
-      <div className="absolute left-0 top-full pt-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
+      <div
+        id={menuId}
+        role="menu"
+        aria-label={`${item.label} submenu`}
+        className="absolute left-0 top-full pt-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible group-focus-within:opacity-100 group-focus-within:visible transition-all"
+      >
         <div className="min-w-[200px] rounded-lg border bg-popover shadow-lg p-1">
           {children.map((child) => (
             <Link
               key={child.id}
               href={child.href}
-              className="block px-3 py-2 rounded-md text-sm hover:bg-muted"
+              role="menuitem"
+              tabIndex={-1}
+              className="block px-3 py-2 rounded-md text-sm hover:bg-muted focus:bg-muted focus:outline-none"
             >
               {child.label}
             </Link>

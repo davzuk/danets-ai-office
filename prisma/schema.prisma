@@ -249,6 +249,11 @@ model Lead {
   @@index([businessId])
   @@index([status])
   @@index([assignedTo])
+  // Dedupe within a tenant: a given email can only create one Lead per
+  // Business. MySQL allows multiple NULL emails in a unique index, so
+  // anonymous leads (no email collected) are unaffected. Pair-indexed
+  // for query speed on the public widget's pre-submit dedupe lookup.
+  @@unique([businessId, email], name: "Lead_businessId_email_key")
 }
 
 // ─── CRM: Lead Notes, Tasks, Activities ───────────────────────────

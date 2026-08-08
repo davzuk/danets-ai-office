@@ -12,6 +12,7 @@ import { CtaBlock } from "@/components/marketing/blocks/cta";
 import { RichTextBlock } from "@/components/marketing/blocks/rich-text";
 import { StatsBlock } from "@/components/marketing/blocks/stats";
 import { UnknownBlock } from "@/components/marketing/blocks/unknown";
+import { validateBlockProps } from "@/components/marketing/block-schemas";
 
 /**
  * Renders an ordered list of CMS blocks. Unknown block keys render an
@@ -37,7 +38,21 @@ export function BlockRenderer({ blocks }: { blocks: CmsPageBlock[] }) {
 }
 
 function BlockSlot({ block, index }: { block: CmsPageBlock; index: number }) {
-  const props = block.props;
+  // Validate the raw CMS props against the per-block Zod schema. If
+  // validation fails we surface the issues to the editor via the
+  // unknown-block placeholder rather than rendering a half-broken
+  // section (e.g. an <h1></h1> with the title missing).
+  const validation = validateBlockProps(block.blockKey, block.props);
+  if (!validation.ok) {
+    return (
+      <UnknownBlock
+        key={index}
+        blockKey={block.blockKey}
+        issues={validation.issues}
+      />
+    );
+  }
+  const props = validation.props;
   switch (block.blockKey) {
     case "hero":
       return <HeroBlock key={index} {...(props as any)} />;
