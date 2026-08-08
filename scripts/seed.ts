@@ -235,6 +235,12 @@ async function seed() {
   // authors, a sample blog post and a sample home page. Safe to re-run
   // — every write is upsert/conditional.
   await seedCms();
+
+  // Seed the dedicated marketing pages (/pricing, /features, /about,
+  // /industries). Their dedicated route components fetch the matching
+  // CMS row and render its blocks; without these rows the dedicated
+  // pages 404.
+  await seedMarketingPages();
 }
 
 /**
@@ -509,6 +515,147 @@ Danets brings all four into one product, with **AI in the middle** doing the bor
 
   console.log("CMS seed complete.");
 }
+
+/**
+ * Seed the four dedicated marketing pages (pricing, features, about,
+ * industries). Each dedicated route renders whatever CMS page has the
+ * matching slug, so without these rows the dedicated pages 404.
+ */
+async function seedMarketingPages() {
+  const pages = [
+    {
+      slug: "pricing",
+      title: "Pricing",
+      description: "Simple, transparent pricing for the Danets AI Automation platform. Start free, upgrade as you grow.",
+      blocks: [
+        { blockKey: "hero", props: { eyebrow: "PRICING", title: "Simple pricing that grows with you", subtitle: "Start free. Upgrade when you need more conversations, more agents or custom branding. No surprise fees." } },
+        { blockKey: "pricing-table", props: { title: "Plans for every stage", subtitle: "All plans include the chat widget, lead capture and the full REST API." } },
+        { blockKey: "faq", props: {
+          title: "Pricing questions",
+          items: [
+            { q: "Can I change plans anytime?", a: "Yes — upgrade, downgrade or cancel from your billing page at any time. Changes are pro-rated." },
+            { q: "Do you offer discounts for nonprofits or startups?", a: "Yes. Reach out via the contact form and we will work something out." },
+            { q: "What payment methods do you accept?", a: "Paystack and Flutterwave support cards, bank transfer and mobile money across Nigeria, Ghana, Kenya and South Africa. International cards via Stripe on request." },
+            { q: "Is there a free trial of paid plans?", a: "Every paid plan has a 14-day money-back guarantee — try it risk-free." },
+          ],
+        } },
+        { blockKey: "cta", props: {
+          title: "Ready to put your growth on autopilot?",
+          subtitle: "Start free in under five minutes. No credit card required.",
+          primaryCta: { label: "Get started", href: "/signup" },
+          secondaryCta: { label: "Talk to sales", href: "/contact" },
+          variant: "gradient",
+        } },
+      ],
+    },
+    {
+      slug: "features",
+      title: "Features",
+      description: "AI chat, lead capture, quote generation, WhatsApp automation, integrations, and more — all in one secure dashboard.",
+      blocks: [
+        { blockKey: "hero", props: { eyebrow: "FEATURES", title: "Everything you need to automate growth", subtitle: "A single platform for chat, lead capture, quoting and workflow automation — built so your team can focus on closing, not chasing." } },
+        { blockKey: "feature-grid", props: {
+          title: "Built for serious teams",
+          subtitle: "Every feature is wired to the same underlying visitor intelligence — no disjointed dashboards.",
+          columns: 3,
+          features: [
+            { icon: "MessageSquare", title: "AI chat on your site", body: "Drop a widget on any page. The AI answers from your knowledge base, your documents, and your approved quick replies." },
+            { icon: "Target", title: "Smart lead capture", body: "Real-time lead scoring, automatic deduplication, and CRM sync. Route hot leads the moment they qualify." },
+            { icon: "FileText", title: "Auto-generated quotes", body: "Conversations turn into professional quotes with line items, terms and an e-signature-ready PDF." },
+            { icon: "Workflow", title: "Workflow automation", body: "Trigger Slack, email, WhatsApp, or webhook actions on lead events, quote status, ticket states and more." },
+            { icon: "BarChart3", title: "Deflection analytics", body: "See exactly what your AI handles vs. what reaches your team — and why. Spot content gaps automatically." },
+            { icon: "ShieldCheck", title: "Enterprise-grade security", body: "AES-256 encryption at rest, hardened CSP, SOC2-ready controls, full audit log, TOTP 2FA, per-tenant isolation." },
+            { icon: "Globe", title: "Multi-channel", body: "Web chat today. WhatsApp and email tomorrow. One conversation history across every channel." },
+            { icon: "Plug", title: "Integrations", body: "Slack, HubSpot, Zoho, Google Sheets, webhooks and a full REST API. Bring your stack." },
+            { icon: "Users", title: "Team collaboration", body: "Role-based access, internal notes, handoffs and conversation assignments — your team works as one." },
+          ],
+        } },
+        { blockKey: "cta", props: {
+          title: "See it in action",
+          subtitle: "Try the live widget demo — no signup required.",
+          primaryCta: { label: "Open demo", href: "/widget-demo" },
+          secondaryCta: { label: "Get started", href: "/signup" },
+          variant: "gradient",
+        } },
+      ],
+    },
+    {
+      slug: "about",
+      title: "About",
+      description: "Danets TecPro Limited builds AI automation tools for businesses that want to move faster.",
+      blocks: [
+        { blockKey: "hero", props: { eyebrow: "ABOUT", title: "Built by Danets TecPro Limited", subtitle: "We are a small team building AI automation tools that help businesses convert more visitors, answer more questions, and ship more proposals — without growing headcount." } },
+        { blockKey: "stats", props: {
+          stats: [
+            { value: "2024", label: "founded" },
+            { value: "12+", label: "team members" },
+            { value: "40+", label: "business customers" },
+            { value: "99.9%", label: "platform uptime" },
+          ],
+        } },
+        { blockKey: "rich-text", props: {
+          body: "**Our mission** is to make enterprise-grade AI automation accessible to every business — not just the ones with seven-figure budgets.\n\nWe believe that:\n\n* Great conversations convert,\n* Great software respects your time,\n* Great teams deserve tools that disappear in the background.\n\nThank you for considering Danets.",
+        } },
+        { blockKey: "cta", props: {
+          title: "Want to work with us?",
+          subtitle: "We are always looking for great engineers, designers and customer-success people.",
+          primaryCta: { label: "See open roles", href: "/contact" },
+          secondaryCta: { label: "Try the product", href: "/signup" },
+          variant: "gradient",
+        } },
+      ],
+    },
+    {
+      slug: "industries",
+      title: "Industries",
+      description: "See how businesses across industries use Danets AI Automation to capture leads, automate chat, and close deals.",
+      blocks: [
+        { blockKey: "hero", props: { eyebrow: "INDUSTRIES", title: "Built for the way your industry sells", subtitle: "From SaaS to healthcare to professional services, Danets adapts to the conversations your customers actually have." } },
+        { blockKey: "feature-grid", props: {
+          title: "Where teams use Danets",
+          columns: 2,
+          features: [
+            { icon: "Cpu", title: "SaaS & software", body: "Answer technical questions from your docs, qualify trial signups, and route high-intent visitors to sales." },
+            { icon: "ShoppingBag", title: "E-commerce", body: "Recommend products, recover abandoned carts, and capture post-purchase support queries." },
+            { icon: "Briefcase", title: "Professional services", body: "Triage incoming requests, draft proposals, and book consultations without a human in the loop." },
+            { icon: "GraduationCap", title: "Education", body: "Answer admissions questions 24/7, capture leads from prospective students, and route applications." },
+            { icon: "HeartPulse", title: "Healthcare", body: "Triage symptoms, book appointments, and answer insurance questions — with full audit trails." },
+            { icon: "Building2", title: "Real estate", body: "Pre-qualify buyers and renters, schedule viewings, and answer listing questions around the clock." },
+          ],
+        } },
+        { blockKey: "cta", props: {
+          title: "See it for your industry",
+          subtitle: "Book a 20-minute demo and we will walk you through a tailored workflow.",
+          primaryCta: { label: "Book demo", href: "/contact" },
+          secondaryCta: { label: "Try the widget", href: "/widget-demo" },
+          variant: "gradient",
+        } },
+      ],
+    },
+  ];
+
+  for (const pg of pages) {
+    const existing = await db.cmsPage.findUnique({ where: { slug: pg.slug } });
+    if (existing) {
+      console.log(`  · /${pg.slug} already exists — skipping`);
+      continue;
+    }
+    await db.cmsPage.create({
+      data: {
+        slug: pg.slug,
+        title: pg.title,
+        description: pg.description,
+        status: "published",
+        publishedAt: new Date(),
+        blocks: pg.blocks,
+      },
+    });
+    console.log(`  · /${pg.slug} created`);
+  }
+}
+
+// Backwards-compatible name for the older wrapper.
+const seedCmsPages = seedMarketingPages;
 
 seed()
   .catch((e) => {
