@@ -229,6 +229,285 @@ async function seed() {
   console.log("  Login:    admin@danetstecpro.com / danets123");
   console.log("  Platform: http://localhost:3000/platform (superadmin@danetstecpro.com / super123)");
   console.log("  Widget public key:", business.publicKey);
+
+  // ─── CMS ─────────────────────────────────────────────────────────
+  // Seed the marketing CMS: site settings, nav, block library, tags,
+  // authors, a sample blog post and a sample home page. Safe to re-run
+  // — every write is upsert/conditional.
+  await seedCms();
+}
+
+/**
+ * Populate the CMS with sensible defaults so the public marketing site
+ * renders out-of-the-box. Idempotent — uses upsert and check-before-create.
+ */
+async function seedCms() {
+  console.log("Seeding CMS…");
+
+  // Site settings (singleton row)
+  await db.cmsSite.upsert({
+    where: { id: "default" },
+    create: {
+      id: "default",
+      brandName: "Danets AI Automation",
+      tagline: "AI-powered business automation",
+      description:
+        "Automate customer chat, lead capture, quotes and workflows with AI. Built for businesses that want to scale without scaling headcount.",
+      supportEmail: "hello@danetstecpro.com",
+      logoUrl: null,
+      faviconUrl: null,
+      primaryColor: "#1d4ed8",
+      accentColor: "#84cc16",
+      socialLinks: {
+        twitter: "https://twitter.com/danetstecpro",
+        linkedin: "https://linkedin.com/company/danetstecpro",
+        github: "https://github.com/danetstecpro",
+      },
+      seoDefaults: {
+        title: "Danets AI Automation",
+        description:
+          "Automate customer chat, lead capture, quotes and workflows with AI.",
+      },
+    },
+    update: {
+      brandName: "Danets AI Automation",
+      tagline: "AI-powered business automation",
+      supportEmail: "hello@danetstecpro.com",
+    },
+  });
+
+  // Default navigation
+  const navCount = await db.cmsNavItem.count();
+  if (navCount === 0) {
+    const navRows = [
+      { label: "Features", href: "/features", order: 0, visible: true, icon: null, parentId: null },
+      { label: "Pricing", href: "/pricing", order: 1, visible: true, icon: null, parentId: null },
+      { label: "Industries", href: "/industries", order: 2, visible: true, icon: null, parentId: null },
+      { label: "Blog", href: "/blog", order: 3, visible: true, icon: null, parentId: null },
+      { label: "Docs", href: "/docs", order: 4, visible: true, icon: null, parentId: null },
+      { label: "Changelog", href: "/changelog", order: 5, visible: true, icon: null, parentId: null },
+    ];
+    for (const n of navRows) {
+      await db.cmsNavItem.create({ data: n });
+    }
+  }
+
+  // Block library (built-in blocks the renderer knows about)
+  const blockDefs = [
+    { key: "hero", label: "Hero", description: "Title + subtitle + CTAs", icon: "Rocket" },
+    { key: "feature-grid", label: "Feature grid", description: "3-column feature list with icons", icon: "Grid3x3" },
+    { key: "logo-cloud", label: "Logo cloud", description: "Customer / partner wordmarks", icon: "Sparkles" },
+    { key: "testimonials", label: "Testimonials", description: "Customer quotes", icon: "Quote" },
+    { key: "pricing-table", label: "Pricing table", description: "Live SubscriptionPlan rows", icon: "DollarSign" },
+    { key: "faq", label: "FAQ", description: "Accordion of common questions", icon: "HelpCircle" },
+    { key: "cta", label: "CTA banner", description: "Conversion-focused banner", icon: "Megaphone" },
+    { key: "rich-text", label: "Rich text", description: "Markdown-safe prose block", icon: "Type" },
+    { key: "stats", label: "Stats", description: "Big-number stat row", icon: "BarChart3" },
+  ];
+  for (const b of blockDefs) {
+    await db.cmsBlock.upsert({
+      where: { key: b.key },
+      create: { ...b, schema: {}, defaultProps: {}, isActive: true },
+      update: { label: b.label, description: b.description, icon: b.icon },
+    });
+  }
+
+  // A couple of authors + tags for the blog
+  const authorNames = ["Alex Rivera", "Priya Shah"];
+  for (const name of authorNames) {
+    const existing = await db.cmsAuthor.findFirst({ where: { name } });
+    if (!existing) {
+      await db.cmsAuthor.create({
+        data: {
+          name,
+          bio: `${name} writes about AI, automation and growth at Danets TecPro.`,
+          avatarUrl: null,
+        },
+      });
+    }
+  }
+
+  const tagSlugs = [
+    { slug: "product", name: "Product" },
+    { slug: "engineering", name: "Engineering" },
+    { slug: "ai", name: "AI" },
+    { slug: "growth", name: "Growth" },
+  ];
+  for (const t of tagSlugs) {
+    try {
+      await db.cmsTag.create({ data: t });
+    } catch {
+      // unique constraint — already exists
+    }
+  }
+
+  // Sample home page
+  const homeExists = await db.cmsPage.findUnique({ where: { slug: "home" } });
+  if (!homeExists) {
+    await db.cmsPage.create({
+      data: {
+        slug: "home",
+        title: "Home",
+        description:
+          "AI-powered chat, lead capture, quotes and workflows for modern businesses.",
+        status: "published",
+        publishedAt: new Date(),
+        blocks: [
+          {
+            blockKey: "hero",
+            props: {
+              eyebrow: "AI AUTOMATION",
+              title: "Automate the conversations that grow your business",
+              highlight: "grow your business",
+              subtitle:
+                "Danets AI gives every visitor an instant, accurate answer — and turns the right ones into qualified leads with auto-generated quotes.",
+              primaryCta: { label: "Get started free", href: "/signup" },
+              secondaryCta: { label: "See it live", href: "/widget-demo" },
+            },
+          },
+          {
+            blockKey: "logo-cloud",
+            props: {
+              title: "Trusted by teams shipping at speed",
+              logos: ["Acme Co", "Northwind", "Globex", "Initech", "Hooli", "Soylent"],
+            },
+          },
+          {
+            blockKey: "feature-grid",
+            props: {
+              title: "Everything you need to convert visitors",
+              subtitle:
+                "A single platform for chat, lead capture, quoting and workflow automation.",
+              columns: 3,
+              features: [
+                { icon: "MessageSquare", title: "24/7 AI chat", body: "Answer every visitor question with your knowledge base, not a chatbot script." },
+                { icon: "Target", title: "Smart lead capture", body: "Score and qualify leads in real time so your team focuses on the right ones." },
+                { icon: "FileText", title: "Auto quotes", body: "Generate professional quotes from a conversation in seconds." },
+                { icon: "Workflow", title: "Workflow automation", body: "Route hot leads to Slack, email or your CRM the moment they qualify." },
+                { icon: "BarChart3", title: "Deflection analytics", body: "See what your AI handles vs. what reaches your team — and why." },
+                { icon: "ShieldCheck", title: "Enterprise-grade security", body: "Encrypted at rest, hardened CSP, full audit log and SOC2-ready controls." },
+              ],
+            },
+          },
+          {
+            blockKey: "stats",
+            props: {
+              stats: [
+                { value: "10k+", label: "chats handled monthly" },
+                { value: "3x", label: "more qualified leads" },
+                { value: "< 60s", label: "quote turnaround" },
+                { value: "99.9%", label: "uptime" },
+              ],
+            },
+          },
+          {
+            blockKey: "testimonials",
+            props: {
+              title: "What customers say",
+              items: [
+                { quote: "Danets AI handles 80% of our inbound questions and books 3× more demos.", author: "Lena Park", role: "Head of Growth, Northwind" },
+                { quote: "The quote generator alone paid for the platform in the first week.", author: "Marcus Lee", role: "Founder, Initech" },
+                { quote: "Setup took an afternoon. Our team got evenings back.", author: "Priya Shah", role: "COO, Globex" },
+              ],
+            },
+          },
+          {
+            blockKey: "pricing-table",
+            props: { title: "Pricing that scales with you" },
+          },
+          {
+            blockKey: "faq",
+            props: {
+              title: "Frequently asked questions",
+              items: [
+                { q: "Do I need to train the AI?", a: "No. The AI learns from your knowledge base articles and website content automatically." },
+                { q: "What channels does the widget support?", a: "Web chat, WhatsApp, and email today. More channels on the roadmap." },
+                { q: "Can I export my leads and conversations?", a: "Yes. CSV export and a full REST API are included on every paid plan." },
+                { q: "Is my data isolated?", a: "Yes. Every tenant has its own database schema and encryption keys." },
+              ],
+            },
+          },
+          {
+            blockKey: "cta",
+            props: {
+              title: "Ready to put your growth on autopilot?",
+              subtitle: "Start free in under five minutes. No credit card required.",
+              primaryCta: { label: "Get started", href: "/signup" },
+              secondaryCta: { label: "Talk to sales", href: "/contact" },
+              variant: "gradient",
+            },
+          },
+        ],
+        seo: {
+          title: "Danets AI Automation",
+          description:
+            "Automate customer chat, lead capture, quotes and workflows with AI.",
+        },
+      },
+    });
+  }
+
+  // Sample blog post
+  const postExists = await db.cmsPost.findUnique({
+    where: { slug: "introducing-danets-ai-automation" },
+  });
+  if (!postExists) {
+    const author = await db.cmsAuthor.findFirst({ where: { name: "Alex Rivera" } });
+    const aiTag = await db.cmsTag.findUnique({ where: { slug: "ai" } });
+    await db.cmsPost.create({
+      data: {
+        slug: "introducing-danets-ai-automation",
+        title: "Introducing Danets AI Automation",
+        excerpt:
+          "Today we're launching Danets AI Automation — a single platform for chat, leads, quotes and workflows.",
+        coverImage: null,
+        bodyMdx: `Today we're thrilled to announce **Danets AI Automation**, the platform we've been building for the last year.
+
+## Why we built it
+
+Every business we spoke to was stitching together a chat tool, a CRM, a quote generator, and a workflow automation tool — and paying for four subscriptions.
+
+Danets brings all four into one product, with **AI in the middle** doing the boring parts.
+
+## What's in the box
+
+- **AI chat** trained on your own knowledge base
+- **Smart lead capture** with real-time scoring
+- **Auto-quote generation** from a conversation
+- **Workflow automation** for routing and follow-up
+
+## Try it
+
+[Get started free](/signup) — no credit card required.
+`,
+        status: "published",
+        publishedAt: new Date(),
+        authorId: author?.id,
+        tags: { connect: aiTag ? [{ id: aiTag.id }] : [] },
+        seo: {
+          title: "Introducing Danets AI Automation",
+          description:
+            "The single platform for chat, leads, quotes and workflow automation.",
+        },
+      },
+    });
+  }
+
+  // First changelog entry
+  const changeCount = await db.cmsChangelogEntry.count();
+  if (changeCount === 0) {
+    await db.cmsChangelogEntry.create({
+      data: {
+        version: "1.0.0",
+        title: "Initial release",
+        body: "First public release of the Danets AI Automation platform.",
+        kind: "release",
+        publishedAt: new Date(),
+      },
+    });
+  }
+
+  console.log("CMS seed complete.");
 }
 
 seed()
