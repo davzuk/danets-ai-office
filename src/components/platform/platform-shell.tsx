@@ -119,7 +119,7 @@ export function PlatformShell({
                 Refresh
               </Button>
             )}
-            <Link href="/" className="hidden sm:flex">
+            <Link href="/app" className="hidden sm:flex">
               <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-muted-foreground">
                 <ExternalLink className="h-3.5 w-3.5" />
                 Tenant app
@@ -135,7 +135,7 @@ export function PlatformShell({
           </div>
         </header>
 
-        <main className="flex-1 p-4 lg:p-6 overflow-x-hidden">{children}</main>
+        <main id="main" tabIndex={-1} className="flex-1 p-4 lg:p-6 overflow-x-hidden">{children}</main>
 
         <footer className="border-t bg-background px-4 py-2 text-[11px] text-muted-foreground text-center">
           All platform actions are audit-logged

@@ -1,11 +1,18 @@
 import { NextRequest } from "next/server";
+import { unstable_cache } from "next/cache";
+import { revalidateTag } from "next/cache";
 import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
 import { computeDashboardInsights } from "@/lib/dashboard-insights";
 
-export async function GET(_req: NextRequest) {
-  return withSession(async (user) => {
-    const businessId = user.businessId;
+// Cache the heavy read set per business for 60 seconds. The overview
+// page hammers this endpoint every refresh, and each call used to do
+// ~12 DB round trips; with the cache the same client sees one round
+// trip per minute. Writes that change the dashboard numbers should
+// call `revalidateDashboardStats(businessId)` (or any
+// `revalidateTag("dashboard-stats")`) to flush early.
+const getCachedDashboardStats = unstable_cache(
+  async (businessId: string) => {
     const now = new Date();
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const startOfDay = new Date(now);
@@ -134,5 +141,23 @@ export async function GET(_req: NextRequest) {
       leadQuality: dashboardInsights.leadQuality,
       hourly: dashboardInsights.hourly,
     };
+  },
+  ["dashboard-stats-v1"],
+  { revalidate: 60, tags: ["dashboard-stats"] }
+);
+
+/**
+ * Flush the dashboard stats cache for a business. Call this from any
+ * route that mutates data the dashboard reads (new lead, new chat
+ * session, AI usage log, etc.) so the user sees the change immediately
+ * instead of after the 60-second window expires.
+ */
+export async function revalidateDashboardStats(businessId: string) {
+  revalidateTag(`dashboard-stats:${businessId}`);
+}
+
+export async function GET(_req: NextRequest) {
+  return withSession(async (user) => {
+    return getCachedDashboardStats(user.businessId);
   });
 }
