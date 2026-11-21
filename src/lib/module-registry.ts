@@ -25,6 +25,12 @@ export const MODULE_KEYS = [
   "audit",
   "settings",
   "white_label",
+  // Phase 1+ marketing hub. Reserved now so plans can gate them; each is
+  // behind a feature flag that doesn't exist yet, so they stay off (and out
+  // of every tenant's enabled modules) until a platform admin enables it.
+  "social",
+  "seo",
+  "campaigns",
 ] as const;
 
 export type ModuleKey = (typeof MODULE_KEYS)[number];
@@ -74,6 +80,9 @@ export const MODULE_REGISTRY: Record<ModuleKey, ModuleDef> = {
   automations: { label: "Automations", minPlan: "pro", flagKey: "automations_engine" },
   integrations: { label: "Integrations", minPlan: "pro" },
   white_label: { label: "White Label", minPlan: "enterprise" },
+  social: { label: "Social Media", minPlan: "starter", flagKey: "social_hub" },
+  seo: { label: "SEO & Search Visibility", minPlan: "pro", flagKey: "seo_hub" },
+  campaigns: { label: "Campaigns", minPlan: "pro", flagKey: "campaigns_hub" },
 };
 
 /** Longest-prefix-first API path → module mapping. */

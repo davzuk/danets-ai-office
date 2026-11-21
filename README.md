@@ -10,10 +10,11 @@ Multi-tenant SaaS platform for AI-powered website chat, lead capture, CRM, quote
 | UI | Tailwind CSS 4, shadcn/ui, Recharts |
 | Database | **MySQL 8** + Prisma (46 models) |
 | Auth | Custom sessions — tenant (`danets_session`) + platform (`danets_platform_session`) |
-| AI | OpenAI via `src/lib/ai.ts` |
+| AI | Anthropic Claude (default), OpenAI or z-ai via `src/lib/llm` |
 | Payments | Paystack / Flutterwave |
 | Email | SMTP (Nodemailer) / SendGrid |
-| Tests | Vitest (unit) + Playwright (smoke) |
+| Background jobs | MySQL-backed queue (`src/lib/jobs`), drained by `npm run worker` or `/api/cron/jobs` |
+| Tests | Vitest (unit + opt-in MySQL) + Playwright (e2e) |
 
 ## Quick start
 
@@ -36,6 +37,17 @@ npm run dev
 |-------|-------|----------|
 | Tenant | `admin@danetstecpro.com` | `danets123` |
 | Platform | `superadmin@danetstecpro.com` | `super123` |
+
+## AI providers
+
+All AI calls go through `src/lib/llm` (`aiChat`, `aiStream`, `aiStructured`). Call sites name a **task** (`chat`, `classify`, `extract`, `content`, `plan`), never a model; the resolver picks the provider and model.
+
+- **Platform default:** set `ANTHROPIC_API_KEY` to use Claude (`claude-opus-5-5` for every task unless overridden with `AI_DEFAULT_MODEL` or `AI_MODEL_<TASK>`). `AI_DEFAULT_PROVIDER` forces `anthropic`, `openai` (needs `OPENAI_API_KEY` + `OPENAI_DEFAULT_MODEL`) or `zai` (legacy fallback when nothing else is configured).
+- **Per tenant:** an active **AI provider** integration (Integrations page) overrides the platform default for that tenant.
+- **Usage and cost:** every call is logged to `AiUsageLog` with provider, model, tokens (including prompt-cache reads/writes) and per-model cost.
+- **Brand voice:** content generators must include `getBrandContext(businessId)` from `src/lib/brand.ts` in their system prompt.
+
+See `.env.example` for every AI variable.
 
 ## Project structure
 
@@ -65,7 +77,10 @@ tests/                    # Vitest + Playwright
 | `npm run build` | Production build |
 | `npm start` | Run standalone server |
 | `npm test` | Unit tests |
-| `npm run test:e2e` | Playwright smoke (server must be running) |
+| `npm run test:e2e` | Playwright smoke + attribution e2e (server must be running) |
+| `npm run test:db` | Queue and contact tests against MySQL (needs `JOBS_TEST_DATABASE_URL`) |
+| `npm run worker` | Background job worker (run next to `npm start`) |
+| `npm run contacts:backfill` | Link existing leads/chats/tickets to Contacts (safe to re-run) |
 | `npm run db:seed` | Seed database |
 | `npm run db:migrate` | Apply migrations (dev) |
 
