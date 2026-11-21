@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
-import { aiChat, logUsage } from "@/lib/ai";
+import { aiChat, logUsage, EMPTY_USAGE } from "@/lib/ai";
 import { requireAiQuota } from "@/lib/plan-limits";
 
 // POST /api/conversations/[id]/suggestions
@@ -92,12 +92,12 @@ Guidelines:
     // ── Call the AI ────────────────────────────────────────────────────
     let result;
     try {
-      result = await aiChat(messagesForAI, { temperature: 0.4 });
+      result = await aiChat(messagesForAI, { businessId: user.businessId, task: "content", temperature: 0.4 });
     } catch (e: any) {
       await logUsage(
         user.businessId,
         "suggested_reply",
-        { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+        EMPTY_USAGE,
         "error",
         `AI call failed: ${e?.message || String(e)}`
       );
@@ -131,11 +131,7 @@ Guidelines:
         },
       });
 
-      await logUsage(user.businessId, "suggested_reply", {
-        promptTokens: result.promptTokens,
-        completionTokens: result.completionTokens,
-        totalTokens: result.totalTokens,
-      });
+      await logUsage(user.businessId, "suggested_reply", result);
 
       return {
         suggestions: {
@@ -152,11 +148,7 @@ Guidelines:
     await logUsage(
       user.businessId,
       "suggested_reply",
-      {
-        promptTokens: result.promptTokens,
-        completionTokens: result.completionTokens,
-        totalTokens: result.totalTokens,
-      },
+      result,
       "error",
       "Suggested-reply JSON parsing failed"
     );

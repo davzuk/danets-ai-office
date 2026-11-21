@@ -764,12 +764,14 @@ function ConfigDialog({
               <Label htmlFor="int-model">Model <span className="text-muted-foreground">(optional)</span></Label>
               <Input
                 id="int-model"
-                placeholder="e.g. glm-4.6, gpt-4o-mini, claude-3-5-sonnet"
+                placeholder={provider === "anthropic" ? "e.g. claude-opus-5-5" : "Model name"}
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                Leave blank to use the server default for this provider.
+                {provider === "openai"
+                  ? "Required for OpenAI — without it the platform default AI is used."
+                  : "Leave blank to use the server default for this provider."}
               </p>
             </div>
           ) : null}

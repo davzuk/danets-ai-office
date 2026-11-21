@@ -75,7 +75,7 @@ ${transcript || "(No messages yet)"}`;
     userPrompt = ticketContext;
     const res = await aiChat(
       [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-      { temperature: 0.3 }
+      { businessId: user.businessId, task: "content", temperature: 0.3 }
     );
     result.aiSummary = res.content;
     await db.supportTicket.update({ where: { id }, data: { aiSummary: res.content } });
@@ -93,7 +93,7 @@ Rules:
     userPrompt = ticketContext;
     const res = await aiChat(
       [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-      { temperature: 0.5 }
+      { businessId: user.businessId, task: "content", temperature: 0.5 }
     );
     result.aiSuggestedReply = res.content;
     await db.supportTicket.update({ where: { id }, data: { aiSuggestedReply: res.content } });
@@ -116,7 +116,7 @@ Priority guidelines:
     userPrompt = ticketContext;
     const res = await aiChat(
       [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-      { temperature: 0.3 }
+      { businessId: user.businessId, task: "content", temperature: 0.3 }
     );
     try {
       // Parse JSON defensively
@@ -163,7 +163,7 @@ Rules:
     userPrompt = ticketContext;
     const res = await aiChat(
       [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-      { temperature: 0.4 }
+      { businessId: user.businessId, task: "content", temperature: 0.4 }
     );
     try {
       let cleaned = res.content.trim();

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
-import { aiChat, logUsage } from "@/lib/ai";
+import { aiChat, logUsage, EMPTY_USAGE, type UsageInput } from "@/lib/ai";
 import { checkMonthlyAiQuota, quotaExceededResponse } from "@/lib/plan-limits";
 
 type RouteCtx = { params: Promise<{ id: string }> };
@@ -50,7 +50,7 @@ Business: ${user.businessName}
 Draft the email:`;
 
   let draft = "";
-  let tokens = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  let tokens: UsageInput = EMPTY_USAGE;
 
   try {
     const result = await aiChat(
@@ -58,14 +58,10 @@ Draft the email:`;
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
-      { temperature: 0.5 }
+      { businessId: user.businessId, task: "content", temperature: 0.5 }
     );
     draft = result.content;
-    tokens = {
-      promptTokens: result.promptTokens,
-      completionTokens: result.completionTokens,
-      totalTokens: result.totalTokens,
-    };
+    tokens = result;
   } catch (e: any) {
     return NextResponse.json(
       { error: "Failed to generate email draft: " + e?.message },

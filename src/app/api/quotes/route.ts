@@ -66,13 +66,9 @@ async function generateProposalForQuote(
   const result = await aiChat([
     { role: "system", content: systemPrompt },
     { role: "user", content: userPrompt },
-  ]);
+  ], { businessId, task: "content" });
 
-  await logUsage(businessId, "quote", {
-    promptTokens: result.promptTokens,
-    completionTokens: result.completionTokens,
-    totalTokens: result.totalTokens,
-  });
+  await logUsage(businessId, "quote", result);
 
   const doc = await db.generatedDocument.create({
     data: {
@@ -91,11 +87,7 @@ async function generateProposalForQuote(
 
   return {
     document: doc,
-    tokens: {
-      promptTokens: result.promptTokens,
-      completionTokens: result.completionTokens,
-      totalTokens: result.totalTokens,
-    },
+    tokens: result,
   };
 }
 

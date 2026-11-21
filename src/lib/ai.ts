@@ -1,75 +1,21 @@
 import "server-only";
-import ZAI from "z-ai-web-dev-sdk";
 import { db } from "@/lib/db";
 
-// Singleton SDK instance
-let zaiInstance: Awaited<ReturnType<typeof ZAI.create>> | null = null;
+// Completion + usage logging now live in the provider layer (src/lib/llm).
+// Re-exported here so existing `@/lib/ai` imports keep working.
+export {
+  aiChat,
+  aiStream,
+  aiStructured,
+  logUsage,
+  EMPTY_USAGE,
+  AiRefusalError,
+  AiOutputParseError,
+} from "@/lib/llm";
+export type { AiResult, AiTask, AiCallOptions, UsageInput } from "@/lib/llm";
 
-async function getZai() {
-  if (!zaiInstance) {
-    zaiInstance = await ZAI.create();
-  }
-  return zaiInstance;
-}
-
-export interface ChatResult {
-  content: string;
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-}
-
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
-
-export async function aiChat(
-  messages: { role: string; content: string }[],
-  opts?: { temperature?: number }
-): Promise<ChatResult> {
-  const zai = await getZai();
-  const completion = await zai.chat.completions.create({
-    messages: messages.map((m) => ({ role: m.role as any, content: m.content })),
-    thinking: { type: "disabled" },
-    temperature: opts?.temperature,
-  } as any);
-
-  const content = completion.choices[0]?.message?.content || "";
-  const usage = (completion as any).usage;
-  const promptTokens = usage?.prompt_tokens ?? estimateTokens(messages.map((m) => m.content).join(""));
-  const completionTokens = usage?.completion_tokens ?? estimateTokens(content);
-  const totalTokens = usage?.total_tokens ?? promptTokens + completionTokens;
-
-  return { content, promptTokens, completionTokens, totalTokens };
-}
-
-/** Zero token counts, for logging a failed AI call that never returned usage. */
-export const EMPTY_USAGE = { promptTokens: 0, completionTokens: 0, totalTokens: 0 } as const;
-
-// Log usage + cost (rough estimate: $0.002 / 1K tokens)
-export async function logUsage(
-  businessId: string,
-  feature: string,
-  tokens: { promptTokens: number; completionTokens: number; totalTokens: number },
-  status: "success" | "error" = "success",
-  error?: string
-) {
-  const costUsd = (tokens.totalTokens / 1000) * 0.002;
-  await db.aiUsageLog
-    .create({
-      data: {
-        businessId,
-        feature,
-        promptTokens: tokens.promptTokens,
-        completionTokens: tokens.completionTokens,
-        totalTokens: tokens.totalTokens,
-        costUsd,
-        status,
-        error,
-      },
-    })
-    .catch(() => {});
-}
+/** @deprecated Use AiResult from "@/lib/llm". */
+export type ChatResult = import("@/lib/llm").AiResult;
 
 // ─── Knowledge base retrieval (TF-IDF scoring) ────────────────────
 // Ranks KB items using term frequency–inverse document frequency,

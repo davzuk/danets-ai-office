@@ -10,6 +10,7 @@ import {
   isEncryptedPayload,
   maskApiKey,
 } from "@/lib/crypto";
+import { clearAiProviderCache } from "@/lib/llm/resolve";
 
 const CATEGORIES = ["ai_provider", "whatsapp", "email", "sms", "payment", "crm", "website_widget"];
 
@@ -172,6 +173,8 @@ export function POST(req: NextRequest) {
         },
       });
     }
+
+    if (d.category === "ai_provider") clearAiProviderCache(user.businessId);
 
     await logActivity({
       businessId: user.businessId,

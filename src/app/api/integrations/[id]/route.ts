@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { testIntegrationConnection } from "@/lib/integration-test";
+import { clearAiProviderCache } from "@/lib/llm/resolve";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
@@ -32,6 +33,7 @@ export async function POST(_req: NextRequest, { params }: RouteCtx) {
         : [result.message, result.details].filter(Boolean).join(" — "),
     },
   });
+  if (integration.category === "ai_provider") clearAiProviderCache(user.businessId);
 
   return NextResponse.json({
     success: result.success,
@@ -57,5 +59,6 @@ export async function DELETE(_req: NextRequest, { params }: RouteCtx) {
   if (!integration) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await db.integration.delete({ where: { id } });
+  if (integration.category === "ai_provider") clearAiProviderCache(user.businessId);
   return NextResponse.json({ success: true });
 }

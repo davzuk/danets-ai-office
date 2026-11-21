@@ -59,13 +59,9 @@ export async function POST(req: NextRequest) {
     const result = await aiChat([
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
-    ]);
+    ], { businessId: user.businessId, task: "content" });
 
-    await logUsage(user.businessId, "quote", {
-      promptTokens: result.promptTokens,
-      completionTokens: result.completionTokens,
-      totalTokens: result.totalTokens,
-    });
+    await logUsage(user.businessId, "quote", result);
 
     const doc = await db.generatedDocument.create({
       data: {
@@ -91,11 +87,7 @@ export async function POST(req: NextRequest) {
         createdAt: doc.createdAt,
         quoteRequestId: qr.id,
       },
-      tokens: {
-        promptTokens: result.promptTokens,
-        completionTokens: result.completionTokens,
-        totalTokens: result.totalTokens,
-      },
+      tokens: result,
     };
   });
 }
