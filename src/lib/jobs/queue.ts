@@ -2,6 +2,7 @@
 
 import { Prisma, type Job } from "@prisma/client";
 import { db } from "@/lib/db";
+import { logger } from "@/lib/logger";
 import {
   DEFAULT_MAX_ATTEMPTS,
   STALE_LOCK_MS,
@@ -58,26 +59,73 @@ export async function enqueue<S extends z.ZodType>(
 }
 
 /**
+ * True when the database rejected `SKIP LOCKED` as a syntax error, as
+ * MariaDB < 10.6 and MySQL < 8.0 do.
+ */
+export function isSkipLockedUnsupported(e: unknown): boolean {
+  const err = e as { meta?: { code?: string; message?: string }; message?: string } | null;
+  const text = `${err?.meta?.message ?? ""} ${err?.message ?? ""}`;
+  return /SKIP LOCKED/i.test(text) && (err?.meta?.code === "1064" || /1064|syntax/i.test(text));
+}
+
+// Flipped once per process the first time the server rejects SKIP LOCKED.
+let skipLockedSupported = true;
+
+/** Test hook: reset the detected SKIP LOCKED support. */
+export function resetSkipLockedDetection(supported = true) {
+  skipLockedSupported = supported;
+}
+
+/**
  * Atomically claim up to `limit` due jobs for `workerId`. SKIP LOCKED lets
  * concurrent workers claim disjoint sets without waiting on each other.
+ * Servers without it (MariaDB < 10.6, e.g. XAMPP) fall back to plain
+ * FOR UPDATE: workers then wait on each other's locks, which is slower under
+ * contention but still never hands one job to two workers.
  */
 export async function claimBatch(workerId: string, limit: number): Promise<Job[]> {
+  if (skipLockedSupported) {
+    try {
+      return await claimWith(workerId, limit, true);
+    } catch (e) {
+      if (!isSkipLockedUnsupported(e)) throw e;
+      skipLockedSupported = false;
+      logger.warn(
+        "Database does not support SKIP LOCKED; job claiming falls back to FOR UPDATE. Use MySQL 8+ or MariaDB 10.6+ in production."
+      );
+    }
+  }
+  return claimWith(workerId, limit, false);
+}
+
+async function claimWith(workerId: string, limit: number, skipLocked: boolean): Promise<Job[]> {
   const now = new Date();
   return db.$transaction(async (tx) => {
-    const rows = await tx.$queryRaw<{ id: string }[]>`
-      SELECT id FROM \`Job\`
-      WHERE status = 'queued' AND runAt <= ${now}
-      ORDER BY runAt ASC
-      LIMIT ${limit}
-      FOR UPDATE SKIP LOCKED`;
+    const rows = skipLocked
+      ? await tx.$queryRaw<{ id: string }[]>`
+          SELECT id FROM \`Job\`
+          WHERE status = 'queued' AND runAt <= ${now}
+          ORDER BY runAt ASC
+          LIMIT ${limit}
+          FOR UPDATE SKIP LOCKED`
+      : await tx.$queryRaw<{ id: string }[]>`
+          SELECT id FROM \`Job\`
+          WHERE status = 'queued' AND runAt <= ${now}
+          ORDER BY runAt ASC
+          LIMIT ${limit}
+          FOR UPDATE`;
     if (rows.length === 0) return [];
 
     const ids = rows.map((r) => r.id);
+    // Status guard: only rows still queued become ours, whichever lock mode ran.
     await tx.job.updateMany({
-      where: { id: { in: ids } },
+      where: { id: { in: ids }, status: "queued" },
       data: { status: "running", lockedAt: now, lockedBy: workerId, attempts: { increment: 1 } },
     });
-    return tx.job.findMany({ where: { id: { in: ids } }, orderBy: { runAt: "asc" } });
+    return tx.job.findMany({
+      where: { id: { in: ids }, status: "running", lockedBy: workerId, lockedAt: now },
+      orderBy: { runAt: "asc" },
+    });
   });
 }
 

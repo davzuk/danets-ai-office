@@ -19,6 +19,7 @@ import {
   ChevronRight,
   Loader2,
   PartyPopper,
+  Megaphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ViewId } from "@/components/dashboard/app-shell";
@@ -43,6 +44,7 @@ const STEP_ICONS: Record<string, React.ComponentType<{ size?: number; className?
   agent: Bot,
   kb: BookOpen,
   brand: Palette,
+  brand_voice: Megaphone,
   embed: Code2,
   test: MessageSquare,
   lead: Users,

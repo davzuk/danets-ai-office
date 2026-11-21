@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { TeamMembers } from "@/components/dashboard/views/team-members";
+import { BrandVoiceCard } from "@/components/dashboard/views/brand-voice-card";
 import { TotpSecurityCard } from "@/components/dashboard/shared/totp-security-card";
 import { planRank, formatPlanLabel } from "@/lib/module-registry";
 import { Lock, Sparkles } from "lucide-react";
@@ -343,6 +344,9 @@ export function SettingsView({
               </div>
             </CardContent>
           </Card>
+
+          {/* Brand Voice (used by every AI content generator) */}
+          <BrandVoiceCard />
 
           {/* API & widget key */}
           <Card>

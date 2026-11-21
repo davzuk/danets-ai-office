@@ -140,6 +140,12 @@ Every widget chat, lead and ticket is linked to a unified **Contact** (matched b
 - **Consent:** sites that need cookie consent first embed the widget with `data-consent="required"` and call `window.Danets.consent(true)` once the visitor agrees (`consent(false)` clears stored attribution). Until then nothing is stored or sent.
 - **Privacy:** landing and referrer URLs are stored without query strings or fragments. Anonymous touchpoints (visitor never became a contact) are purged with the plan's chat retention window; GDPR export includes contacts, identities and touchpoints.
 
+## Brand Voice
+
+Settings → **Brand Voice** holds each tenant's profile (summary, audience, tone, value props, offers, phrases to use and avoid, languages). Admins can draft it with AI from their active knowledge-base articles: **Generate from my knowledge base** queues a `brand.generate` job, so a worker or the `/api/cron/jobs` cron must be running (see Background jobs). It uses the `plan` AI task, counts against the tenant's monthly AI quota, and notifies the tenant when the draft is ready to review. **Preview a sample post** writes one Facebook, Instagram, LinkedIn or X post from the current (unsaved) edits.
+
+Code that generates content must put `getBrandContext(businessId)` from `src/lib/brand.ts` in its system prompt. The block is deterministic, so it caches well as a prompt prefix.
+
 ## Payment flow
 
 - Without gateway keys: local mock checkout at `/payment-checkout` (dev/test)

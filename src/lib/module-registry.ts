@@ -97,6 +97,7 @@ const API_MODULE_ROUTES: [string, ModuleKey][] = [
   ["/api/team", "settings"],
   ["/api/gdpr", "settings"],
   ["/api/business", "settings"],
+  ["/api/brand-profile", "settings"],
   ["/api/ai/score-lead", "leads"],
   ["/api/dashboard", "overview"],
   ["/api/onboarding", "overview"],

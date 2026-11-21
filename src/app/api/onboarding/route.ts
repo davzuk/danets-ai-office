@@ -7,7 +7,7 @@ export async function GET(_req: NextRequest) {
   return withSession(async (user) => {
     const businessId = user.businessId;
 
-    const [agent, kbCount, conversations, leads, embedViewed] = await Promise.all([
+    const [agent, kbCount, conversations, leads, embedViewed, brand] = await Promise.all([
       db.aiAgent.findFirst({
         where: { businessId },
         select: {
@@ -24,6 +24,7 @@ export async function GET(_req: NextRequest) {
       db.chatSession.count({ where: { businessId } }),
       db.lead.count({ where: { businessId } }),
       db.aiUsageLog.count({ where: { businessId } }),
+      db.brandProfile.findUnique({ where: { businessId }, select: { summary: true } }),
     ]);
 
     // Determine checklist completion
@@ -48,6 +49,13 @@ export async function GET(_req: NextRequest) {
         description: "Match the widget to your brand identity",
         completed: !!agent && agent.brandColor !== "#1d4ed8",
         href: "agent" as const,
+      },
+      {
+        id: "brand_voice",
+        title: "Set your brand voice",
+        description: "Draft it from your knowledge base so AI content sounds like you",
+        completed: !!brand?.summary,
+        href: "settings" as const,
       },
       {
         id: "embed",

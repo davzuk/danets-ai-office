@@ -1,11 +1,12 @@
 // Every job type the runner can execute. Add new handlers here.
 
 import type { JobDefinition } from "./define";
+import { brandGenerateJob } from "./handlers/brand-generate";
 import { connectionExpiringJob, connectionRefreshJob } from "./handlers/connection-refresh";
 import { metaWebhookJob } from "./handlers/meta-webhook";
 import { purgeJobsJob } from "./handlers/purge-jobs";
 
-const definitions: JobDefinition[] = [purgeJobsJob, connectionRefreshJob, connectionExpiringJob, metaWebhookJob];
+const definitions: JobDefinition[] = [purgeJobsJob, connectionRefreshJob, connectionExpiringJob, metaWebhookJob, brandGenerateJob];
 
 const byType = new Map<string, JobDefinition>();
 for (const def of definitions) {

@@ -50,6 +50,7 @@ model Business {
   oauthConnections     OAuthConnection[]
   contacts             Contact[]
   touchpoints          Touchpoint[]
+  brandProfile         BrandProfile?
   subscription         BusinessSubscription?
   payments             Payment[]
   invoices             Invoice[]
@@ -1383,4 +1384,30 @@ model Touchpoint {
   @@index([businessId, occurredAt])
   @@index([contactId, occurredAt])
   @@index([businessId, visitorId])
+}
+
+// ─── Brand Voice (Phase 0, workstream E) ─────────────────────────────
+// One per tenant. Fed to every AI content generator through
+// buildBrandContext() in src/lib/brand.ts.
+model BrandProfile {
+  id               String    @id @default(cuid())
+  businessId       String    @unique
+  summary          String?   @db.Text // one-paragraph who-we-are
+  audience         Json? // [{ segment, pains: [], desires: [] }]
+  tone             Json? // { adjectives: [], formality: 1-5, emoji: bool }
+  valueProps       Json? // string[]
+  offers           Json? // [{ name, price?, cta, url? }]
+  doPhrases        Json? // string[]
+  dontPhrases      Json? // string[]
+  locales          Json? // ["en-NG", "fr"]
+  websiteUrl       String?   @db.VarChar(500)
+  source           String    @default("manual") // manual | generated | edited
+  generatedAt      DateTime?
+  // AI generation runs on the job queue; the UI polls these.
+  generationStatus String    @default("idle") // idle | queued | running | failed
+  generationError  String?   @db.Text
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 }
