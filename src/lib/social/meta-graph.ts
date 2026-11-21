@@ -107,3 +107,87 @@ export async function listFormLeads(formId: string, pageToken: string, since: Da
     50
   );
 }
+
+// ─── Messaging & comments (social inbox) ───────────────────────────────
+
+export interface MessagingProfile {
+  name: string | null;
+  username: string | null;
+}
+
+/** Name of a Messenger (PSID) or Instagram (IGSID) user. Best effort: null on failure. */
+export async function fetchMessagingProfile(
+  userId: string,
+  pageToken: string,
+  platform: "facebook_page" | "instagram",
+  env: Env = process.env
+): Promise<MessagingProfile | null> {
+  const fields = platform === "instagram" ? "name,username" : "first_name,last_name,name";
+  try {
+    const p = await providerFetch<{ name?: string; first_name?: string; last_name?: string; username?: string }>(
+      `${graph(env, `/${encodeURIComponent(userId)}`)}?${authed(env, pageToken, { fields })}`
+    );
+    const name = p.name || [p.first_name, p.last_name].filter(Boolean).join(" ") || null;
+    return { name, username: p.username ?? null };
+  } catch {
+    return null;
+  }
+}
+
+export type SendRecipient = { id: string } | { comment_id: string };
+
+/**
+ * Send a Messenger / Instagram message as the Page. `tag: "HUMAN_AGENT"`
+ * extends the reply window to 7 days for replies typed by a person.
+ */
+export async function sendPageMessage(
+  pageToken: string,
+  recipient: SendRecipient,
+  text: string,
+  opts: { tag?: "HUMAN_AGENT" } = {},
+  env: Env = process.env
+) {
+  const body = authed(env, pageToken, {
+    recipient: JSON.stringify(recipient),
+    message: JSON.stringify({ text }),
+    messaging_type: opts.tag ? "MESSAGE_TAG" : "RESPONSE",
+    ...(opts.tag ? { tag: opts.tag } : {}),
+  });
+  return providerFetch<{ recipient_id?: string; message_id: string }>(graph(env, "/me/messages"), {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body,
+  });
+}
+
+/** Public reply under a comment. Facebook: /{id}/comments; Instagram: /{id}/replies. */
+export async function replyToComment(
+  commentId: string,
+  pageToken: string,
+  text: string,
+  platform: "facebook_page" | "instagram",
+  env: Env = process.env
+) {
+  const edge = platform === "instagram" ? "replies" : "comments";
+  return providerFetch<{ id: string }>(graph(env, `/${encodeURIComponent(commentId)}/${edge}`), {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: authed(env, pageToken, { message: text }),
+  });
+}
+
+/** Hide (or unhide) a comment. Facebook uses is_hidden, Instagram uses hide. */
+export async function setCommentHidden(
+  commentId: string,
+  pageToken: string,
+  hidden: boolean,
+  platform: "facebook_page" | "instagram",
+  env: Env = process.env
+) {
+  const field = platform === "instagram" ? "hide" : "is_hidden";
+  return providerFetch<{ success: boolean }>(graph(env, `/${encodeURIComponent(commentId)}`), {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: authed(env, pageToken, { [field]: String(hidden) }),
+  });
+}

@@ -196,33 +196,47 @@ model ChatSession {
   visitorId    String? // anonymous browser id
   contactId    String?
   status       String   @default("active") // active | ended | handover
-  summary      String?
+  summary      String?  @db.Text
   leadQuality  String? // low | medium | high
-  nextAction   String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  nextAction   String?  @db.Text
+  // Social inbox (Phase 1 H). Widget chats keep the defaults.
+  channel          String         @default("widget") // widget | messenger | instagram_dm | facebook_comment | instagram_comment
+  socialAccountId  String?
+  externalThreadId String?        @db.VarChar(191) // PSID / IGSID for DMs, root comment id for comment threads
+  threadMeta       Json? // comment threads: { postId, mediaId, permalink, postText }
+  lastInboundAt    DateTime? // drives Meta's 24-hour messaging window
+  autoReplyPaused  Boolean        @default(false) // a human took over
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
   business       Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
   agent          AiAgent?        @relation(fields: [agentId], references: [id], onDelete: SetNull)
   contact        Contact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  socialAccount  SocialAccount?  @relation(fields: [socialAccountId], references: [id], onDelete: SetNull)
   messages       ChatMessage[]
   lead           Lead?
   supportTickets SupportTicket[]
 
+  @@unique([socialAccountId, externalThreadId])
   @@index([businessId])
   @@index([status])
   @@index([contactId])
   @@index([businessId, visitorId])
+  @@index([businessId, channel, updatedAt])
 }
 
 model ChatMessage {
-  id         String   @id @default(cuid())
-  sessionId  String
-  role       String // user | assistant | system
-  content    String
-  tokensUsed Int      @default(0)
-  meta       String? // JSON string for extra data
-  createdAt  DateTime @default(now())
+  id             String   @id @default(cuid())
+  sessionId      String
+  role           String // user | assistant | system ("assistant" with sentByUserId = a team member)
+  content        String   @db.Text
+  tokensUsed     Int      @default(0)
+  meta           String?  @db.Text // JSON string for extra data
+  // Social inbox (Phase 1 H)
+  externalId     String?  @unique @db.VarChar(191) // Meta message mid / comment id, for dedupe
+  deliveryStatus String? // sent | failed (outbound social messages)
+  sentByUserId   String? // BusinessUser who sent it; null = AI or the visitor
+  createdAt      DateTime @default(now())
 
   session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
@@ -1448,6 +1462,7 @@ model SocialAccount {
   business   Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
   connection OAuthConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
   leadForms  MetaLeadForm[]
+  sessions   ChatSession[]
 
   @@unique([platform, externalId])
   @@index([businessId])

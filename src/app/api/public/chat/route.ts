@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { aiChat, logUsage, retrieveKnowledge, EMPTY_USAGE, type UsageInput } from "@/lib/ai";
+import { logUsage, type UsageInput } from "@/lib/ai";
+import { generateAgentReply } from "@/lib/agent-reply";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { checkChatRateLimit, checkMonthlyAiQuota } from "@/lib/plan-limits";
 import { checkQuota } from "@/lib/plan-quota";
@@ -162,83 +163,11 @@ export async function POST(req: NextRequest) {
     data: { sessionId: session.id, role: "user", content: message },
   });
 
-  // Retrieve relevant knowledge base content
-  const kbItems = await retrieveKnowledge(business.id, message, 3);
-
-  // Increment views on matched items
-  if (kbItems.length > 0) {
-    await db.knowledgeBaseItem.updateMany({
-      where: { id: { in: kbItems.map((k) => k.id) } },
-      data: { views: { increment: 1 } },
-    });
-  }
-
-  // Build a SAFE system prompt — strict grounding in KB
-  const toneGuide: Record<string, string> = {
-    professional: "professional and helpful",
-    friendly: "warm, friendly and approachable",
-    formal: "formal and precise",
-  };
-  const tone = toneGuide[agent.tone] || toneGuide.professional;
-
-  const kbContext =
-    kbItems.length > 0
-      ? kbItems
-          .map((k, i) => `### Article ${i + 1}: ${k.title}\n${k.content}`)
-          .join("\n\n")
-      : "(No relevant knowledge base articles found for this query.)";
-
-  // Multi-language detection
-  const { detectLanguage } = await import("@/lib/ai-scoring");
-  const detectedLang = detectLanguage(message);
-
-  const systemPrompt = `You are "${agent.botName}", a ${tone} AI assistant for ${agent.businessName || business.name}${agent.industry ? `, a company in ${agent.industry}` : ""}.
-
-CRITICAL RULES — follow strictly:
-1. Answer the visitor's question using ONLY the knowledge base articles provided below. Do NOT invent prices, policies, features, timelines, or promises.
-2. If the answer is not contained in the knowledge base, reply EXACTLY with this sentence: "${agent.fallbackMessage}"
-3. Keep answers concise (max 3-4 short paragraphs). Be clear and professional.
-4. Never claim to be a human. You are an AI assistant.
-5. If the visitor seems interested in a service, pricing, or wants to talk to someone, offer to connect them to the team and mention contact options (WhatsApp/phone/email) when relevant.
-6. Respond in the SAME LANGUAGE the visitor is using. Detected language: ${detectedLang}.
-
-KNOWLEDGE BASE:
-${kbContext}
-
-${agent.handoverMessage ? `When handing over, use: "${agent.handoverMessage}"` : ""}
-${agent.contactPhone ? `Contact phone: ${agent.contactPhone}` : ""}
-${agent.whatsappNumber ? `WhatsApp: ${agent.whatsappNumber}` : ""}
-${agent.email ? `Email: ${agent.email}` : ""}
-
-Now respond to the visitor's message.`;
-
-  // Load recent conversation history (last 10 messages) for context
-  const history = await db.chatMessage.findMany({
-    where: { sessionId: session.id },
-    orderBy: { createdAt: "asc" },
-    take: 12,
-    select: { role: true, content: true },
-  });
-
-  const messages = [
-    { role: "assistant", content: systemPrompt },
-    ...history.map((h) => ({
-      role: h.role === "assistant" ? "assistant" : "user",
-      content: h.content,
-    })),
-  ];
-
-  let aiContent = "";
-  let tokens: UsageInput = EMPTY_USAGE;
-  try {
-    const result = await aiChat(messages, { businessId: business.id, task: "chat", temperature: 0.4 });
-    aiContent = result.content;
-    tokens = result;
-  } catch (e: any) {
-    console.error("[public chat] AI error:", e?.message);
-    await logUsage(business.id, "chat", EMPTY_USAGE, "error", e?.message);
-    aiContent = agent.fallbackMessage;
-  }
+  // KB-grounded reply (shared with the social inbox).
+  const reply = await generateAgentReply({ business, agent, sessionId: session.id, message, channel: "widget" });
+  const aiContent = reply.content;
+  const tokens: UsageInput = reply.usage;
+  const kbItems = reply.kbIds;
 
   // Save AI response + usage log atomically. The AI call itself sits outside
   // the transaction (it can take seconds); only the writes are atomic so a
@@ -251,7 +180,7 @@ Now respond to the visitor's message.`;
         role: "assistant",
         content: aiContent,
         tokensUsed: tokens.totalTokens,
-        meta: JSON.stringify({ kbUsed: kbItems.map((k) => k.id) }),
+        meta: JSON.stringify({ kbUsed: kbItems }),
       },
     }),
     // logUsage via Prisma transaction client: we call the helper directly
@@ -263,13 +192,10 @@ Now respond to the visitor's message.`;
     }),
   ]);
 
-  // Log usage
-  await logUsage(business.id, "chat", tokens);
+  // Log usage (failures were already logged by generateAgentReply)
+  if (!reply.failed) await logUsage(business.id, "chat", tokens);
 
-  // Simple lead-detection heuristic: if message contains intent keywords, flag for capture
-  const leadIntent = /\b(price|pricing|cost|quote|buy|hire|service|interested|consult|need help|how much|plan|subscription)\b/i.test(
-    message
-  );
+  const leadIntent = reply.leadIntent;
 
   return NextResponse.json({
     sessionId: session.id,

@@ -145,6 +145,17 @@ With **Lead Ads** switched on for a Page (Integrations → Connected accounts), 
 - Ad leads count against the plan's `leads` quota. When it's used up the lead is not imported, the tenant is notified, and the job is left dead in the queue; a platform admin can retry it from the Jobs card after the tenant upgrades.
 - Test with Meta's [Lead Ads Testing Tool](https://developers.facebook.com/tools/lead-ads-testing). The app needs `leads_retrieval` and the Page must grant the app lead access (Meta Business Suite → Settings → Leads access).
 
+## Social inbox
+
+With **Inbox** switched on for a Page or Instagram account, Messenger and Instagram DMs and comments on the business's posts appear in **Conversations** (filter by channel). Each DM thread or top-level comment thread is a conversation; messages are deduplicated on Meta's ids, so webhook replays add nothing.
+
+- **AI replies** per account (Integrations → Connected accounts): *off* notifies the team; *AI drafts replies* stores a suggested reply the team can send, edit or discard; *AI replies automatically* sends the knowledge-base-grounded reply. The first AI reply in a thread always says it comes from an AI assistant.
+- The AI stays quiet for 30 minutes after a team member replies (in Danets or in Meta's own inbox), and stops completely when someone presses **Take over** or the customer asks for a person (the conversation moves to *handover*). **Resume AI** hands it back.
+- Comments are classified (buying intent, question, complaint, spam, other). Only questions and buying intent get an AI reply; complaints notify the team; spam is left alone. Agents can reply publicly, send a private reply (opens a DM), or hide a comment.
+- Meta's messaging window is enforced: anyone can reply within 24 hours of the customer's last message, team members can reply (sent with the `HUMAN_AGENT` tag) for up to 7 days, and after that replies are blocked until the customer writes again. `HUMAN_AGENT` needs the *Human Agent* permission in App Review.
+- When someone types an email or phone number in a DM, a lead is created (`source` = first touch, usually `social_organic`); **Create lead** does the same by hand.
+- WhatsApp stays on its own screen for now.
+
 ## Contacts and lead attribution
 
 Every widget chat, lead and ticket is linked to a unified **Contact** (matched by email, phone or the widget's visitor id), and the widget records where the visitor came from as **touchpoints**: UTM tags, ad click ids (`gclid`, `msclkid`, `fbclid`, `li_fat_id`, …) and the referrer. A lead's **Source** is the channel of its first touch (`organic_search`, `paid_search`, `social_organic`, `social_paid`, `email`, `referral`, `direct`, `whatsapp`); leads from clients that send no attribution keep `chatbot`. Lead detail → **Journey** shows the timeline; Analytics → **Leads by Channel** charts it.

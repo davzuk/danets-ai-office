@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
+import { REPLY_CHANNELS as CHANNELS } from "@/lib/agent-reply";
 import { withSession } from "@/lib/api";
 import {
   beforeTimestampCursor,
@@ -8,7 +9,7 @@ import {
   encodeCursor,
 } from "@/lib/cursor-pagination";
 
-// GET /api/conversations?status=active|ended|handover&q=<search>
+// GET /api/conversations?status=active|ended|handover&channel=widget|social|messenger|…&q=<search>
 // Lists ChatSessions for the user's business, with latest message + lead
 // included. Ordered by updatedAt desc, cursor-paginated via ?cursor=<base64>
 // and ?take=<n>.
@@ -17,6 +18,7 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const status = url.searchParams.get("status") || undefined;
     const q = url.searchParams.get("q")?.trim() || undefined;
+    const channel = url.searchParams.get("channel") || undefined;
     const cursor = decodeCursor(url.searchParams.get("cursor"));
     const take = clampPageSize(
       Number(url.searchParams.get("take") || 0) || undefined,
@@ -30,6 +32,8 @@ export async function GET(req: NextRequest) {
 
     const where: any = { businessId: user.businessId };
     if (status) where.status = status;
+    if (channel === "social") where.channel = { not: "widget" };
+    else if (channel && (CHANNELS as readonly string[]).includes(channel)) where.channel = channel;
     if (q) {
       where.OR = [
         { visitorName: { contains: q } },
@@ -44,6 +48,7 @@ export async function GET(req: NextRequest) {
       take: take + 1,
       include: {
         lead: true,
+        socialAccount: { select: { id: true, name: true, platform: true } },
         messages: {
           orderBy: { createdAt: "desc" },
           take: 1,
@@ -78,6 +83,9 @@ export async function GET(req: NextRequest) {
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
       lead: s.lead,
+      channel: s.channel,
+      socialAccount: s.socialAccount,
+      autoReplyPaused: s.autoReplyPaused,
       latestMessage: s.messages[0] || null,
     }));
 

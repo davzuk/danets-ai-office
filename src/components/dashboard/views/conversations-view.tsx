@@ -38,6 +38,18 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  CHANNEL_FILTERS,
+  ChannelBadge,
+  SocialComposer,
+  SocialMessageExtras,
+  SocialThreadActions,
+  isCommentChannel,
+  isSocialChannel,
+  senderLabel,
+  type ReplyWindow,
+} from "@/components/dashboard/views/social-thread-tools";
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -82,6 +94,9 @@ interface ChatSessionListItem {
   updatedAt: string;
   lead: Lead | null;
   latestMessage: LatestMessage | null;
+  channel?: string;
+  socialAccount?: { id: string; name: string; platform: string } | null;
+  autoReplyPaused?: boolean;
 }
 
 interface ChatMessage {
@@ -90,6 +105,9 @@ interface ChatMessage {
   content: string;
   createdAt: string;
   tokensUsed?: number;
+  sentByUserId?: string | null;
+  deliveryStatus?: string | null;
+  meta?: string | null;
 }
 
 interface ChatSessionDetail {
@@ -107,6 +125,14 @@ interface ChatSessionDetail {
   updatedAt: string;
   lead: Lead | null;
   messages: ChatMessage[];
+  channel?: string;
+  autoReplyPaused?: boolean;
+  socialAccount?: { id: string; name: string; platform: string; autoReply: string; status: string } | null;
+}
+
+interface SocialDetail {
+  window: ReplyWindow | null;
+  senders: Record<string, string>;
 }
 
 interface SuggestionsResult {
@@ -120,6 +146,7 @@ interface SuggestionsResult {
 }
 
 type StatusFilter = "all" | "active" | "ended" | "handover";
+type ChannelFilter = (typeof CHANNEL_FILTERS)[number]["key"];
 
 // ─── Main component ───────────────────────────────────────────────────
 
@@ -129,10 +156,15 @@ export function ConversationsView({ user }: { user: UserProp }) {
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [channelFilter, setChannelFilter] = useState<ChannelFilter>("all");
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ChatSessionDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [social, setSocial] = useState<SocialDetail | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [replyText, setReplyText] = useState("");
+  const loadedIdRef = useRef<string | null>(null);
 
   const [suggestions, setSuggestions] = useState<SuggestionsResult | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -147,6 +179,7 @@ export function ConversationsView({ user }: { user: UserProp }) {
     try {
       const params = new URLSearchParams();
       if (statusFilter !== "all") params.set("status", statusFilter);
+      if (channelFilter !== "all") params.set("channel", channelFilter);
       if (search.trim()) params.set("q", search.trim());
       const res = await fetch(`/api/conversations?${params.toString()}`, {
         cache: "no-store",
@@ -160,7 +193,7 @@ export function ConversationsView({ user }: { user: UserProp }) {
     } finally {
       setLoadingList(false);
     }
-  }, [statusFilter, search]);
+  }, [statusFilter, channelFilter, search]);
 
   useEffect(() => {
     fetchList();
@@ -181,9 +214,14 @@ export function ConversationsView({ user }: { user: UserProp }) {
       return;
     }
     let cancelled = false;
-    setLoadingDetail(true);
-    setSuggestions(null);
-    setFollowUpEdit("");
+    // A reload (after sending, taking over…) refreshes in place without the skeleton.
+    const isReload = loadedIdRef.current === selectedId;
+    if (!isReload) {
+      setLoadingDetail(true);
+      setSuggestions(null);
+      setFollowUpEdit("");
+      setReplyText("");
+    }
 
     fetch(`/api/conversations/${selectedId}`, { cache: "no-store" })
       .then((r) => r.json())
@@ -197,6 +235,9 @@ export function ConversationsView({ user }: { user: UserProp }) {
           return;
         }
         setDetail(s);
+        setSocial(data?.social ?? null);
+        loadedIdRef.current = s.id;
+        if (isReload) return;
         // Pre-populate suggestions display from previously-saved summary/nextAction
         if (s.summary || s.nextAction || s.leadQuality) {
           setSuggestions({
@@ -217,7 +258,12 @@ export function ConversationsView({ user }: { user: UserProp }) {
     return () => {
       cancelled = true;
     };
-  }, [selectedId]);
+  }, [selectedId, reloadKey]);
+
+  const reloadDetail = useCallback(() => {
+    setReloadKey((k) => k + 1);
+    fetchList();
+  }, [fetchList]);
 
   // ── Auto-scroll messages to bottom ──────────────────────────────────
   useEffect(() => {
@@ -355,6 +401,18 @@ export function ConversationsView({ user }: { user: UserProp }) {
                 </button>
               ))}
             </div>
+            <Select value={channelFilter} onValueChange={(v) => setChannelFilter(v as ChannelFilter)}>
+              <SelectTrigger size="sm" className="mt-2 h-8 w-full text-xs" aria-label="Channel">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CHANNEL_FILTERS.map((f) => (
+                  <SelectItem key={f.key} value={f.key}>
+                    {f.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* List */}
@@ -399,6 +457,7 @@ export function ConversationsView({ user }: { user: UserProp }) {
                           )}
                         </div>
                         <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                          {isSocialChannel(s.channel) && <ChannelBadge channel={s.channel} />}
                           <StatusBadge status={s.status} />
                           {s.leadQuality && (
                             <LeadQualityBadge quality={s.leadQuality} />
@@ -456,6 +515,7 @@ export function ConversationsView({ user }: { user: UserProp }) {
                     <span className="font-medium truncate">
                       {visitorLabel(detail)}
                     </span>
+                    <ChannelBadge channel={detail.channel} />
                     <StatusBadge status={detail.status} />
                     {detail.leadQuality && (
                       <LeadQualityBadge quality={detail.leadQuality} />
@@ -475,6 +535,7 @@ export function ConversationsView({ user }: { user: UserProp }) {
                     <span className="inline-flex items-center gap-1">
                       <Clock size={11} /> {timeAgo(detail.updatedAt)}
                     </span>
+                    {detail.socialAccount && <span>on {detail.socialAccount.name}</span>}
                     {detail.lead && (
                       <span className="inline-flex items-center gap-1">
                         <Tag size={11} /> {detail.lead.service || "lead captured"}
@@ -482,6 +543,16 @@ export function ConversationsView({ user }: { user: UserProp }) {
                     )}
                   </div>
                 </div>
+                {isSocialChannel(detail.channel) && (
+                  <SocialThreadActions
+                    sessionId={detail.id}
+                    autoReplyPaused={!!detail.autoReplyPaused}
+                    status={detail.status}
+                    hasLead={!!detail.lead}
+                    visitorName={detail.visitorName}
+                    onChanged={reloadDetail}
+                  />
+                )}
                 <Button
                   size="sm"
                   variant="outline"
@@ -505,15 +576,43 @@ export function ConversationsView({ user }: { user: UserProp }) {
                     </div>
                   ) : (
                     detail.messages.map((m) => (
-                      <MessageBubble key={m.id} message={m} />
+                      <MessageBubble
+                        key={m.id}
+                        message={m}
+                        sender={isSocialChannel(detail.channel) ? senderLabel(m, social?.senders ?? {}) : null}
+                        extras={
+                          isSocialChannel(detail.channel) ? (
+                            <SocialMessageExtras
+                              message={m}
+                              sessionId={detail.id}
+                              comment={isCommentChannel(detail.channel ?? "")}
+                              onChanged={reloadDetail}
+                            />
+                          ) : null
+                        }
+                      />
                     ))
                   )}
                   <div ref={messagesEndRef} />
                 </div>
               </div>
 
+              {/* Reply composer (social threads) */}
+              {isSocialChannel(detail.channel) && (
+                <div className="shrink-0 border-t bg-background px-3 pt-3 lg:px-4">
+                  <SocialComposer
+                    sessionId={detail.id}
+                    channel={detail.channel ?? ""}
+                    window={social?.window ?? null}
+                    text={replyText}
+                    onTextChange={setReplyText}
+                    onSent={reloadDetail}
+                  />
+                </div>
+              )}
+
               {/* AI Suggested Replies panel */}
-              <div className="shrink-0 border-t bg-background p-3 lg:p-4">
+              <div className="shrink-0 border-t bg-background p-3 lg:p-4 max-h-[40vh] overflow-y-auto">
                 <Card className="border-primary/20">
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between gap-2">
@@ -633,6 +732,15 @@ export function ConversationsView({ user }: { user: UserProp }) {
                               onChange={(e) => setFollowUpEdit(e.target.value)}
                               className="min-h-[80px] text-sm"
                             />
+                            {isSocialChannel(detail.channel) && (
+                              <Button
+                                size="sm"
+                                className="h-7 mt-2"
+                                onClick={() => setReplyText(followUpEdit || suggestions.follow_up_message || "")}
+                              >
+                                <Send size={12} /> Use in reply
+                              </Button>
+                            )}
                           </SuggestionField>
                         )}
 
@@ -671,8 +779,9 @@ export function ConversationsView({ user }: { user: UserProp }) {
 
                         <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
                           <AlertCircle size={11} />
-                          Auto-send is disabled. Copy the follow-up message and send it
-                          manually via email, WhatsApp, or your CRM.
+                          {isSocialChannel(detail.channel)
+                            ? "Use the follow-up in the reply box above, or edit it first. Nothing is sent until you press Send."
+                            : "Auto-send is disabled. Copy the follow-up message and send it manually via email, WhatsApp, or your CRM."}
                         </p>
                       </div>
                     )}
@@ -689,8 +798,17 @@ export function ConversationsView({ user }: { user: UserProp }) {
 
 // ─── Sub-components ───────────────────────────────────────────────────
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({
+  message,
+  sender,
+  extras,
+}: {
+  message: ChatMessage;
+  sender?: string | null;
+  extras?: React.ReactNode;
+}) {
   const isUser = message.role === "user";
+  const isDraft = message.deliveryStatus === "draft";
   const isSystem = message.role === "system";
   const time = new Date(message.createdAt).toLocaleTimeString([], {
     hour: "2-digit",
@@ -724,7 +842,8 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           "max-w-[78%] rounded-2xl px-3.5 py-2 text-sm shadow-sm break-words",
           isUser
             ? "bg-primary text-primary-foreground rounded-br-sm"
-            : "bg-background border rounded-bl-sm"
+            : "bg-background border rounded-bl-sm",
+          isDraft && "border-dashed opacity-90"
         )}
       >
         <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
@@ -734,8 +853,10 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             isUser ? "text-primary-foreground/70" : "text-muted-foreground"
           )}
         >
+          {sender ? sender + " · " : ""}
           {time}
         </div>
+        {extras}
       </div>
       {isUser && (
         <div className="size-7 rounded-full bg-accent text-accent-foreground flex items-center justify-center shrink-0">
