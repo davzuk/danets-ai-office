@@ -42,7 +42,9 @@ npm start
 | `PAYMENT_CURRENCY` | Default `NGN` |
 | `PAYMENT_USD_NGN_RATE` | USD plan price → NGN conversion |
 | `REDIS_URL` | Shared rate limiting across instances (optional) |
-| `CRON_SECRET` | Bearer token for `GET /api/cron/retention` scheduled job |
+| `CRON_SECRET` | Bearer token for `GET /api/cron/*` scheduled jobs (min 32 chars) |
+| `JOB_CONCURRENCY` | Background jobs run in parallel per worker batch (default 4) |
+| `JOB_POLL_MS` | Worker idle poll interval in ms (default 2000) |
 
 ## Scripts
 
@@ -53,7 +55,9 @@ npm start
 | `npm start` | Run standalone server |
 | `npm run db:migrate` | Apply migrations (dev) |
 | `npm run db:seed` | Seed plans, demo tenant, platform admin |
+| `npm run worker` | Background job worker (run as a second, long-lived process) |
 | `npm test` | Unit tests (Vitest) |
+| `npm run test:db` | Job-queue tests against MySQL (needs `JOBS_TEST_DATABASE_URL`; wipes `test.*` jobs) |
 | `npm run test:e2e` | Smoke tests (Playwright; server must be running) |
 
 ## Demo credentials (after seed)
@@ -100,6 +104,21 @@ curl -s -H "Authorization: Bearer $CRON_SECRET" \
 Set `CRON_SECRET` in production `.env`. You can also run retention manually from Platform → Tenant Health → **Apply retention**, or via `POST /api/super-admin/bulk` with `{ "action": "apply_retention_all" }`.
 
 **Vercel:** optional `vercel.json` cron (see repo `vercel.json`).
+
+## Background jobs
+
+Scheduled syncs, token refreshes and other async work run from a MySQL-backed queue (`Job` table, `src/lib/jobs`). Something must drain it — use one or both:
+
+1. **Worker process (recommended for self-hosting):** `npm run worker` next to `npm start`, kept alive by systemd/pm2. Several workers can run at once; jobs are claimed with `SELECT … FOR UPDATE SKIP LOCKED`. On SIGTERM the worker finishes in-flight jobs (30s grace).
+2. **Cron fallback (serverless):** call `GET /api/cron/jobs` every minute with `Authorization: Bearer <CRON_SECRET>`. It enqueues due scheduled jobs and runs queued jobs for ~45s. Already listed in `vercel.json` (per-minute crons need a paid Vercel plan).
+
+```bash
+# systemd example: ExecStart=/usr/bin/npm run worker  (WorkingDirectory = repo root)
+# pm2 example:
+pm2 start npm --name danets-worker -- run worker
+```
+
+Failed jobs retry with exponential backoff (30s, 1m, 2m … max 6h) up to their attempt limit, then move to `dead`. Platform → Tenant Health → **Background Jobs** shows queue depth and dead jobs, with Retry/Discard. Finished jobs are purged daily (succeeded after 14 days, dead after 30).
 
 ## Payment flow
 

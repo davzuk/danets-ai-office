@@ -1227,3 +1227,32 @@ model CmsContactSubmission {
 
   @@index([createdAt])
 }
+
+// ─── Background jobs ──────────────────────────────────────────────
+// MySQL-backed queue (src/lib/jobs). Workers claim rows with
+// SELECT ... FOR UPDATE SKIP LOCKED, so several workers can run safely.
+
+model Job {
+  id          String    @id @default(cuid())
+  businessId  String? // tenant the job acts for; null for platform jobs
+  type        String // registered job type, e.g. "system.purge-jobs"
+  payload     Json
+  status      String    @default("queued") // queued | running | succeeded | dead
+  runAt       DateTime  @default(now())
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5)
+  lockedAt    DateTime?
+  lockedBy    String?
+  lastError   String?   @db.Text
+  // Idempotent enqueue: a second enqueue with the same key returns the
+  // existing row. Recurring schedules use "sched:<type>:<window start>".
+  dedupeKey   String?   @unique
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  finishedAt  DateTime?
+
+  @@index([status, runAt])
+  @@index([status, lockedAt])
+  @@index([businessId])
+  @@index([type])
+}
