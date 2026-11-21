@@ -1,7 +1,13 @@
 import "server-only";
 import { db } from "@/lib/db";
-import { aiChat, logUsage } from "@/lib/ai";
+import { z } from "zod";
+import { aiStructured, logUsage } from "@/lib/llm";
 import { logger, serializeError } from "@/lib/logger";
+
+const LeadScoreSchema = z.object({
+  score: z.number(),
+  reason: z.string(),
+});
 
 export async function scoreLead(leadId: string, businessId: string): Promise<number> {
   try {
@@ -29,25 +35,23 @@ export async function scoreLead(leadId: string, businessId: string): Promise<num
 
     if (transcript.length > 100) {
       try {
-        const result = await aiChat(
+        const result = await aiStructured(
           [
-            { role: "system", content: `You are a lead scoring AI. Respond with STRICT JSON only: {"score": number (0-100), "reason": "brief explanation"}. 80-100: highly qualified, 60-79: qualified, 40-59: lukewarm, 0-39: low quality.` },
-            { role: "user", content: `Lead: ${lead.name}\nEmail: ${lead.email || "N/A"}\nPhone: ${lead.phone || "N/A"}\nService: ${lead.service || "N/A"}\nQuality: ${lead.quality}\nMessage: ${lead.message || "N/A"}\n\nConversation:\n${transcript || "(No conversation)"}\n\nScore this lead:` },
+            { role: "system", content: `You are a lead scoring AI. Score how sales-ready this lead is from 0 to 100 and give a brief reason. 80-100: highly qualified, 60-79: qualified, 40-59: lukewarm, 0-39: low quality.` },
+            { role: "user", content: `Lead: ${lead.name}\nEmail: ${lead.email || "N/A"}\nPhone: ${lead.phone || "N/A"}\nService: ${lead.service || "N/A"}\nQuality: ${lead.quality}\nMessage: ${lead.message || "N/A"}\n\nConversation:\n${transcript || "(No conversation)"}\n\nScore this lead.` },
           ],
-          { temperature: 0.3 }
+          LeadScoreSchema,
+          { businessId, task: "classify", maxTokens: 2000, temperature: 0.3 }
         );
-        let cleaned = result.content.trim();
-        const start = cleaned.indexOf("{");
-        const end = cleaned.lastIndexOf("}");
-        if (start !== -1 && end !== -1) {
-          const parsed = JSON.parse(cleaned.slice(start, end + 1));
-          const aiScore = Math.min(100, Math.max(0, parseInt(parsed.score) || heuristicScore));
-          await logUsage(businessId, "summary", result, "success");
-          const finalScore = Math.round(aiScore * 0.6 + heuristicScore * 0.4);
-          await db.lead.update({ where: { id: leadId }, data: { leadScore: finalScore } });
-          return finalScore;
-        }
-      } catch {}
+        await logUsage(businessId, "lead_scoring", result, "success");
+        const aiScore = Math.min(100, Math.max(0, Math.round(result.data.score)));
+        const finalScore = Math.round(aiScore * 0.6 + heuristicScore * 0.4);
+        await db.lead.update({ where: { id: leadId }, data: { leadScore: finalScore } });
+        return finalScore;
+      } catch (e) {
+        // Fall back to the heuristic score below.
+        logger.warn("AI lead scoring failed; using heuristic", { leadId, ...serializeError(e) });
+      }
     }
 
     await db.lead.update({ where: { id: leadId }, data: { leadScore: heuristicScore } });

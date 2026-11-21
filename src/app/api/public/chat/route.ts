@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { aiChat, logUsage, retrieveKnowledge } from "@/lib/ai";
+import { aiChat, logUsage, retrieveKnowledge, EMPTY_USAGE, type UsageInput } from "@/lib/ai";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { checkChatRateLimit, checkMonthlyAiQuota } from "@/lib/plan-limits";
 import { checkQuota } from "@/lib/plan-quota";
@@ -198,18 +198,14 @@ Now respond to the visitor's message.`;
   ];
 
   let aiContent = "";
-  let tokens = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  let tokens: UsageInput = EMPTY_USAGE;
   try {
-    const result = await aiChat(messages, { temperature: 0.4 });
+    const result = await aiChat(messages, { businessId: business.id, task: "chat", temperature: 0.4 });
     aiContent = result.content;
-    tokens = {
-      promptTokens: result.promptTokens,
-      completionTokens: result.completionTokens,
-      totalTokens: result.totalTokens,
-    };
+    tokens = result;
   } catch (e: any) {
     console.error("[public chat] AI error:", e?.message);
-    await logUsage(business.id, "chat", { promptTokens: 0, completionTokens: 0, totalTokens: 0 }, "error", e?.message);
+    await logUsage(business.id, "chat", EMPTY_USAGE, "error", e?.message);
     aiContent = agent.fallbackMessage;
   }
 

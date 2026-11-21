@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
-import { aiChat, logUsage } from "@/lib/ai";
+import { aiChat, logUsage, EMPTY_USAGE, type UsageInput } from "@/lib/ai";
 import { checkMonthlyAiQuota, quotaExceededResponse } from "@/lib/plan-limits";
 
 const askSchema = z.object({
@@ -95,7 +95,7 @@ DOCUMENT SECTIONS:
 ${context}`;
 
   let answer = "";
-  let tokens = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  let tokens: UsageInput = EMPTY_USAGE;
 
   try {
     const result = await aiChat(
@@ -103,21 +103,17 @@ ${context}`;
         { role: "system", content: systemPrompt },
         { role: "user", content: question },
       ],
-      { temperature: 0.3 }
+      { businessId: user.businessId, task: "chat", temperature: 0.3 }
     );
     answer = result.content;
-    tokens = {
-      promptTokens: result.promptTokens,
-      completionTokens: result.completionTokens,
-      totalTokens: result.totalTokens,
-    };
+    tokens = result;
   } catch (e: any) {
     answer =
       "I could not process your question right now. Please try again in a moment.";
     await logUsage(
       user.businessId,
       "summary",
-      { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      EMPTY_USAGE,
       "error",
       e?.message
     );

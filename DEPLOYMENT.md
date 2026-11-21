@@ -38,7 +38,10 @@ npm start
 | `FLUTTERWAVE_SECRET_HASH` | Webhook verification |
 | `EMAIL_PROVIDER` | `smtp` or `sendgrid` |
 | `SMTP_*` or `SENDGRID_*` | Email delivery |
-| `OPENAI_API_KEY` | AI chat features |
+| `ANTHROPIC_API_KEY` | Platform default AI (Claude, `claude-opus-5-5` for every task) |
+| `AI_DEFAULT_PROVIDER` | `anthropic` \| `openai` \| `zai`; unset = `anthropic` when its key is set, else `zai` |
+| `AI_DEFAULT_MODEL` / `AI_MODEL_<TASK>` | Optional model overrides (tasks: `CHAT`, `CLASSIFY`, `EXTRACT`, `CONTENT`, `PLAN`) |
+| `OPENAI_API_KEY` + `OPENAI_DEFAULT_MODEL` | Platform OpenAI default (both required) |
 | `PAYMENT_CURRENCY` | Default `NGN` |
 | `PAYMENT_USD_NGN_RATE` | USD plan price → NGN conversion |
 | `REDIS_URL` | Shared rate limiting across instances (optional) |

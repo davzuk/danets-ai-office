@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
-import { aiChat, logUsage } from "@/lib/ai";
+import { aiChat, logUsage, EMPTY_USAGE, type UsageInput } from "@/lib/ai";
 import { checkMonthlyAiQuota, quotaExceededResponse } from "@/lib/plan-limits";
 
 type RouteCtx = { params: Promise<{ id: string }> };
@@ -33,7 +33,7 @@ export async function POST(_req: NextRequest, { params }: RouteCtx) {
   const systemPrompt = `You are a document summarizer. Create a concise summary of the document below in 3-5 sentences. Focus on the key points, main arguments, and important details. Be factual and do not add information not present in the document.`;
 
   let summary = "";
-  let tokens = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  let tokens: UsageInput = EMPTY_USAGE;
 
   try {
     const result = await aiChat(
@@ -41,14 +41,10 @@ export async function POST(_req: NextRequest, { params }: RouteCtx) {
         { role: "system", content: systemPrompt },
         { role: "user", content: `Document: ${doc.title}\n\n${content}` },
       ],
-      { temperature: 0.3 }
+      { businessId: user.businessId, task: "content", temperature: 0.3 }
     );
     summary = result.content;
-    tokens = {
-      promptTokens: result.promptTokens,
-      completionTokens: result.completionTokens,
-      totalTokens: result.totalTokens,
-    };
+    tokens = result;
   } catch (e: any) {
     return NextResponse.json(
       { error: "Failed to generate summary: " + e?.message },

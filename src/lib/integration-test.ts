@@ -1,4 +1,5 @@
 import "server-only";
+import Anthropic from "@anthropic-ai/sdk";
 import { decryptApiKey } from "@/lib/crypto";
 
 export type IntegrationTestResult = {
@@ -20,6 +21,30 @@ function parseConfig(config: string | null): Record<string, unknown> {
     return JSON.parse(config) as Record<string, unknown>;
   } catch {
     return {};
+  }
+}
+
+async function testAnthropic(apiKey: string): Promise<IntegrationTestResult> {
+  try {
+    const client = new Anthropic({ apiKey, maxRetries: 0, timeout: 15_000 });
+    await client.models.list({ limit: 1 });
+    return { success: true, message: "Anthropic API key is valid." };
+  } catch (e) {
+    if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError) {
+      return { success: false, message: "Anthropic API key rejected.", details: e.message.slice(0, 200) };
+    }
+    if (e instanceof Anthropic.APIError) {
+      return {
+        success: false,
+        message: "Anthropic API returned an error.",
+        details: `HTTP ${e.status ?? "?"}: ${e.message.slice(0, 200)}`,
+      };
+    }
+    return {
+      success: false,
+      message: "Could not reach the Anthropic API.",
+      details: e instanceof Error ? e.message.slice(0, 200) : undefined,
+    };
   }
 }
 
@@ -135,7 +160,20 @@ export async function testIntegrationConnection(
 
   switch (integration.category) {
     case "ai_provider": {
-      if (integration.provider === "openai" && apiKey) return testOpenAi(apiKey);
+      if (integration.provider === "anthropic" && apiKey) return testAnthropic(apiKey);
+      if (integration.provider === "openai" && apiKey) {
+        const result = await testOpenAi(apiKey);
+        if (result.success && !(typeof config.model === "string" && config.model.trim())) {
+          return {
+            ...result,
+            message: "OpenAI API key is valid. Set a model name too — until then the platform default AI is used.",
+          };
+        }
+        return result;
+      }
+      if (integration.provider === "zai") {
+        return { success: true, message: "ZAI uses the platform's built-in credentials." };
+      }
       if (integration.provider === "manual") {
         return {
           success: true,
