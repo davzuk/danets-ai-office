@@ -72,6 +72,7 @@ const NAV_ITEMS: {
   { id: "tickets", label: "Support Tickets", icon: Ticket, hint: "Customer support" },
   { id: "quotes", label: "Quotes & Proposals", icon: FileText, hint: "AI proposal generator" },
   { id: "documents", label: "Document Assistant", icon: FileText, hint: "AI document Q&A" },
+  { id: "social", label: "Content Studio", icon: Sparkles, hint: "AI social posts" },
   { id: "media", label: "Media Library", icon: Images, hint: "Images & videos" },
   { id: "whatsapp", label: "WhatsApp", icon: MessageCircle, hint: "Templates & automation" },
   { id: "automations", label: "Automations", icon: Zap, hint: "Workflow builder" },

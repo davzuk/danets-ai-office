@@ -54,6 +54,7 @@ model Business {
   socialAccounts       SocialAccount[]
   metaLeadForms        MetaLeadForm[]
   mediaAssets          MediaAsset[]
+  contentPosts         ContentPost[]
   subscription         BusinessSubscription?
   payments             Payment[]
   invoices             Invoice[]
@@ -188,27 +189,27 @@ model AiPromptTemplate {
 // ─── Chat & Leads ──────────────────────────────────────────────────
 
 model ChatSession {
-  id           String   @id @default(cuid())
-  businessId   String
-  agentId      String?
-  visitorName  String?
-  visitorEmail String?
-  visitorPhone String?
-  visitorId    String? // anonymous browser id
-  contactId    String?
-  status       String   @default("active") // active | ended | handover
-  summary      String?  @db.Text
-  leadQuality  String? // low | medium | high
-  nextAction   String?  @db.Text
+  id               String    @id @default(cuid())
+  businessId       String
+  agentId          String?
+  visitorName      String?
+  visitorEmail     String?
+  visitorPhone     String?
+  visitorId        String? // anonymous browser id
+  contactId        String?
+  status           String    @default("active") // active | ended | handover
+  summary          String?   @db.Text
+  leadQuality      String? // low | medium | high
+  nextAction       String?   @db.Text
   // Social inbox (Phase 1 H). Widget chats keep the defaults.
-  channel          String         @default("widget") // widget | messenger | instagram_dm | facebook_comment | instagram_comment
+  channel          String    @default("widget") // widget | messenger | instagram_dm | facebook_comment | instagram_comment
   socialAccountId  String?
-  externalThreadId String?        @db.VarChar(191) // PSID / IGSID for DMs, root comment id for comment threads
+  externalThreadId String?   @db.VarChar(191) // PSID / IGSID for DMs, root comment id for comment threads
   threadMeta       Json? // comment threads: { postId, mediaId, permalink, postText }
   lastInboundAt    DateTime? // drives Meta's 24-hour messaging window
-  autoReplyPaused  Boolean        @default(false) // a human took over
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  autoReplyPaused  Boolean   @default(false) // a human took over
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   business       Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
   agent          AiAgent?        @relation(fields: [agentId], references: [id], onDelete: SetNull)
@@ -1534,4 +1535,47 @@ model MediaAsset {
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId, createdAt])
+}
+
+// AI Content Studio (Phase 1 J): one brief, fanned out to per-platform copy.
+model ContentPost {
+  id           String    @id @default(cuid())
+  businessId   String
+  title        String? // short label for lists; defaults to the start of the brief
+  brief        String    @db.Text
+  goal         String? // awareness | engagement | leads | promotion
+  toneTweak    String? // free-text nudge, e.g. "more playful"
+  campaignTag  String? // free text now; becomes a Campaign relation in Phase 4
+  sourceType   String? // kb_article | lead_question (repurposed from)
+  sourceId     String?
+  status       String    @default("draft") // draft | in_review | approved | archived
+  createdById  String?
+  approvedById String?
+  approvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  business Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  variants PostVariant[]
+
+  @@index([businessId, updatedAt])
+}
+
+model PostVariant {
+  id            String   @id @default(cuid())
+  postId        String
+  platform      String // facebook | instagram | linkedin | x | tiktok
+  body          String   @db.Text
+  hashtags      Json? // string[], without the leading #
+  mediaIds      Json? // MediaAsset ids, in order
+  linkUrl       String?  @db.Text
+  imagePrompt   String?  @db.Text // suggested visual, for designers or image AI
+  aiGenerated   Boolean  @default(true)
+  editedByHuman Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  post ContentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, platform])
 }

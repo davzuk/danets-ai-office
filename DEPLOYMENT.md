@@ -168,6 +168,16 @@ With **Inbox** switched on for a Page or Instagram account, Messenger and Instag
 - The storage check runs per file, so two uploads at the same moment can overshoot the quota by up to one file each.
 - Deleting a workspace from the platform console deletes its files from storage too.
 
+## Content Studio
+
+**Content Studio** (sidebar, Social Media module: Starter plan and up, behind the `social_hub` feature flag) turns one brief into ready-to-post copy for Facebook, Instagram, LinkedIn, X and TikTok. The flag is created switched off by the `content_studio` migration; turn it on in the platform console (globally or per tenant).
+
+- Generation uses the `content` AI task with the tenant's Brand Voice and the most relevant knowledge base articles. The prompt forbids inventing prices, offers, statistics or testimonials.
+- Every variant is checked against its platform's limits (Instagram 2,200 characters and 30 hashtags with no clickable links, LinkedIn 3,000, X 280 weighted with links counted as 23, and so on) and against the Brand Voice's "Never say" phrases. Failing variants are sent back to the model once. Anything still failing is fixed mechanically (offending sentences and hashtags removed, text trimmed, Instagram links replaced with "link in bio"), so a banned phrase or an over-limit post is never returned.
+- Each AI call (including the one re-ask) is logged as `content_generate` and counts against the monthly AI quota; the Studio shows the credits left.
+- Posts move through *draft* → *in review* → *approved*. Anyone can draft and send for approval; only admins approve. Editing or regenerating approved copy puts it back to draft. Approvals are recorded in the activity log. Scheduling and publishing come with the content calendar.
+- "Start from…" repurposes a knowledge base article or a question from a lead (the question only, never the lead's details).
+
 ## Contacts and lead attribution
 
 Every widget chat, lead and ticket is linked to a unified **Contact** (matched by email, phone or the widget's visitor id), and the widget records where the visitor came from as **touchpoints**: UTM tags, ad click ids (`gclid`, `msclkid`, `fbclid`, `li_fat_id`, …) and the referrer. A lead's **Source** is the channel of its first touch (`organic_search`, `paid_search`, `social_organic`, `social_paid`, `email`, `referral`, `direct`, `whatsapp`); leads from clients that send no attribution keep `chatbot`. Lead detail → **Journey** shows the timeline; Analytics → **Leads by Channel** charts it.

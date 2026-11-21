@@ -50,6 +50,10 @@ const WhatsAppView = dynamic(
   () => import("@/components/dashboard/views/whatsapp-view").then((m) => m.WhatsAppView),
   { ssr: false }
 );
+const ContentStudioView = dynamic(
+  () => import("@/components/dashboard/views/content-studio-view").then((m) => m.ContentStudioView),
+  { ssr: false }
+);
 const MediaView = dynamic(
   () => import("@/components/dashboard/views/media-library").then((m) => m.MediaView),
   { ssr: false }
@@ -186,6 +190,7 @@ export default function AppHome() {
       case "quotes": return <QuotesView user={user} />;
       case "tickets": return <TicketsView user={user} />;
       case "documents": return <DocumentsView user={user} />;
+      case "social": return <ContentStudioView user={user} />;
       case "media": return <MediaView user={user} />;
       case "whatsapp": return <WhatsAppView user={user} />;
       case "automations": return <AutomationsView user={user} />;

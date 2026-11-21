@@ -14,6 +14,14 @@ export function GET(req: NextRequest) {
   return withSession(async (user) => {
     const kind = req.nextUrl.searchParams.get("kind");
     const cursor = req.nextUrl.searchParams.get("cursor");
+    const ids = req.nextUrl.searchParams.get("ids");
+    if (ids) {
+      // Look up specific items (e.g. media attached to a post), in the order asked.
+      const wanted = ids.split(",").filter(Boolean).slice(0, 50);
+      const rows = await db.mediaAsset.findMany({ where: { businessId: user.businessId, id: { in: wanted } } });
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      return { items: wanted.flatMap((id) => (byId.has(id) ? [toPublicMedia(byId.get(id)!)] : [])) };
+    }
     const [rows, usage] = await Promise.all([
       db.mediaAsset.findMany({
         where: { businessId: user.businessId, ...(kind === "image" || kind === "video" ? { kind } : {}) },
