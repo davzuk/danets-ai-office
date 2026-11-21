@@ -161,10 +161,16 @@ export async function saveMedia(input: UploadInput): Promise<MediaAsset> {
   }
 }
 
+/** Instagram only takes JPEG; PNG/WebP/GIF images get a JPEG copy here when published. */
+export function derivedJpegKey(row: Pick<MediaAsset, "id" | "businessId">) {
+  return `${row.businessId}/derived/${row.id}.jpg`;
+}
+
 /** Remove the file, then the row. A missing file doesn't block deleting the row. */
-export async function deleteMedia(row: Pick<MediaAsset, "id" | "storageKey">) {
+export async function deleteMedia(row: Pick<MediaAsset, "id" | "storageKey" | "businessId" | "mimeType">) {
   try {
     await getStorage().delete(row.storageKey);
+    if (row.mimeType !== "image/jpeg") await getStorage().delete(derivedJpegKey(row)).catch(() => {});
   } catch (e) {
     logger.warn("Media file delete failed; removing the record anyway", { mediaId: row.id, ...serializeError(e) });
   }
@@ -181,11 +187,12 @@ export async function purgeBusinessMedia(businessId: string): Promise<number> {
       where: { businessId, ...(afterId ? { id: { gt: afterId } } : {}) },
       orderBy: { id: "asc" },
       take: 200,
-      select: { id: true, storageKey: true },
+      select: { id: true, storageKey: true, businessId: true, mimeType: true },
     });
     if (rows.length === 0) break;
     for (const r of rows) {
       await storage.delete(r.storageKey).catch((e) => logger.warn("Media purge: file delete failed", { mediaId: r.id, ...serializeError(e) }));
+      if (r.mimeType.startsWith("image/") && r.mimeType !== "image/jpeg") await storage.delete(derivedJpegKey(r)).catch(() => {});
       removed++;
     }
     afterId = rows[rows.length - 1].id;

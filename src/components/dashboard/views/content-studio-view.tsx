@@ -6,6 +6,8 @@ import {
   AlertTriangle,
   Archive,
   BookOpen,
+  CalendarClock,
+  CalendarDays,
   Check,
   ChevronDown,
   Eye,
@@ -63,6 +65,16 @@ import {
   type VariantIssue,
 } from "@/lib/content/platforms";
 import { cn } from "@/lib/utils";
+import { PlatformDot, api, errMsg } from "@/components/dashboard/views/content-shared";
+import {
+  ContentCalendar,
+  PostSchedules,
+  ScheduleDialog,
+  usePublishSettings,
+  type PublishSettings,
+  type Schedule,
+} from "@/components/dashboard/views/content-calendar";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 // ─── Types ─────────────────────────────────────────────────────────────
 
@@ -132,14 +144,6 @@ const STATUS_STYLE: Record<string, string> = {
   archived: "bg-muted text-muted-foreground line-through",
 };
 
-const PLATFORM_COLOR: Record<ContentPlatform, string> = {
-  facebook: "bg-[#1877F2]",
-  instagram: "bg-gradient-to-br from-[#F58529] via-[#DD2A7B] to-[#8134AF]",
-  linkedin: "bg-[#0A66C2]",
-  x: "bg-black dark:bg-white dark:text-black",
-  tiktok: "bg-black",
-};
-
 const GOAL_LABEL: Record<string, string> = {
   awareness: "Awareness",
   engagement: "Engagement",
@@ -150,35 +154,6 @@ const GOAL_LABEL: Record<string, string> = {
 const LANGUAGES = ["English", "French", "Spanish", "Portuguese", "German", "Arabic", "Yoruba", "Hausa", "Igbo", "Swahili"];
 
 // ─── Helpers ───────────────────────────────────────────────────────────
-
-async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    ...init,
-    headers: init?.body ? { "Content-Type": "application/json", ...init?.headers } : init?.headers,
-    cache: "no-store",
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || "Something went wrong");
-  return data as T;
-}
-
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong");
-
-function PlatformDot({ platform, className }: { platform: ContentPlatform | string; className?: string }) {
-  const p = platform as ContentPlatform;
-  return (
-    <span
-      className={cn(
-        "inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold uppercase text-white",
-        PLATFORM_COLOR[p] ?? "bg-muted",
-        className
-      )}
-      title={PLATFORM_RULES[p]?.label ?? platform}
-    >
-      {p === "linkedin" ? "in" : p === "tiktok" ? "tt" : String(platform).slice(0, 1)}
-    </span>
-  );
-}
 
 function StatusBadge({ status }: { status: string }) {
   return <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", STATUS_STYLE[status])}>{STATUS_LABEL[status] ?? status}</span>;
@@ -203,6 +178,9 @@ export function ContentStudioView({ user }: { user: Viewer }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [post, setPost] = useState<Post | null>(null);
   const [loadingPost, setLoadingPost] = useState(false);
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [tab, setTab] = useState<"posts" | "calendar">("posts");
+  const { settings } = usePublishSettings();
 
   const loadList = useCallback(async () => {
     try {
@@ -228,8 +206,9 @@ export function ContentStudioView({ user }: { user: Viewer }) {
     if (!id) return setPost(null);
     setLoadingPost(true);
     try {
-      const data = await api<{ post: Post }>(`/api/content-posts/${id}`);
+      const data = await api<{ post: Post; schedules: Schedule[] }>(`/api/content-posts/${id}`);
       setPost(data.post);
+      setSchedules(data.schedules);
     } catch (e) {
       toast.error(errMsg(e));
       setSelectedId(null);
@@ -238,14 +217,30 @@ export function ContentStudioView({ user }: { user: Viewer }) {
     }
   }, []);
 
+  /** Re-read the open post with its schedules (after scheduling, approving, cancelling). */
+  const refreshPost = useCallback(async () => {
+    if (!selectedId) return;
+    try {
+      const data = await api<{ post: Post; schedules: Schedule[] }>(`/api/content-posts/${selectedId}`);
+      setPost(data.post);
+      setSchedules(data.schedules);
+      loadList();
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  }, [selectedId, loadList]);
+
   /** Any server response that returns the post updates the editor and the list. */
   const applyPost = useCallback(
     (p: Post) => {
       setPost(p);
+      if (p.id !== selectedId) setSchedules([]);
       setSelectedId(p.id);
       loadList();
+      // Approving promotes waiting schedules; pick up their new state.
+      api<{ schedules: Schedule[] }>(`/api/content-posts/${p.id}`).then((d) => setSchedules(d.schedules), () => {});
     },
-    [loadList]
+    [loadList, selectedId]
   );
 
   return (
@@ -266,12 +261,23 @@ export function ContentStudioView({ user }: { user: Viewer }) {
               {credits.remaining.toLocaleString()} of {credits.limit.toLocaleString()} AI credits left this month
             </span>
           )}
-          <Button size="sm" onClick={() => openPost(null)}>
+          <ToggleGroup type="single" size="sm" variant="outline" value={tab} onValueChange={(v) => v && setTab(v as "posts" | "calendar")}>
+            <ToggleGroupItem value="posts" className="px-3 text-xs">
+              <PenLine className="size-3.5" /> Posts
+            </ToggleGroupItem>
+            <ToggleGroupItem value="calendar" className="px-3 text-xs">
+              <CalendarDays className="size-3.5" /> Calendar
+            </ToggleGroupItem>
+          </ToggleGroup>
+          <Button size="sm" onClick={() => { setTab("posts"); openPost(null); }}>
             <Plus className="size-4" /> New post
           </Button>
         </div>
       </div>
 
+      {tab === "calendar" ? (
+        <ContentCalendar viewer={user} onOpenPost={(id) => { setTab("posts"); openPost(id); }} />
+      ) : (
       <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
         {/* Post list */}
         <Card className="p-0 overflow-hidden h-fit">
@@ -333,12 +339,23 @@ export function ContentStudioView({ user }: { user: Viewer }) {
               <Skeleton className="h-40" />
             </Card>
           ) : post && selectedId ? (
-            <PostEditor key={post.id} post={post} viewer={user} canApprove={canApprove} onChange={applyPost} onDeleted={() => { setSelectedId(null); setPost(null); loadList(); }} />
+            <PostEditor
+              key={post.id}
+              post={post}
+              viewer={user}
+              canApprove={canApprove}
+              schedules={schedules}
+              settings={settings}
+              onChange={applyPost}
+              onScheduled={refreshPost}
+              onDeleted={() => { setSelectedId(null); setPost(null); setSchedules([]); loadList(); }}
+            />
           ) : (
             <BriefForm onCreated={applyPost} />
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }
@@ -539,15 +556,22 @@ function PostEditor({
   post,
   viewer,
   canApprove,
+  schedules,
+  settings,
   onChange,
+  onScheduled,
   onDeleted,
 }: {
   post: Post;
   viewer: Viewer;
   canApprove: boolean;
+  schedules: Schedule[];
+  settings: PublishSettings | null;
   onChange: (p: Post) => void;
+  onScheduled: () => void;
   onDeleted: () => void;
 }) {
+  const [scheduling, setScheduling] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [editingBrief, setEditingBrief] = useState(false);
   const [brief, setBrief] = useState(post.brief);
@@ -634,6 +658,11 @@ function PostEditor({
                 <Undo2 className="size-4" /> Back to draft
               </Button>
             )}
+            {post.status !== "archived" && post.variants.length > 0 && (
+              <Button size="sm" variant={post.status === "approved" ? "default" : "outline"} onClick={() => setScheduling(true)} disabled={!!busy || errors.length === post.variants.length}>
+                <CalendarClock className="size-4" /> Schedule
+              </Button>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button size="sm" variant="ghost" disabled={!!busy}>
@@ -704,9 +733,7 @@ function PostEditor({
             <Loader2 className="size-3.5 animate-spin" /> Rewriting every platform from the brief…
           </p>
         )}
-        {post.status === "approved" && (
-          <p className="text-xs text-muted-foreground">Approved. Scheduling and publishing arrive with the content calendar.</p>
-        )}
+        <PostSchedules schedules={schedules} tz={settings?.timezone ?? "UTC"} viewer={viewer} onChanged={onScheduled} />
       </Card>
 
       <div className="grid gap-4 xl:grid-cols-2">
@@ -732,6 +759,8 @@ function PostEditor({
           ))}
         </div>
       )}
+
+      <ScheduleDialog open={scheduling} onOpenChange={setScheduling} post={post} settings={settings} viewer={viewer} onScheduled={onScheduled} />
 
       <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <DialogContent className="sm:max-w-md">

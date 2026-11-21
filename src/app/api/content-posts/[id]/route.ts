@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
 import { logActivity, createNotification } from "@/lib/activity";
 import { assertTransition, findOwnPost, loadPublicPost, parseBody, titleFromBrief, updatePostSchema } from "@/lib/content/posts";
+import { assertPostDeletable, cancelPostSchedules, listSchedules, promoteApprovedPost } from "@/lib/content/schedule";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -10,7 +11,8 @@ type Ctx = { params: Promise<{ id: string }> };
 export function GET(_req: NextRequest, { params }: Ctx) {
   return withSession(async (user) => {
     const { id } = await params;
-    return { post: await loadPublicPost(user.businessId, id) };
+    const [post, schedules] = await Promise.all([loadPublicPost(user.businessId, id), listSchedules(user.businessId, { postId: id })]);
+    return { post, schedules };
   });
 }
 
@@ -38,6 +40,9 @@ export function PATCH(req: NextRequest, { params }: Ctx) {
           : {}),
       },
     });
+
+    if (to === "approved" && before.status !== "approved") await promoteApprovedPost(user.businessId, id, user.userId);
+    if (to === "archived" && before.status !== "archived") await cancelPostSchedules(id);
 
     if (to && to !== before.status) {
       const title = before.title || titleFromBrief(before.brief);
@@ -72,6 +77,7 @@ export function DELETE(_req: NextRequest, { params }: Ctx) {
     const { id } = await params;
     const post = await findOwnPost(user.businessId, id);
     if (user.role !== "admin" && post.createdById !== user.userId) throw new Error("FORBIDDEN");
+    await assertPostDeletable(post.id);
     await db.contentPost.delete({ where: { id: post.id } });
     return { ok: true };
   });

@@ -4,6 +4,7 @@ import { withSession } from "@/lib/api";
 import { AppError } from "@/lib/app-error";
 import { isContentPlatform } from "@/lib/content/platforms";
 import { findOwnPost, loadPublicPost, parseBody, updateVariantSchema, validateMediaIds, variantUpdateData } from "@/lib/content/posts";
+import { assertVariantRemovable } from "@/lib/content/schedule";
 
 type Ctx = { params: Promise<{ id: string; platform: string }> };
 
@@ -53,6 +54,7 @@ export function PATCH(req: NextRequest, ctx: Ctx) {
 export function DELETE(_req: NextRequest, ctx: Ctx) {
   return withSession(async (user) => {
     const { post, variant } = await resolve(user.businessId, ctx.params);
+    if (variant) await assertVariantRemovable(variant.id);
     if (variant) await db.postVariant.delete({ where: { id: variant.id } });
     return { post: await loadPublicPost(user.businessId, post.id) };
   });

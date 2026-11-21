@@ -23,6 +23,8 @@ model Business {
   plan             String    @default("free") // free | starter | pro | enterprise
   status           String    @default("active") // active | suspended | deleted
   enforce2fa       Boolean   @default(false) // require 2FA for all members of this business
+  timezone         String    @default("UTC") // IANA zone; the content calendar shows times in it
+  contentApproval  String    @default("auto") // auto | none | admins_approve | always
   deletedAt        DateTime?
   purgeScheduledAt DateTime?
   createdAt        DateTime  @default(now())
@@ -55,6 +57,7 @@ model Business {
   metaLeadForms        MetaLeadForm[]
   mediaAssets          MediaAsset[]
   contentPosts         ContentPost[]
+  scheduledPosts       ScheduledPost[]
   subscription         BusinessSubscription?
   payments             Payment[]
   invoices             Invoice[]
@@ -1463,10 +1466,11 @@ model SocialAccount {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  business   Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  connection OAuthConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
-  leadForms  MetaLeadForm[]
-  sessions   ChatSession[]
+  business       Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  connection     OAuthConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  leadForms      MetaLeadForm[]
+  sessions       ChatSession[]
+  scheduledPosts ScheduledPost[]
 
   @@unique([platform, externalId])
   @@index([businessId])
@@ -1575,7 +1579,41 @@ model PostVariant {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  post ContentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  post           ContentPost     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  scheduledPosts ScheduledPost[]
 
   @@unique([postId, platform])
+}
+
+// Calendar and publishing (Phase 1 K): one variant going to one account at
+// one time. Manual platforms (X, TikTok, LinkedIn until it's connected) have
+// no account: at the scheduled time the team is reminded to post by hand.
+model ScheduledPost {
+  id              String    @id @default(cuid())
+  businessId      String
+  variantId       String
+  socialAccountId String?
+  scheduledFor    DateTime
+  status          String    @default("scheduled") // pending_approval | scheduled | publishing | published | failed | cancelled | manual_due
+  approvedById    String?
+  approvedAt      DateTime?
+  createdById     String?
+  jobId           String? // queue job that publishes it
+  containerId     String? // Instagram media container, reused across retries
+  externalPostId  String?
+  permalink       String?   @db.Text
+  publishedAt     DateTime?
+  attempts        Int       @default(0)
+  lastError       String?   @db.Text
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  business      Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  variant       PostVariant    @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  socialAccount SocialAccount? @relation(fields: [socialAccountId], references: [id], onDelete: SetNull)
+
+  @@index([businessId, scheduledFor])
+  @@index([status, scheduledFor])
+  @@index([variantId])
+  @@index([socialAccountId])
 }

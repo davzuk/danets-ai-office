@@ -175,8 +175,17 @@ With **Inbox** switched on for a Page or Instagram account, Messenger and Instag
 - Generation uses the `content` AI task with the tenant's Brand Voice and the most relevant knowledge base articles. The prompt forbids inventing prices, offers, statistics or testimonials.
 - Every variant is checked against its platform's limits (Instagram 2,200 characters and 30 hashtags with no clickable links, LinkedIn 3,000, X 280 weighted with links counted as 23, and so on) and against the Brand Voice's "Never say" phrases. Failing variants are sent back to the model once. Anything still failing is fixed mechanically (offending sentences and hashtags removed, text trimmed, Instagram links replaced with "link in bio"), so a banned phrase or an over-limit post is never returned.
 - Each AI call (including the one re-ask) is logged as `content_generate` and counts against the monthly AI quota; the Studio shows the credits left.
-- Posts move through *draft* → *in review* → *approved*. Anyone can draft and send for approval; only admins approve. Editing or regenerating approved copy puts it back to draft. Approvals are recorded in the activity log. Scheduling and publishing come with the content calendar.
+- Posts move through *draft* → *in review* → *approved*. Anyone can draft and send for approval; only admins approve. Editing or regenerating approved copy puts it back to draft. Approvals are recorded in the activity log.
 - "Start from…" repurposes a knowledge base article or a question from a lead (the question only, never the lead's details).
+
+### Calendar and publishing
+
+Content Studio → **Calendar** shows scheduled posts by month or week in the tenant's time zone (phones get a list). Drag a post to another day to move it; the time of day is kept. **Schedule** on a post picks, per platform, a connected account or "post by hand", and a time (or *Publish now*).
+
+- **Automatic publishing:** Facebook Pages and Instagram business accounts connected under Settings → Connections with *Publishing* on. LinkedIn, X and TikTok (and any platform without a connected account) become reminders: at the time, the team is notified, copies the text from the calendar and clicks *Mark posted*.
+- Each scheduled post queues a `social.publish` job for its time, so **a worker or the `/api/cron/jobs` cron must be running** (see Background jobs). Throttling and Meta outages retry with backoff (5 attempts); a revoked token marks the account as needing reconnection and fails the post with a notification; content Meta rejects fails straight away with Meta's reason. A run interrupted mid-publish is marked failed rather than retried, so nothing posts twice.
+- **Media must be at a public URL** Meta can fetch: use `STORAGE_DRIVER=s3` (or local storage behind a public `NEXT_PUBLIC_APP_URL`). Instagram needs at least one image or video, images between 4:5 and 1.91:1, and at most 25 posts per account per 24 hours; non-JPEG images are converted to a JPEG copy stored next to the original.
+- **Approval policy and time zone:** Calendar → Settings (admins). *Automatic* (default) needs approval only when the workspace has more than one person; *Admins approve members' posts*; *Every post needs approval*; or *No approval*. A post scheduled before approval waits on the calendar and goes out when an admin approves it (straight away if its time has passed). Editing approved copy sends it back for approval; due posts that aren't approved are held, not published.
 
 ## Contacts and lead attribution
 

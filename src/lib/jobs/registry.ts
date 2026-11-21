@@ -7,6 +7,7 @@ import { metaCommentJob, metaMessageJob } from "./handlers/meta-events";
 import { metaLeadgenJob, metaLeadgenPollJob } from "./handlers/meta-leadgen";
 import { metaWebhookJob } from "./handlers/meta-webhook";
 import { purgeJobsJob } from "./handlers/purge-jobs";
+import { socialPublishJob } from "./handlers/social-publish";
 import { socialSubscribeJob } from "./handlers/social-subscribe";
 
 const definitions: JobDefinition[] = [
@@ -20,6 +21,7 @@ const definitions: JobDefinition[] = [
   metaCommentJob,
   brandGenerateJob,
   socialSubscribeJob,
+  socialPublishJob,
 ];
 
 const byType = new Map<string, JobDefinition>();
