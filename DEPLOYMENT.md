@@ -182,10 +182,23 @@ With **Inbox** switched on for a Page or Instagram account, Messenger and Instag
 
 Content Studio → **Calendar** shows scheduled posts by month or week in the tenant's time zone (phones get a list). Drag a post to another day to move it; the time of day is kept. **Schedule** on a post picks, per platform, a connected account or "post by hand", and a time (or *Publish now*).
 
-- **Automatic publishing:** Facebook Pages and Instagram business accounts connected under Settings → Connections with *Publishing* on. LinkedIn, X and TikTok (and any platform without a connected account) become reminders: at the time, the team is notified, copies the text from the calendar and clicks *Mark posted*.
+- **Automatic publishing:** Facebook Pages, Instagram business accounts and LinkedIn Pages connected under Settings → Connections with *Publishing* on. X and TikTok (and any platform without a connected account) become reminders: at the time, the team is notified, copies the text from the calendar and clicks *Mark posted*.
 - Each scheduled post queues a `social.publish` job for its time, so **a worker or the `/api/cron/jobs` cron must be running** (see Background jobs). Throttling and Meta outages retry with backoff (5 attempts); a revoked token marks the account as needing reconnection and fails the post with a notification; content Meta rejects fails straight away with Meta's reason. A run interrupted mid-publish is marked failed rather than retried, so nothing posts twice.
-- **Media must be at a public URL** Meta can fetch: use `STORAGE_DRIVER=s3` (or local storage behind a public `NEXT_PUBLIC_APP_URL`). Instagram needs at least one image or video, images between 4:5 and 1.91:1, and at most 25 posts per account per 24 hours; non-JPEG images are converted to a JPEG copy stored next to the original.
+- **Media for Facebook and Instagram must be at a public URL** Meta can fetch (LinkedIn is sent the file itself): use `STORAGE_DRIVER=s3` (or local storage behind a public `NEXT_PUBLIC_APP_URL`). Instagram needs at least one image or video, images between 4:5 and 1.91:1, and at most 25 posts per account per 24 hours; non-JPEG images are converted to a JPEG copy stored next to the original.
 - **Approval policy and time zone:** Calendar → Settings (admins). *Automatic* (default) needs approval only when the workspace has more than one person; *Admins approve members' posts*; *Every post needs approval*; or *No approval*. A post scheduled before approval waits on the calendar and goes out when an admin approves it (straight away if its time has passed). Editing approved copy sends it back for approval; due posts that aren't approved are held, not published.
+
+## LinkedIn
+
+Tenants connect LinkedIn under Integrations; every Page the member administers becomes a LinkedIn Page account with *Publishing* and *Lead Ads* switches.
+
+1. Create an app at linkedin.com/developers, associated with Danets' verified LinkedIn Page. Add the redirect URL `{NEXT_PUBLIC_APP_URL}/api/connections/linkedin/callback` and set `LINKEDIN_CLIENT_ID` / `LINKEDIN_CLIENT_SECRET`.
+2. Add the **Sign In with LinkedIn using OpenID Connect** product, and apply for the **Community Management API** (Page posting: `w_organization_social`, `r_organization_social`, `rw_organization_admin`). Until it is approved only the app's developers can connect.
+3. Apply separately for the **Lead Sync API**. Once approved, set `LINKEDIN_LEAD_SYNC=true` (adds `r_marketing_leadgen_automation`) and have tenants reconnect.
+4. Keep `LINKEDIN_API_VERSION` (YYYYMM) current: LinkedIn retires versions about a year after release, and requests on a retired version fail.
+
+- **Tokens:** posts and lead reads use the connecting member's token. It lasts 60 days; apps approved for the Community Management API also get a 365-day refresh token, which the hourly `connections.refresh` job uses. Without one, tenants get the usual "reconnect" notice before expiry. If the member loses admin rights on a Page, reconnecting removes it.
+- **Publishing:** text, a link card, up to 20 images, or one video. Images and video are uploaded to LinkedIn directly, so local storage works.
+- **Lead Gen Forms:** with *Lead Ads* on, the `linkedin.leadgen-poll` job runs every 15 minutes (worker or cron required) and backfills 90 days the first time. Leads go through the same import as Meta lead ads: `externalRef = linkedin:<response id>`, an `ad_lead` touchpoint (`social_paid`, `li_fat_id` when the form passes it as a hidden field), merged by email, counted against the lead quota. Forms appear under Leads → Lead forms with the same field mapping. If LinkedIn refuses lead access, sync is switched off for that Page and the tenant is told why.
 
 ## Contacts and lead attribution
 

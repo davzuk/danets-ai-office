@@ -8,10 +8,13 @@ import { logger } from "@/lib/logger";
 import { approvalRequired, normalizePolicy } from "@/lib/content/approval";
 import { PLATFORM_RULES, composeText, type ContentPlatform } from "@/lib/content/platforms";
 import { socialAccountToken } from "@/lib/social/accounts";
+import { ConnectionUnavailableError, getAccessToken } from "@/lib/connections/tokens";
+import { OAuthGrantError } from "@/lib/connections/types";
 import { publishToFacebook } from "./facebook";
 import { publishToInstagram } from "./instagram";
+import { publishToLinkedIn, linkedinClient } from "./linkedin";
 import { PublishError, graphClient, type FetchLike } from "./meta-http";
-import { mediaForPlatform, unreachableMediaUrl } from "./media";
+import { mediaForPlatform, readMediaBytes, unreachableMediaUrl } from "./media";
 
 /** A job that fires earlier than this before the row's time is stale (the post was moved later). */
 export const EARLY_TOLERANCE_MS = 30_000;
@@ -64,6 +67,22 @@ export async function variantMedia(businessId: string, mediaIds: Prisma.JsonValu
   const rows = await db.mediaAsset.findMany({ where: { businessId, id: { in: ids } } });
   const byId = new Map(rows.map((r) => [r.id, r]));
   return ids.map((id) => byId.get(id)).filter((r): r is MediaAsset => !!r);
+}
+
+/**
+ * The token that publishes for an account: Meta Pages carry their own; LinkedIn
+ * Pages use the connected member's token (refreshed when it's close to expiry).
+ */
+async function publishToken(acct: NonNullable<ScheduledRow["socialAccount"]>): Promise<string> {
+  const own = socialAccountToken(acct);
+  if (own) return own;
+  if (acct.platform !== "linkedin_page") throw new PublishError("The saved access token can't be read.", "auth");
+  try {
+    return await getAccessToken(acct.connectionId, acct.businessId);
+  } catch (e) {
+    if (e instanceof ConnectionUnavailableError || e instanceof OAuthGrantError) throw new PublishError(e.message, "auth");
+    throw new PublishError((e as Error).message, "retry");
+  }
 }
 
 export interface RunOptions {
@@ -129,11 +148,12 @@ export async function runScheduledPost(scheduledPostId: string, opts: RunOptions
 
   const platform = row.variant.platform as ContentPlatform;
   try {
-    const token = socialAccountToken(acct);
-    if (!token) throw new PublishError("The saved access token can't be read.", "auth");
+    const token = await publishToken(acct);
 
-    const media = await mediaForPlatform(platform, await variantMedia(row.businessId, row.variant.mediaIds));
-    if (media.some((m) => unreachableMediaUrl(m.url))) {
+    const assets = await variantMedia(row.businessId, row.variant.mediaIds);
+    const media = await mediaForPlatform(platform, assets);
+    // Meta fetches media by URL; LinkedIn is sent the bytes.
+    if (platform !== "linkedin" && media.some((m) => unreachableMediaUrl(m.url))) {
       throw new PublishError(
         "Media is stored at a local address Meta can't fetch. Use S3 storage or a public NEXT_PUBLIC_APP_URL.",
         "content"
@@ -141,21 +161,31 @@ export async function runScheduledPost(scheduledPostId: string, opts: RunOptions
     }
     const hashtags = Array.isArray(row.variant.hashtags) ? row.variant.hashtags.filter((x): x is string => typeof x === "string") : [];
     const text = composeText(platform, { body: row.variant.body, hashtags, linkUrl: row.variant.linkUrl });
-    const client = graphClient(token, process.env, opts.fetchImpl);
     const input = { externalId: acct.externalId, text, linkUrl: row.variant.linkUrl, media, containerId: row.containerId };
 
-    const result =
-      platform === "facebook"
-        ? await publishToFacebook(client, input)
-        : platform === "instagram"
-          ? await publishToInstagram(client, input, {
-              onContainer: async (id) => {
-                await db.scheduledPost.update({ where: { id: row.id }, data: { containerId: id } });
-              },
-            })
-          : (() => {
-              throw new PublishError(`${label(platform)} can't be published automatically yet.`, "content");
-            })();
+    let result;
+    if (platform === "facebook") {
+      result = await publishToFacebook(graphClient(token, process.env, opts.fetchImpl), input);
+    } else if (platform === "instagram") {
+      result = await publishToInstagram(graphClient(token, process.env, opts.fetchImpl), input, {
+        onContainer: async (id) => {
+          await db.scheduledPost.update({ where: { id: row.id }, data: { containerId: id } });
+        },
+      });
+    } else if (platform === "linkedin") {
+      const byUrl = new Map(assets.map((a) => [a.url, a]));
+      result = await publishToLinkedIn(linkedinClient(token, process.env, opts.fetchImpl), {
+        ...input,
+        linkTitle: postTitle(row),
+        readMedia: async (m) => {
+          const asset = byUrl.get(m.url);
+          if (!asset) throw new PublishError("A media file is missing.", "content");
+          return new Uint8Array(await readMediaBytes(asset));
+        },
+      });
+    } else {
+      throw new PublishError(`${label(platform)} can't be published automatically yet.`, "content");
+    }
 
     await db.scheduledPost.update({
       where: { id: row.id },
@@ -183,6 +213,8 @@ export async function runScheduledPost(scheduledPostId: string, opts: RunOptions
     logger.warn("Social publish failed", { scheduledPostId: row.id, kind: err.kind, code: err.code, subcode: err.subcode, error: err.message });
 
     if (err.kind === "auth") {
+      // A LinkedIn Page shares the member's connection; the connection itself is
+      // marked by the token layer, the Page shows why its post failed.
       await db.socialAccount.update({
         where: { id: acct.id },
         data: { status: "error", lastError: `Publishing failed: ${err.message}`.slice(0, 2000) },

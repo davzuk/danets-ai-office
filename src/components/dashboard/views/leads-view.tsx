@@ -2353,7 +2353,7 @@ export function LeadsView({ user }: { user: UserProp }) {
                 size="sm"
                 onClick={() => setViewMode("forms")}
                 className="rounded-none gap-1.5 h-8"
-                title="Meta Lead Ads forms"
+                title="Facebook, Instagram and LinkedIn lead ad forms"
               >
                 <FileText size={14} />
                 <span className="hidden sm:inline">Lead forms</span>

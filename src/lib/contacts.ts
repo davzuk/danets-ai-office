@@ -7,7 +7,7 @@ import { logger } from "@/lib/logger";
  * identities (email, phone, widget visitor id, social platform ids).
  */
 
-export const IDENTITY_TYPES = ["visitor", "email", "phone", "whatsapp", "fb_psid", "ig_id", "linkedin", "meta_lead"] as const;
+export const IDENTITY_TYPES = ["visitor", "email", "phone", "whatsapp", "fb_psid", "ig_id", "linkedin", "meta_lead", "linkedin_lead"] as const;
 export type IdentityType = (typeof IDENTITY_TYPES)[number];
 
 /**

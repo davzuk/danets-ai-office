@@ -1,10 +1,12 @@
 import { googleProvider } from "./providers/google";
+import { linkedinProvider } from "./providers/linkedin";
 import { metaProvider } from "./providers/meta";
 import type { ConnectionProviderId, Env, ProviderDefinition } from "./types";
 
 const PROVIDERS: Record<ConnectionProviderId, ProviderDefinition> = {
   meta: metaProvider,
   google: googleProvider,
+  linkedin: linkedinProvider,
 };
 
 export function getConnectionProvider(id: string): ProviderDefinition | undefined {

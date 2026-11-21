@@ -33,13 +33,19 @@ export function PATCH(req: NextRequest, { params }: RouteCtx) {
     if (!row) throw new AppError("Account not found", { status: 404, code: "NOT_FOUND" });
 
     const data = { ...parsed.data };
-    // Lead Ads only exist on Facebook Pages.
-    if (row.platform !== "facebook_page" && data.leadSyncEnabled) {
-      throw new AppError("Lead sync is only available for Facebook Pages", { status: 400, code: "INVALID_REQUEST" });
+    // Lead ads exist on Facebook Pages (covering Instagram ads) and LinkedIn Pages.
+    if (row.platform !== "facebook_page" && row.platform !== "linkedin_page" && data.leadSyncEnabled) {
+      throw new AppError("Lead sync is available for Facebook and LinkedIn Pages", { status: 400, code: "INVALID_REQUEST" });
+    }
+    if (row.platform === "linkedin_page" && data.inboxEnabled) {
+      throw new AppError("LinkedIn Pages don't have an inbox in Danets", { status: 400, code: "INVALID_REQUEST" });
     }
     const updated = await db.socialAccount.update({ where: { id: row.id }, data });
     // Switching lead sync on lists the Page's forms and backfills the last 90 days.
-    if (data.leadSyncEnabled && !row.leadSyncEnabled && updated.status === "active") await queueLeadSync(updated);
+    if (data.leadSyncEnabled && !row.leadSyncEnabled && updated.status === "active") {
+      if (row.platform === "linkedin_page") await db.socialAccount.update({ where: { id: row.id }, data: { lastError: null } });
+      await queueLeadSync(updated);
+    }
     await logActivity({
       businessId: user.businessId,
       userId: user.userId,

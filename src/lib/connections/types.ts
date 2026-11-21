@@ -1,8 +1,8 @@
 // Shared types for OAuth connections. No runtime imports.
 
-export type ConnectionProviderId = "meta" | "google";
+export type ConnectionProviderId = "meta" | "google" | "linkedin";
 
-export const CONNECTION_PROVIDER_IDS: readonly ConnectionProviderId[] = ["meta", "google"];
+export const CONNECTION_PROVIDER_IDS: readonly ConnectionProviderId[] = ["meta", "google", "linkedin"];
 
 export type ConnectionStatus = "active" | "expired" | "revoked" | "error";
 

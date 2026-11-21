@@ -5,8 +5,8 @@ import type { Lead, MetaLeadForm, Prisma, SocialAccount } from "@prisma/client";
 import { db } from "@/lib/db";
 import { createNotification } from "@/lib/activity";
 import { fireTrigger } from "@/lib/automation";
-import { recordTouch, type Channel } from "@/lib/attribution";
-import { contactTouchBounds, normalizeEmail, normalizePhone, resolveContact } from "@/lib/contacts";
+import { recordTouch, type Channel, type TouchInput } from "@/lib/attribution";
+import { contactTouchBounds, normalizeEmail, normalizePhone, resolveContact, type IdentityType } from "@/lib/contacts";
 import { logger, serializeError } from "@/lib/logger";
 import { requireQuota } from "@/lib/plan-quota";
 import type { MetaFormData, MetaFormQuestion, MetaLeadData, MetaLeadFieldDatum } from "./meta-graph";
@@ -139,31 +139,73 @@ export type ImportResult =
   | { status: "merged"; leadId: string }
   | { status: "skipped"; reason: string };
 
-/**
- * Create the Lead for one Meta lead. Safe to call repeatedly with the same
- * lead: the externalRef unique index and the touch dedupe key make every
- * call after the first a no-op. Throws LimitExceededError when the plan's
- * lead quota is used up.
- */
+/** A lead-ad submission from any platform, normalised for import. */
+export interface AdLeadInput {
+  /** Platform lead id. */
+  id: string;
+  /** Lead.externalRef, e.g. "meta:<id>" or "linkedin:<id>". */
+  externalRef: string;
+  identityType: IdentityType;
+  /** Touchpoint dedupe key. */
+  touchKey: string;
+  fieldData: MetaLeadFieldDatum[] | undefined;
+  occurredAt: Date;
+  channel: Channel;
+  touch: TouchInput;
+  /** "Meta" / "LinkedIn": used in activity text and notifications. */
+  network: string;
+  /** Form id when the form row is unknown. */
+  formRef: string | null;
+  metadata: Record<string, unknown>;
+}
+
+/** Create the Lead for one Meta lead (see importAdLead). */
 export async function importMetaLead(
   account: Pick<SocialAccount, "id" | "businessId" | "name">,
   form: FormRow | null,
   data: MetaLeadData
 ): Promise<ImportResult> {
+  const { channel, touch } = metaLeadTouch(data);
+  return importAdLead(account, form, {
+    id: data.id,
+    externalRef: metaLeadRef(data.id),
+    identityType: "meta_lead",
+    touchKey: `meta-lead:${data.id}`,
+    fieldData: data.field_data,
+    occurredAt: data.created_time && !Number.isNaN(Date.parse(data.created_time)) ? new Date(data.created_time) : new Date(),
+    channel,
+    touch,
+    network: "Meta",
+    formRef: data.form_id ?? null,
+    metadata: { leadgenId: data.id, formId: data.form_id, adName: data.ad_name, campaignName: data.campaign_name },
+  });
+}
+
+/**
+ * Create the Lead for one ad-lead submission. Safe to call repeatedly with
+ * the same lead: the externalRef unique index and the touch dedupe key make
+ * every call after the first a no-op. Throws LimitExceededError when the
+ * plan's lead quota is used up.
+ */
+export async function importAdLead(
+  account: Pick<SocialAccount, "id" | "businessId" | "name">,
+  form: FormRow | null,
+  input: AdLeadInput
+): Promise<ImportResult> {
   if (form && !form.enabled) return { status: "skipped", reason: "form_disabled" };
   const businessId = account.businessId;
-  const externalRef = metaLeadRef(data.id);
+  const externalRef = input.externalRef;
 
   const already = await db.lead.findUnique({ where: { businessId_externalRef: { businessId, externalRef } }, select: { id: true } });
   if (already) return { status: "duplicate", leadId: already.id };
 
-  const mapped = mapLeadFields(data.field_data, form?.fieldMapping as FieldMapping | null, form?.questions as MetaFormQuestion[] | null);
-  const occurredAt = data.created_time && !Number.isNaN(Date.parse(data.created_time)) ? new Date(data.created_time) : new Date();
-  const { channel, touch } = metaLeadTouch(data);
+  const mapped = mapLeadFields(input.fieldData, form?.fieldMapping as FieldMapping | null, form?.questions as MetaFormQuestion[] | null);
+  const occurredAt = input.occurredAt;
+  const { channel, touch } = input;
 
   const resolved = await resolveContact({
     businessId,
-    identities: [{ type: "meta_lead", value: data.id }],
+    identities: [{ type: input.identityType, value: input.id }],
     profile: { name: mapped.name, email: mapped.email, phone: mapped.phone, company: mapped.company },
     now: occurredAt,
   });
@@ -175,7 +217,7 @@ export async function importMetaLead(
     touch,
     contactId,
     occurredAt,
-    dedupeKey: `meta-lead:${data.id}`,
+    dedupeKey: input.touchKey,
   });
   const firstTouch = contactId ? ((await contactTouchBounds(contactId)).first ?? adTouch) : adTouch;
 
@@ -187,7 +229,7 @@ export async function importMetaLead(
       select: { id: true, contactId: true },
     });
     if (existing) {
-      await noteRepeatSubmission(existing.id, businessId, contactId, adTouch.id, form, data);
+      await noteRepeatSubmission(existing.id, businessId, contactId, adTouch.id, form, input);
       return { status: "merged", leadId: existing.id };
     }
   }
@@ -199,7 +241,7 @@ export async function importMetaLead(
     lead = await db.lead.create({
       data: {
         businessId,
-        name: mapped.name || mapped.email || mapped.phone || "Meta lead",
+        name: mapped.name || mapped.email || mapped.phone || `${input.network} lead`,
         email: mapped.email,
         phone: mapped.phone,
         company: mapped.company,
@@ -224,7 +266,7 @@ export async function importMetaLead(
       });
       if (winner?.externalRef === externalRef) return { status: "duplicate", leadId: winner.id };
       if (winner) {
-        await noteRepeatSubmission(winner.id, businessId, contactId, adTouch.id, form, data);
+        await noteRepeatSubmission(winner.id, businessId, contactId, adTouch.id, form, input);
         return { status: "merged", leadId: winner.id };
       }
     }
@@ -236,8 +278,8 @@ export async function importMetaLead(
       leadId: lead.id,
       businessId,
       type: "lead_created",
-      description: `Captured from Meta lead form "${form?.name ?? data.form_id ?? "unknown"}" on ${account.name}`,
-      metadata: JSON.stringify({ leadgenId: data.id, formId: data.form_id, adName: data.ad_name, campaignName: data.campaign_name }),
+      description: `Captured from ${input.network} lead form "${form?.name ?? input.formRef ?? "unknown"}" on ${account.name}`,
+      metadata: JSON.stringify(input.metadata),
     },
   });
   if (form) {
@@ -246,7 +288,7 @@ export async function importMetaLead(
       data: { leadsImported: { increment: 1 }, lastLeadAt: occurredAt },
     });
   }
-  await afterLeadCreated(lead);
+  await afterLeadCreated(lead, input.network);
   return { status: "created", lead };
 }
 
@@ -256,7 +298,7 @@ async function noteRepeatSubmission(
   contactId: string | null,
   touchId: string,
   form: FormRow | null,
-  data: MetaLeadData
+  input: AdLeadInput
 ) {
   await db.lead.update({
     where: { id: leadId },
@@ -267,18 +309,18 @@ async function noteRepeatSubmission(
       leadId,
       businessId,
       type: "lead_updated",
-      description: `Submitted Meta lead form "${form?.name ?? data.form_id ?? "unknown"}" again`,
-      metadata: JSON.stringify({ leadgenId: data.id, formId: data.form_id, adName: data.ad_name }),
+      description: `Submitted ${input.network} lead form "${form?.name ?? input.formRef ?? "unknown"}" again`,
+      metadata: JSON.stringify(input.metadata),
     },
   });
 }
 
-async function afterLeadCreated(lead: Lead) {
+async function afterLeadCreated(lead: Lead, network: string) {
   const high = lead.quality === "high";
   await createNotification({
     businessId: lead.businessId,
     type: high ? "high_quality_lead" : "new_lead",
-    title: high ? "High quality lead from Meta Lead Ads" : "New lead from Meta Lead Ads",
+    title: high ? `High quality lead from ${network} Lead Ads` : `New lead from ${network} Lead Ads`,
     message: `${lead.name}${lead.service ? ` — ${lead.service}` : ""} (${lead.quality} quality)`,
     data: { leadId: lead.id, quality: lead.quality, source: lead.source },
   });
@@ -287,6 +329,6 @@ async function afterLeadCreated(lead: Lead) {
     const { scoreLead } = await import("@/lib/ai-scoring");
     await scoreLead(lead.id, lead.businessId);
   } catch (e) {
-    logger.warn("Lead scoring failed for Meta lead", { leadId: lead.id, ...serializeError(e) });
+    logger.warn("Lead scoring failed for ad lead", { leadId: lead.id, network, ...serializeError(e) });
   }
 }

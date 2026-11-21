@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Facebook, FileText, Loader2, RefreshCw, Settings2 } from "lucide-react";
+import { Facebook, FileText, Linkedin, Loader2, RefreshCw, Settings2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -23,6 +23,7 @@ type Target = "name" | "email" | "phone" | "company" | "service" | "message" | "
 interface LeadForm {
   id: string;
   accountName: string;
+  accountPlatform: string;
   name: string;
   metaStatus: string | null;
   enabled: boolean;
@@ -49,7 +50,7 @@ const TARGET_LABEL: Record<Target, string> = {
   ignore: "Don't import",
 };
 
-/** Leads → Lead forms: Meta Lead Ads forms, their on/off switch and field mapping. */
+/** Leads → Lead forms: Meta and LinkedIn lead-ad forms, their on/off switch and field mapping. */
 export function LeadFormsPanel({ onOpenIntegrations }: { onOpenIntegrations?: () => void }) {
   const [forms, setForms] = useState<LeadForm[]>([]);
   const [pages, setPages] = useState<Page[]>([]);
@@ -121,7 +122,7 @@ export function LeadFormsPanel({ onOpenIntegrations }: { onOpenIntegrations?: ()
       const res = await fetch("/api/lead-forms/sync", { method: "POST" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Could not start sync");
-      toast.success(data.queued ? "Checking Meta for new leads" : "No Pages have lead sync switched on", {
+      toast.success(data.queued ? "Checking for new leads" : "No Pages have lead sync switched on", {
         description: data.queued ? "New forms and leads appear in a minute or two." : undefined,
       });
       setTimeout(load, 15_000);
@@ -139,10 +140,10 @@ export function LeadFormsPanel({ onOpenIntegrations }: { onOpenIntegrations?: ()
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h3 className="text-sm font-semibold flex items-center gap-2">
-            <FileText size={15} /> Meta lead forms
+            <FileText size={15} /> Lead ad forms
           </h3>
           <p className="text-xs text-muted-foreground mt-1">
-            Leads from Facebook and Instagram Lead Ads arrive here automatically, tagged with the campaign and ad
+            Leads from Facebook, Instagram and LinkedIn lead ads arrive here automatically, tagged with the campaign
             that produced them.
           </p>
         </div>
@@ -158,7 +159,7 @@ export function LeadFormsPanel({ onOpenIntegrations }: { onOpenIntegrations?: ()
         <Skeleton className="h-24 w-full" />
       ) : pages.length === 0 ? (
         <EmptyState
-          text="Connect a Facebook Page under Integrations → Connected accounts, then switch on Lead Ads for it."
+          text="Connect a Facebook or LinkedIn Page under Integrations → Connected accounts, then switch on Lead Ads for it."
           onOpenIntegrations={onOpenIntegrations}
         />
       ) : syncedPages.length === 0 ? (
@@ -168,8 +169,8 @@ export function LeadFormsPanel({ onOpenIntegrations }: { onOpenIntegrations?: ()
         />
       ) : forms.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No lead forms found yet on {syncedPages.map((p) => p.name).join(", ")}. Forms appear after the first sync
-          (within the hour) or when a lead arrives.
+          No lead forms found yet on {syncedPages.map((p) => p.name).join(", ")}. Forms appear when the first lead arrives
+          (Facebook forms also after the first sync, within the hour).
         </p>
       ) : (
         <div className="divide-y rounded-md border">
@@ -186,7 +187,7 @@ export function LeadFormsPanel({ onOpenIntegrations }: { onOpenIntegrations?: ()
                 </div>
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">
-                    <Facebook className="size-3" /> {f.accountName}
+                    {f.accountPlatform === "linkedin_page" ? <Linkedin className="size-3" /> : <Facebook className="size-3" />} {f.accountName}
                   </span>
                   <span>
                     {f.leadsImported} lead{f.leadsImported === 1 ? "" : "s"} imported

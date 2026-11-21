@@ -1,10 +1,11 @@
-// Client-safe view and validation for Meta lead forms.
+// Client-safe view and validation for lead-ad forms (Meta and LinkedIn).
 
 import type { MetaLeadForm, SocialAccount } from "@prisma/client";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { enqueue } from "@/lib/jobs/queue";
 import { metaLeadgenPollJob } from "@/lib/jobs/handlers/meta-leadgen";
+import { linkedinLeadgenPollJob } from "@/lib/jobs/handlers/linkedin-leadgen";
 import type { MetaFormQuestion } from "./meta-graph";
 import { LEAD_FIELD_TARGETS, defaultTarget, type FieldMapping, type LeadFieldTarget } from "./meta-leads";
 
@@ -12,6 +13,7 @@ export interface PublicLeadForm {
   id: string;
   socialAccountId: string;
   accountName: string;
+  accountPlatform: string;
   formId: string;
   name: string;
   metaStatus: string | null;
@@ -22,7 +24,7 @@ export interface PublicLeadForm {
   polledThrough: string | null;
 }
 
-export function toPublicLeadForm(row: MetaLeadForm & { socialAccount: Pick<SocialAccount, "name"> }): PublicLeadForm {
+export function toPublicLeadForm(row: MetaLeadForm & { socialAccount: Pick<SocialAccount, "name" | "platform"> }): PublicLeadForm {
   const mapping = (row.fieldMapping ?? {}) as FieldMapping;
   const questions = ((row.questions ?? []) as unknown as MetaFormQuestion[]).map((q) => ({
     key: q.key,
@@ -34,6 +36,7 @@ export function toPublicLeadForm(row: MetaLeadForm & { socialAccount: Pick<Socia
     id: row.id,
     socialAccountId: row.socialAccountId,
     accountName: row.socialAccount.name,
+    accountPlatform: row.socialAccount.platform,
     formId: row.formId,
     name: row.name,
     metaStatus: row.metaStatus,
@@ -55,19 +58,20 @@ export const leadFormPatchSchema = z
   .refine((v) => Object.keys(v).length > 0, "Nothing to update");
 
 /** Queue a poll (and first-time 90-day backfill) for one Page. Coalesced per 5 minutes. */
-export async function queueLeadSync(account: Pick<SocialAccount, "id" | "businessId">) {
+export async function queueLeadSync(account: Pick<SocialAccount, "id" | "businessId" | "platform">) {
   const bucket = Math.floor(Date.now() / (5 * 60_000));
+  const linkedin = account.platform === "linkedin_page";
   return enqueue(
-    metaLeadgenPollJob,
+    linkedin ? linkedinLeadgenPollJob : metaLeadgenPollJob,
     { socialAccountId: account.id },
-    { businessId: account.businessId, dedupeKey: `meta-leadgen-poll:${account.id}:${bucket}` }
+    { businessId: account.businessId, dedupeKey: `${linkedin ? "linkedin" : "meta"}-leadgen-poll:${account.id}:${bucket}` }
   );
 }
 
 export async function listLeadForms(businessId: string) {
   const rows = await db.metaLeadForm.findMany({
     where: { businessId },
-    include: { socialAccount: { select: { name: true } } },
+    include: { socialAccount: { select: { name: true, platform: true } } },
     orderBy: [{ lastLeadAt: "desc" }, { name: "asc" }],
   });
   return rows.map(toPublicLeadForm);

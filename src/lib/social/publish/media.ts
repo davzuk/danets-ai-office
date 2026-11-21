@@ -21,15 +21,16 @@ export function igAspectIssue(m: Pick<MediaAsset, "kind" | "width" | "height">):
   return null;
 }
 
-async function readOriginal(asset: MediaAsset): Promise<Buffer> {
+/** A media file's bytes, from local disk or object storage. */
+export async function readMediaBytes(asset: MediaAsset): Promise<Buffer> {
   const storage = getStorage();
   if (storage.name === "local") {
     const buf = await readLocalFile(asset.storageKey);
     if (buf) return buf;
-    throw new PublishError("The image file is missing from storage.", "content");
+    throw new PublishError("The media file is missing from storage.", "content");
   }
   const res = await fetch(asset.url, { signal: AbortSignal.timeout(30_000) }).catch(() => null);
-  if (!res?.ok) throw new PublishError("Couldn't read the image from storage.", "retry");
+  if (!res?.ok) throw new PublishError("Couldn't read the media file from storage.", "retry");
   return Buffer.from(await res.arrayBuffer());
 }
 
@@ -37,7 +38,7 @@ async function jpegUrl(asset: MediaAsset): Promise<string> {
   if (asset.mimeType === "image/jpeg") return asset.url;
   const storage = getStorage();
   const key = derivedJpegKey(asset);
-  const original = await readOriginal(asset);
+  const original = await readMediaBytes(asset);
   const jpeg = await sharp(original, { animated: false })
     .flatten({ background: "#ffffff" }) // transparency would turn black
     .jpeg({ quality: 90, mozjpeg: true })

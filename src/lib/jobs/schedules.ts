@@ -6,6 +6,7 @@ import type { z } from "zod";
 import { logger, serializeError } from "@/lib/logger";
 import type { JobDefinition } from "./define";
 import { connectionRefreshJob } from "./handlers/connection-refresh";
+import { linkedinLeadgenPollJob } from "./handlers/linkedin-leadgen";
 import { metaLeadgenPollJob } from "./handlers/meta-leadgen";
 import { purgeJobsJob } from "./handlers/purge-jobs";
 import { enqueue } from "./queue";
@@ -28,6 +29,8 @@ export const SCHEDULES: Schedule[] = [
   { job: connectionRefreshJob, everyMs: HOUR, offsetMs: 10 * MINUTE, payload: {} },
   // Catches Meta leads whose webhook was dropped.
   { job: metaLeadgenPollJob, everyMs: HOUR, offsetMs: 25 * MINUTE, payload: {} },
+  // LinkedIn has no lead webhook wired up yet, so it's polled.
+  { job: linkedinLeadgenPollJob, everyMs: 15 * MINUTE, offsetMs: 5 * MINUTE, payload: {} },
 ];
 
 /** Start of the window containing `now`, shifted by the schedule's offset. */

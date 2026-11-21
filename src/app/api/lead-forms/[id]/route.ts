@@ -27,7 +27,7 @@ export function PATCH(req: NextRequest, { params }: RouteCtx) {
         ...(enabled !== undefined ? { enabled } : {}),
         ...(fieldMapping ? { fieldMapping: fieldMapping as Prisma.InputJsonValue } : {}),
       },
-      include: { socialAccount: { select: { name: true } } },
+      include: { socialAccount: { select: { name: true, platform: true } } },
     });
     await logActivity({
       businessId: user.businessId,

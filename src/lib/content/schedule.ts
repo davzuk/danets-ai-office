@@ -26,7 +26,7 @@ export const LIVE_STATUSES: ScheduleStatus[] = ["pending_approval", "scheduled",
 export const PUBLISH_ACCOUNT_PLATFORM: Partial<Record<ContentPlatform, SocialAccount["platform"]>> = {
   facebook: "facebook_page",
   instagram: "instagram",
-  // linkedin: "linkedin_page" once LinkedIn publishing (workstream L) lands
+  linkedin: "linkedin_page",
 };
 
 export const IG_DAILY_LIMIT = 25;
@@ -227,10 +227,10 @@ export async function schedulePost(actor: Actor, postId: string, input: z.infer<
     if (hasErrors(v.issues)) throw new AppError(`Fix the problems on ${label} first.`, { status: 400, code: "VARIANT_ERRORS" });
     const acct = await resolveAccount(actor.businessId, t.platform, t.socialAccountId);
     if (acct && t.platform === "instagram") await checkInstagram(actor.businessId, acct, v.mediaIds, when);
-    if (acct && t.platform === "facebook" && v.mediaIds.length > 0) {
+    if (acct && (t.platform === "facebook" || t.platform === "linkedin") && v.mediaIds.length > 0) {
       const media = await variantMedia(actor.businessId, v.mediaIds);
       if (media.some((m) => m.kind === "video") && media.length > 1) {
-        throw new AppError("Facebook posts can have several photos or one video, not both.", { status: 400, code: "MEDIA_MIX" });
+        throw new AppError(`${label} posts can have several images or one video, not both.`, { status: 400, code: "MEDIA_MIX" });
       }
     }
     plans.push({ variantId: v.id, platform: t.platform, acct });

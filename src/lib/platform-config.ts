@@ -307,6 +307,19 @@ export async function getPlatformSetupStatus(): Promise<PlatformSetupStatus> {
     required: false,
   });
 
+  const linkedinApp = !!(env.LINKEDIN_CLIENT_ID && env.LINKEDIN_CLIENT_SECRET);
+  checks.push({
+    id: "linkedin_app",
+    label: "LinkedIn app",
+    status: linkedinApp ? "ok" : "warning",
+    message: !linkedinApp
+      ? "Set LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET to let tenants connect LinkedIn Pages for publishing and Lead Gen Forms"
+      : env.LINKEDIN_LEAD_SYNC === "true"
+        ? "App configured; Lead Gen Forms sync requested"
+        : "App configured for publishing; set LINKEDIN_LEAD_SYNC=true once LinkedIn approves the Lead Sync API",
+    required: false,
+  });
+
   const storageDriver = (env.STORAGE_DRIVER || "local").toLowerCase();
   const s3Missing = ["S3_ENDPOINT", "S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "S3_PUBLIC_URL"].filter((k) => !env[k]);
   checks.push({

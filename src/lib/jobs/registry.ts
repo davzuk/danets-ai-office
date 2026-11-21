@@ -3,6 +3,7 @@
 import type { JobDefinition } from "./define";
 import { brandGenerateJob } from "./handlers/brand-generate";
 import { connectionExpiringJob, connectionRefreshJob } from "./handlers/connection-refresh";
+import { linkedinLeadgenJob, linkedinLeadgenPollJob } from "./handlers/linkedin-leadgen";
 import { metaCommentJob, metaMessageJob } from "./handlers/meta-events";
 import { metaLeadgenJob, metaLeadgenPollJob } from "./handlers/meta-leadgen";
 import { metaWebhookJob } from "./handlers/meta-webhook";
@@ -22,6 +23,8 @@ const definitions: JobDefinition[] = [
   brandGenerateJob,
   socialSubscribeJob,
   socialPublishJob,
+  linkedinLeadgenJob,
+  linkedinLeadgenPollJob,
 ];
 
 const byType = new Map<string, JobDefinition>();

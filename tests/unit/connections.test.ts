@@ -66,6 +66,8 @@ describe("providers", () => {
   const env = {
     GOOGLE_CLIENT_ID: "gid",
     GOOGLE_CLIENT_SECRET: "gsecret",
+    LINKEDIN_CLIENT_ID: "lid",
+    LINKEDIN_CLIENT_SECRET: "lsecret",
     META_APP_ID: "mid",
     META_APP_SECRET: "msecret",
     NEXT_PUBLIC_APP_URL: "https://app.example.com/",

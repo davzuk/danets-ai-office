@@ -72,8 +72,8 @@ export function SocialAccountRows({
         const Icon = PLATFORM_ICON[a.platform as keyof typeof PLATFORM_ICON] ?? Facebook;
         const disabled = !canManage || saving === a.id || a.status !== "active";
         const toggles: { key: keyof Patch; label: string; show: boolean }[] = [
-          { key: "leadSyncEnabled", label: "Lead Ads", show: a.platform === "facebook_page" },
-          { key: "inboxEnabled", label: "Inbox", show: true },
+          { key: "leadSyncEnabled", label: "Lead Ads", show: a.platform === "facebook_page" || a.platform === "linkedin_page" },
+          { key: "inboxEnabled", label: "Inbox", show: a.platform !== "linkedin_page" },
           { key: "publishEnabled", label: "Publishing", show: true },
         ];
         return (
@@ -108,7 +108,7 @@ export function SocialAccountRows({
                     !a.subscribed &&
                     " · connecting webhooks…"}
                 </div>
-                {a.lastError && a.status !== "active" && (
+                {a.lastError && (
                   <div className="flex items-start gap-1 text-xs text-destructive">
                     <AlertTriangle className="mt-0.5 size-3 shrink-0" /> {a.lastError}
                   </div>
