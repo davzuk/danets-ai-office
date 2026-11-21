@@ -114,6 +114,15 @@ import {
   SuperAdminPlatformPanel,
   exportTenantsCsv,
 } from "@/components/dashboard/views/super-admin-platform-panels";
+import {
+  CmsPagesPanel,
+  CmsPostsPanel,
+  CmsNavPanel,
+  CmsBlocksPanel,
+  CmsMediaPanel,
+  CmsContactsPanel,
+  CmsSitePanel,
+} from "@/components/dashboard/views/cms-admin-views";
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -993,6 +1002,14 @@ function SuperAdminInner({
           businesses={businesses.map((b) => ({ id: b.id, name: b.name }))}
         />
       )}
+
+      {mainTab === "cms-pages" && <CmsPagesPanel />}
+      {mainTab === "cms-posts" && <CmsPostsPanel />}
+      {mainTab === "cms-nav" && <CmsNavPanel />}
+      {mainTab === "cms-blocks" && <CmsBlocksPanel />}
+      {mainTab === "cms-media" && <CmsMediaPanel />}
+      {mainTab === "cms-contacts" && <CmsContactsPanel />}
+      {mainTab === "cms-site" && <CmsSitePanel />}
 
       {/* Detail dialog */}
       <Dialog open={!!detailId} onOpenChange={(open) => !open && setDetailId(null)}>

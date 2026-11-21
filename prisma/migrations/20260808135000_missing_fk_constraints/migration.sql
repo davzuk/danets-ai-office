@@ -20,6 +20,27 @@
 --   - PlatformFeatureFlagOverride.businessId → Business.id ON DELETE CASCADE
 --   - PlatformFeatureFlagOverride.flagKey    → PlatformFeatureFlag.key ON DELETE CASCADE
 
+-- ─── Match collation with the referenced tables ───────────────────
+-- LoginAttempt and PasswordResetToken were created without an explicit
+-- charset, so they took the database/server default. If that isn't
+-- utf8mb4_unicode_ci (what every init table uses), MySQL refuses the FKs
+-- with errno 150. Converting is a no-op when they already match.
+ALTER TABLE `LoginAttempt` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE `PasswordResetToken` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE `PlatformPasswordResetToken` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- ─── Clear orphans the new constraints would reject ───────────────
+-- With no FK, deleted users/tenants left dangling ids behind. Apply the
+-- same outcome the new ON DELETE rule would have produced. (Tables
+-- created earlier in this batch — LoginAttempt, PasswordResetToken —
+-- are new and empty, so they need nothing.)
+UPDATE `Notification` SET `userId` = NULL
+  WHERE `userId` IS NOT NULL AND `userId` NOT IN (SELECT `id` FROM `BusinessUser`);
+UPDATE `ActivityLog` SET `userId` = NULL
+  WHERE `userId` IS NOT NULL AND `userId` NOT IN (SELECT `id` FROM `BusinessUser`);
+DELETE FROM `SupportTicketNote`
+  WHERE `businessId` NOT IN (SELECT `id` FROM `Business`);
+
 -- ─── Add the missing constraints ───────────────────────────────────
 
 -- Notification.userId → BusinessUser.id. If the targeted user is
@@ -62,16 +83,10 @@ ALTER TABLE `SupportTicketNote`
   FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`)
   ON DELETE CASCADE ON UPDATE CASCADE;
 
--- PlatformFeatureFlagOverride was added without FKs on either side.
-ALTER TABLE `PlatformFeatureFlagOverride`
-  ADD CONSTRAINT `PlatformFeatureFlagOverride_businessId_fkey`
-  FOREIGN KEY (`businessId`) REFERENCES `Business`(`id`)
-  ON DELETE CASCADE ON UPDATE CASCADE;
-
-ALTER TABLE `PlatformFeatureFlagOverride`
-  ADD CONSTRAINT `PlatformFeatureFlagOverride_flagKey_fkey`
-  FOREIGN KEY (`flagKey`) REFERENCES `PlatformFeatureFlag`(`key`)
-  ON DELETE CASCADE ON UPDATE CASCADE;
+-- (Per-tenant flag overrides live in `BusinessFeatureFlag`, whose FKs
+-- were already created by the init migration. An earlier draft of this
+-- file targeted a `PlatformFeatureFlagOverride` table that never existed,
+-- which made the migration fail on every database.)
 
 -- ─── Add a few missing lookup indexes ─────────────────────────────
 -- CmsContactSubmission only had a `createdAt` index — lookups by
@@ -80,8 +95,6 @@ ALTER TABLE `PlatformFeatureFlagOverride`
 CREATE INDEX `CmsContactSubmission_email_idx` ON `CmsContactSubmission`(`email`);
 CREATE INDEX `CmsContactSubmission_leadId_idx` ON `CmsContactSubmission`(`leadId`);
 
--- PasswordResetToken is queried by tokenHash (single-use claim path)
--- and by userId (admin "see outstanding tokens for this user" view).
--- Only tokenHash was indexed in P15; add userId so the per-user view
--- stays sub-millisecond at 10k+ tokens.
-CREATE INDEX `PasswordResetToken_userId_idx` ON `PasswordResetToken`(`userId`);
+-- (PasswordResetToken_userId_idx is already created by the
+-- 20260808132000_password_reset_tokens migration; re-creating it here
+-- failed with a duplicate key name.)

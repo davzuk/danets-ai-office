@@ -20,6 +20,51 @@ export async function GET(req: NextRequest) {
     } catch(_) { return 'v_' + Math.random().toString(36).slice(2); }
   })();
 
+  // ── Attribution ──────────────────────────────────────────────
+  // First touch (danets_ft) is kept forever; the session touch (danets_lt)
+  // starts a new session after 30 min of inactivity or when the visitor
+  // arrives on a new campaign link. Sites that need consent first embed with
+  // data-consent="required" and call window.Danets.consent(true) later.
+  const SCRIPT = document.currentScript;
+  const CONSENT_REQUIRED = !!(SCRIPT && SCRIPT.getAttribute('data-consent') === 'required');
+  const SESSION_MS = 30 * 60 * 1000;
+  const CLICK_IDS = ['gclid','gbraid','wbraid','dclid','msclkid','fbclid','li_fat_id','ttclid','twclid'];
+  let consented = !CONSENT_REQUIRED;
+  let attribution = null;
+  const lsGet = (k) => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch(_) { return null; } };
+  const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(_) {} };
+  function captureTouch(){
+    let q = null; try { q = new URLSearchParams(location.search); } catch(_) {}
+    const g = (k) => (q && q.get(k)) || null;
+    let clickId = null, clickIdType = null;
+    for (const k of CLICK_IDS) { if (g(k)) { clickId = g(k); clickIdType = k; break; } }
+    return { sessionId: 's_' + Math.random().toString(36).slice(2) + Date.now().toString(36), source: g('utm_source'), medium: g('utm_medium'), campaign: g('utm_campaign'), term: g('utm_term'), content: g('utm_content'), clickId, clickIdType, referrer: document.referrer || null, landingUrl: location.href, at: new Date().toISOString() };
+  }
+  function initAttribution(){
+    if (!consented) return;
+    const now = Date.now();
+    const fresh = captureTouch();
+    const tagged = !!(fresh.source || fresh.clickId);
+    let last = lsGet('danets_lt');
+    const isNew = !last || !last.touch || now - (last.ts || 0) > SESSION_MS || (tagged && (fresh.campaign !== last.touch.campaign || fresh.source !== last.touch.source || fresh.clickId !== last.touch.clickId));
+    if (isNew) last = { touch: fresh };
+    last.ts = now;
+    lsSet('danets_lt', last);
+    let first = lsGet('danets_ft');
+    if (!first || !first.sessionId) { first = last.touch; lsSet('danets_ft', first); }
+    attribution = { first, last: last.touch };
+    if (isNew) {
+      fetch(API + '/api/public/track', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ pk: PK, visitorId: VISITOR_ID, attribution }), keepalive: true }).catch(() => {});
+    }
+  }
+  window.Danets = window.Danets || {};
+  window.Danets.consent = function(granted){
+    consented = granted !== false;
+    if (consented) { initAttribution(); }
+    else { attribution = null; try { localStorage.removeItem('danets_ft'); localStorage.removeItem('danets_lt'); } catch(_) {} }
+  };
+  initAttribution();
+
   let cfg = null;
   let session = { id: null, leadIntent: false, leadCaptured: false };
   let messages = [];
@@ -172,10 +217,8 @@ export async function GET(req: NextRequest) {
     f.querySelector('button').onclick = async () => {
       const name = f.querySelector('[name=name]').value.trim();
       if(!name){ f.querySelector('[name=name]').focus(); return; }
-      const data = { pk: PK, sessionId: session.id, name, phone: f.querySelector('[name=phone]').value, email: f.querySelector('[name=email]').value, service: f.querySelector('[name=service]').value };
+      const data = { pk: PK, sessionId: session.id, visitorId: VISITOR_ID, attribution, name, phone: f.querySelector('[name=phone]').value, email: f.querySelector('[name=email]').value, service: f.querySelector('[name=service]').value };
       try{
-        const r = await fetch(API + '/api/public/chat', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
-        await r.json();
         const r2 = await fetch(API + '/api/public/lead', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
         const d = await r2.json();
         if(!r2.ok) throw new Error(d.error||'Failed');
@@ -195,7 +238,7 @@ export async function GET(req: NextRequest) {
     showTyping();
     typing = true;
     try{
-      const r = await fetch(API + '/api/public/chat', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ pk: PK, sessionId: session.id, visitorId: VISITOR_ID, message: text }) });
+      const r = await fetch(API + '/api/public/chat', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ pk: PK, sessionId: session.id, visitorId: VISITOR_ID, attribution: session.id ? undefined : attribution, message: text }) });
       const d = await r.json();
       if(!r.ok) throw new Error(d.error||'Failed');
       hideTyping();

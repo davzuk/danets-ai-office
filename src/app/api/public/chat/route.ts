@@ -5,6 +5,9 @@ import { aiChat, logUsage, retrieveKnowledge } from "@/lib/ai";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { checkChatRateLimit, checkMonthlyAiQuota } from "@/lib/plan-limits";
 import { checkQuota } from "@/lib/plan-quota";
+import { captureInbound } from "@/lib/inbound-attribution";
+import { resolveContact } from "@/lib/contacts";
+import { logger, serializeError } from "@/lib/logger";
 
 const chatSchema = z.object({
   pk: z.string().min(1),
@@ -14,6 +17,8 @@ const chatSchema = z.object({
   visitorEmail: z.string().nullable().optional(),
   visitorPhone: z.string().nullable().optional(),
   message: z.string().min(1).max(2000),
+  // Widget first/last-touch data; validated by captureInbound.
+  attribution: z.unknown().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -100,10 +105,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Record the chat start as a touchpoint. Anonymous visitors don't get a
+    // Contact yet; it's created once they leave an email/phone (lead form).
+    const inbound = await captureInbound({
+      businessId: business.id,
+      kind: "chat_start",
+      visitorId: parsed.data.visitorId,
+      attribution: parsed.data.attribution,
+      profile: {
+        name: parsed.data.visitorName,
+        email: parsed.data.visitorEmail,
+        phone: parsed.data.visitorPhone,
+      },
+      createContact: "identified",
+    });
+
     session = await db.chatSession.create({
       data: {
         businessId: business.id,
         agentId: agent.id,
+        contactId: inbound?.contactId ?? null,
         visitorId: parsed.data.visitorId,
         visitorName: parsed.data.visitorName,
         visitorEmail: parsed.data.visitorEmail,
@@ -116,13 +137,23 @@ export async function POST(req: NextRequest) {
     (parsed.data.visitorEmail && !session.visitorEmail) ||
     (parsed.data.visitorPhone && !session.visitorPhone)
   ) {
+    const visitorName = parsed.data.visitorName || session.visitorName;
+    const visitorEmail = parsed.data.visitorEmail || session.visitorEmail;
+    const visitorPhone = parsed.data.visitorPhone || session.visitorPhone;
+    let contactId = session.contactId;
+    try {
+      const resolved = await resolveContact({
+        businessId: business.id,
+        identities: session.visitorId ? [{ type: "visitor", value: session.visitorId }] : [],
+        profile: { name: visitorName, email: visitorEmail, phone: visitorPhone },
+      });
+      contactId = resolved?.contact.id ?? contactId;
+    } catch (e) {
+      logger.warn("Contact resolution failed for chat visitor", { businessId: business.id, ...serializeError(e) });
+    }
     session = await db.chatSession.update({
       where: { id: session.id },
-      data: {
-        visitorName: parsed.data.visitorName || session.visitorName,
-        visitorEmail: parsed.data.visitorEmail || session.visitorEmail,
-        visitorPhone: parsed.data.visitorPhone || session.visitorPhone,
-      },
+      data: { visitorName, visitorEmail, visitorPhone, contactId },
     });
   }
 

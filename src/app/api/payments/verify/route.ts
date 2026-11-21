@@ -5,6 +5,7 @@ import { requireSession } from "@/lib/auth";
 import { requireReauth } from "@/lib/reauth";
 import { logActivity, createNotification } from "@/lib/activity";
 import {
+  isTestCheckoutAllowed,
   verifyFlutterwaveTransaction,
   verifyPaystackTransaction,
 } from "@/lib/payment-gateway";
@@ -61,23 +62,30 @@ export async function POST(req: NextRequest) {
   let status: "success" | "failed";
   let providerRef: string | undefined;
 
-  if (payment.provider === "paystack") {
-    if (!process.env.PAYSTACK_SECRET_KEY) {
+  const gatewaySecret =
+    payment.provider === "paystack"
+      ? process.env.PAYSTACK_SECRET_KEY
+      : payment.provider === "flutterwave"
+        ? process.env.FLUTTERWAVE_SECRET_KEY
+        : undefined;
+
+  if ((payment.provider === "paystack" || payment.provider === "flutterwave") && !gatewaySecret) {
+    // Outside production the payment went through the local test checkout
+    // (see /api/payments/initialize), so there is no gateway to ask.
+    // The client's claimed status is still ignored.
+    if (!isTestCheckoutAllowed()) {
       return NextResponse.json(
         { error: "Payment provider not configured" },
         { status: 503 }
       );
     }
+    status = "success";
+    providerRef = `test_${reference}`;
+  } else if (payment.provider === "paystack") {
     const verified = await verifyPaystackTransaction(reference);
     status = verified.success ? "success" : "failed";
     providerRef = verified.providerRef;
   } else if (payment.provider === "flutterwave") {
-    if (!process.env.FLUTTERWAVE_SECRET_KEY) {
-      return NextResponse.json(
-        { error: "Payment provider not configured" },
-        { status: 503 }
-      );
-    }
     const verified = await verifyFlutterwaveTransaction(reference);
     status = verified.success ? "success" : "failed";
     providerRef = verified.providerRef;

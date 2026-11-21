@@ -8,7 +8,7 @@ export async function GET(_req: NextRequest) {
   try { user = await requireSession(); } catch { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
   const businessId = user.businessId;
 
-  const [business, users, aiAgents, knowledgeBase, chatSessions, leads, tickets, quoteRequests, documents, automationWorkflows, notifications, activityLogs, payments, invoices] = await Promise.all([
+  const [business, users, aiAgents, knowledgeBase, chatSessions, leads, tickets, quoteRequests, documents, automationWorkflows, notifications, activityLogs, payments, invoices, contacts, touchpoints] = await Promise.all([
     db.business.findUnique({ where: { id: businessId }, select: { id: true, name: true, email: true, industry: true, phone: true, whatsapp: true, plan: true, status: true, createdAt: true } }),
     db.businessUser.findMany({ where: { businessId }, select: { id: true, name: true, email: true, role: true, createdAt: true } }),
     db.aiAgent.findMany({ where: { businessId }, select: { id: true, botName: true, tone: true, status: true } }),
@@ -23,10 +23,12 @@ export async function GET(_req: NextRequest) {
     db.activityLog.findMany({ where: { businessId }, select: { id: true, action: true, module: true, description: true, userName: true, ipAddress: true, createdAt: true } }),
     db.payment.findMany({ where: { businessId }, select: { id: true, amount: true, currency: true, provider: true, reference: true, status: true, paidAt: true } }),
     db.invoice.findMany({ where: { businessId }, select: { id: true, invoiceNumber: true, amount: true, currency: true, status: true, paidAt: true } }),
+    db.contact.findMany({ where: { businessId }, include: { identities: { select: { type: true, value: true, createdAt: true } } } }),
+    db.touchpoint.findMany({ where: { businessId }, omit: { dedupeKey: true } }),
   ]);
 
   await logActivity({ businessId, userId: user.userId, userName: user.name, action: "business_settings_changed", module: "business", description: "GDPR data export requested" });
 
-  const exportData = { exportedAt: new Date().toISOString(), exportedBy: user.name, business, users, aiAgents, knowledgeBase, chatSessions, leads, tickets, quoteRequests, documents, automationWorkflows, notifications, activityLogs, payments, invoices };
+  const exportData = { exportedAt: new Date().toISOString(), exportedBy: user.name, business, users, aiAgents, knowledgeBase, chatSessions, leads, tickets, quoteRequests, documents, automationWorkflows, notifications, activityLogs, payments, invoices, contacts, touchpoints };
   return new NextResponse(JSON.stringify(exportData, null, 2), { headers: { "Content-Type": "application/json; charset=utf-8", "Content-Disposition": `attachment; filename="danets-data-export-${new Date().toISOString().slice(0, 10)}.json"`, "Cache-Control": "no-store" } });
 }

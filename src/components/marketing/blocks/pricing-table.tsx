@@ -9,6 +9,13 @@ type PricingTableProps = {
   subtitle?: string;
   ctaLabel?: string;
   ctaHref?: string;
+  /**
+   * Which plan name should get the "Most popular" highlight + filled
+   * CTA. Editors can set this per-block via the CMS without code
+   * changes. Falls back to "pro" when unset so the marketing site
+   * keeps a sensible default.
+   */
+  featuredPlanName?: string;
 };
 
 /**
@@ -23,6 +30,7 @@ export async function PricingTableBlock({
   subtitle = "Start free. Upgrade when you need more chat capacity, automations or seats.",
   ctaLabel = "Start free",
   ctaHref = "/signup",
+  featuredPlanName = "pro",
 }: PricingTableProps) {
   // Never let a pricing-data fetch failure 500 the whole marketing
   // page — fall back to a static card so the site keeps rendering.
@@ -70,7 +78,7 @@ export async function PricingTableBlock({
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {plans.map((plan, i) => {
-            const featured = plan.name === "pro";
+            const featured = plan.name === featuredPlanName;
             return (
               <div
                 key={plan.name}

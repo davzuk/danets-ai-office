@@ -137,12 +137,21 @@ export default function AppHome() {
           setUser(data.user);
           setSubscription(data.subscription ?? null);
           setModuleAccess(data.modules ?? null);
+          // Deep link back from the OAuth connect flow (/api/connections/*/callback).
+          if (new URLSearchParams(window.location.search).get("view") === "integrations") {
+            setView("integrations");
+          }
         }
+      })
+      .catch(() => {
+        window.location.href = "/login";
       })
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) {
+  // `!user` covers the window between a redirect being issued (to /login or
+  // /platform) and the navigation actually happening, plus a failed /me call.
+  if (loading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -197,6 +206,7 @@ export default function AppHome() {
           setSubscription(null);
           setModuleAccess(null);
           setView("overview");
+          window.location.href = "/login";
         }}
         onSessionChange={setUser}
         subscription={subscription}

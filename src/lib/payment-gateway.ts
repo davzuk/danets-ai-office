@@ -9,6 +9,7 @@ import {
 export {
   calculateCheckoutAmount,
   getPaymentCurrency,
+  isTestCheckoutAllowed,
   mockCheckoutUrl,
   toMinorUnits,
 } from "@/lib/payment-gateway-utils";

@@ -120,6 +120,23 @@ pm2 start npm --name danets-worker -- run worker
 
 Failed jobs retry with exponential backoff (30s, 1m, 2m … max 6h) up to their attempt limit, then move to `dead`. Platform → Tenant Health → **Background Jobs** shows queue depth and dead jobs, with Retry/Discard. Finished jobs are purged daily (succeeded after 14 days, dead after 30).
 
+## Connected accounts (OAuth)
+
+Tenants connect Meta (Facebook Pages, Instagram, Lead Ads) and Google (Search Console, Business Profile) from **Integrations → Connected accounts**. Only workspace admins can connect or disconnect. A provider shows as unavailable until its env vars are set.
+
+1. **Meta:** create an app at developers.facebook.com (Business type) with Facebook Login for Business. Set `META_APP_ID` / `META_APP_SECRET` and add the redirect URI `{NEXT_PUBLIC_APP_URL}/api/connections/meta/callback`. Requested permissions (`pages_*`, `leads_retrieval`, `instagram_*`, `business_management`) need App Review before non-test users can grant them. For webhooks, subscribe the app to `{NEXT_PUBLIC_APP_URL}/api/webhooks/meta` with `META_WEBHOOK_VERIFY_TOKEN` as the verify token; payloads are checked against `META_APP_SECRET` and processed by the job queue.
+2. **Google:** create an OAuth client (Web application) in Google Cloud Console, enable the Search Console and Business Profile APIs, set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`, and add the redirect URI `{NEXT_PUBLIC_APP_URL}/api/connections/google/callback`. Sensitive scopes need Google's OAuth verification for production.
+
+Tokens are stored encrypted (same key as integration API keys). The hourly `connections.refresh` job renews Google tokens before they expire; Meta long-lived tokens (~60 days) can't be refreshed, so tenants get a reminder 7 days before expiry and the connection is marked expired afterwards. A revoked grant marks the connection revoked and notifies the tenant.
+
+## Contacts and lead attribution
+
+Every widget chat, lead and ticket is linked to a unified **Contact** (matched by email, phone or the widget's visitor id), and the widget records where the visitor came from as **touchpoints**: UTM tags, ad click ids (`gclid`, `msclkid`, `fbclid`, `li_fat_id`, …) and the referrer. A lead's **Source** is the channel of its first touch (`organic_search`, `paid_search`, `social_organic`, `social_paid`, `email`, `referral`, `direct`, `whatsapp`); leads from clients that send no attribution keep `chatbot`. Lead detail → **Journey** shows the timeline; Analytics → **Leads by Channel** charts it.
+
+- **After deploying the `contacts_attribution` migration**, link existing records once (safe to re-run): `npm run contacts:backfill` (or `-- --business=<id>` for one tenant).
+- **Consent:** sites that need cookie consent first embed the widget with `data-consent="required"` and call `window.Danets.consent(true)` once the visitor agrees (`consent(false)` clears stored attribution). Until then nothing is stored or sent.
+- **Privacy:** landing and referrer URLs are stored without query strings or fragments. Anonymous touchpoints (visitor never became a contact) are purged with the plan's chat retention window; GDPR export includes contacts, identities and touchpoints.
+
 ## Payment flow
 
 - Without gateway keys: local mock checkout at `/payment-checkout` (dev/test)

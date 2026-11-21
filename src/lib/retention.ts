@@ -49,7 +49,7 @@ export async function applyRetentionForBusiness(businessId: string) {
 
   const policy = await getRetentionPolicy(business.plan);
 
-  const [auditDeleted, chatsDeleted, leadsDeleted] = await Promise.all([
+  const [auditDeleted, chatsDeleted, leadsDeleted, touchesDeleted] = await Promise.all([
     db.activityLog.deleteMany({
       where: {
         businessId,
@@ -68,6 +68,15 @@ export async function applyRetentionForBusiness(businessId: string) {
         createdAt: { lt: daysAgo(policy.leadRetentionDays) },
       },
     }),
+    // Anonymous touchpoints (visitor never became a contact) follow the chat
+    // window. Touchpoints on a known contact live as long as the contact.
+    db.touchpoint.deleteMany({
+      where: {
+        businessId,
+        contactId: null,
+        occurredAt: { lt: daysAgo(policy.chatRetentionDays) },
+      },
+    }),
   ]);
 
   return {
@@ -78,6 +87,7 @@ export async function applyRetentionForBusiness(businessId: string) {
       auditLogs: auditDeleted.count,
       chatSessions: chatsDeleted.count,
       leads: leadsDeleted.count,
+      touchpoints: touchesDeleted.count,
     },
   };
 }

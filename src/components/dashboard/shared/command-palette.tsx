@@ -54,6 +54,11 @@ interface CommandPaletteProps {
   isPlatformAdmin?: boolean;
 }
 
+/** The platform console is a separate page, not a dashboard view. */
+function openPlatform(tab: "overview" | "tenants" | "users") {
+  window.location.href = tab === "overview" ? "/platform" : `/platform?tab=${tab}`;
+}
+
 const NAV_ITEMS: {
   id: ViewId;
   label: string;
@@ -109,7 +114,7 @@ export function CommandPalette({
           <CommandGroup heading="Platform">
             <CommandItem
               value="open platform control plane admin dashboard"
-              onSelect={() => run(() => onNavigate("super-admin"))}
+              onSelect={() => run(() => openPlatform("overview"))}
               className="gap-2"
             >
               <Lock size={16} className="text-primary" />
@@ -120,7 +125,7 @@ export function CommandPalette({
             </CommandItem>
             <CommandItem
               value="search tenants businesses accounts"
-              onSelect={() => run(() => onNavigate("super-admin-tenants"))}
+              onSelect={() => run(() => openPlatform("tenants"))}
               className="gap-2"
             >
               <Search size={16} className="text-muted-foreground" />
@@ -128,7 +133,7 @@ export function CommandPalette({
             </CommandItem>
             <CommandItem
               value="search platform users admin staff"
-              onSelect={() => run(() => onNavigate("super-admin-users"))}
+              onSelect={() => run(() => openPlatform("users"))}
               className="gap-2"
             >
               <Users size={16} className="text-muted-foreground" />

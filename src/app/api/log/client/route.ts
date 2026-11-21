@@ -10,7 +10,7 @@ import { logger } from "@/lib/logger";
 const schema = z.object({
   level: z.enum(["debug", "info", "warn", "error"]),
   msg: z.string().max(500),
-  fields: z.record(z.unknown()).optional(),
+  fields: z.record(z.string(), z.unknown()).optional(),
   url: z.string().max(500).optional(),
   userAgent: z.string().max(500).optional(),
   ts: z.string().optional(),

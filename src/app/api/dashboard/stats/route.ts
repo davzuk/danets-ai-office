@@ -153,7 +153,9 @@ const getCachedDashboardStats = unstable_cache(
  * instead of after the 60-second window expires.
  */
 export async function revalidateDashboardStats(businessId: string) {
-  revalidateTag(`dashboard-stats:${businessId}`);
+  // Next 16 requires a profile; expire: 0 drops the entry now rather than
+  // serving it stale once more.
+  revalidateTag(`dashboard-stats:${businessId}`, { expire: 0 });
 }
 
 export async function GET(_req: NextRequest) {

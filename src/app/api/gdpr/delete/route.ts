@@ -103,11 +103,7 @@ export async function POST(req: NextRequest) {
       verified = await verifyTotpCode(row.totpSecret, parsed.data.totpCode);
     }
     if (!verified && row.totpBackupCodes) {
-      verified = await consumeBackupCode(
-        row.id,
-        parsed.data.totpCode,
-        row.totpBackupCodes
-      );
+      verified = await consumeBackupCode(db, row.id, parsed.data.totpCode);
     }
     if (!verified) {
       return NextResponse.json(

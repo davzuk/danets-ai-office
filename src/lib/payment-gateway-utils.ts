@@ -29,6 +29,15 @@ export function toMinorUnits(amount: number, currency: string): number {
   return Math.round(amount * 100);
 }
 
+/**
+ * The local test checkout (/payment-checkout) stands in for Paystack or
+ * Flutterwave when their keys aren't set. Never in production: there an
+ * unconfigured gateway must refuse, or anyone could "pay" for a plan.
+ */
+export function isTestCheckoutAllowed(): boolean {
+  return process.env.NODE_ENV !== "production";
+}
+
 export function mockCheckoutUrl(
   reference: string,
   amount: number,

@@ -3,6 +3,8 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { LEAD_SOURCE_META, leadSourceLabel } from "@/lib/channel-meta";
+import { LeadJourney } from "./lead-journey";
 import {
   Loader2,
   Search,
@@ -15,6 +17,7 @@ import {
   Phone,
   Mail,
   MessageCircle,
+  Route as RouteIcon,
   MessageSquare,
   Inbox,
   Filter,
@@ -607,6 +610,10 @@ function LeadDetailDialog({
               <MessageCircle size={13} />
               <span className="hidden sm:inline">Chat</span>
             </TabsTrigger>
+            <TabsTrigger value="journey" className="flex-1 gap-1.5">
+              <RouteIcon size={13} />
+              <span className="hidden sm:inline">Journey</span>
+            </TabsTrigger>
           </TabsList>
 
           {/* ─── Details tab ─── */}
@@ -633,7 +640,7 @@ function LeadDetailDialog({
               <InfoRow
                 icon={CircleDot}
                 label="Source"
-                value={<span className="capitalize">{lead.source}</span>}
+                value={leadSourceLabel(lead.source)}
               />
             </div>
 
@@ -873,6 +880,11 @@ function LeadDetailDialog({
           {/* ─── Activity tab ─── */}
           <TabsContent value="activity" className="mt-4">
             <ActivityTab activities={lead.activities} />
+          </TabsContent>
+
+          {/* ─── Journey tab (attribution touchpoints) ─── */}
+          <TabsContent value="journey" className="mt-4">
+            {activeTab === "journey" && <LeadJourney leadId={lead.id} />}
           </TabsContent>
 
           {/* ─── Conversation tab ─── */}
@@ -1694,6 +1706,7 @@ export function LeadsView({ user }: { user: UserProp }) {
   const [search, setSearch] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState<string>("all");
   const [qualityFilter, setQualityFilter] = React.useState<string>("all");
+  const [sourceFilter, setSourceFilter] = React.useState<string>("all");
 
   const [detailOpen, setDetailOpen] = React.useState(false);
   const [selectedLead, setSelectedLead] = React.useState<LeadDetail | null>(
@@ -1712,7 +1725,7 @@ export function LeadsView({ user }: { user: UserProp }) {
     setSearch(debouncedSearch);
   }, [debouncedSearch]);
 
-  const hasFilters = !!search || statusFilter !== "all" || qualityFilter !== "all";
+  const hasFilters = !!search || statusFilter !== "all" || qualityFilter !== "all" || sourceFilter !== "all";
 
   // ─── Fetch list ────────────────────────────────────────────────
   const fetchLeads = React.useCallback(async () => {
@@ -1722,6 +1735,7 @@ export function LeadsView({ user }: { user: UserProp }) {
       if (search) params.set("q", search);
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (qualityFilter !== "all") params.set("quality", qualityFilter);
+      if (sourceFilter !== "all") params.set("source", sourceFilter);
       const res = await fetch(`/api/leads?${params.toString()}`, {
         cache: "no-store",
       });
@@ -1733,7 +1747,7 @@ export function LeadsView({ user }: { user: UserProp }) {
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter, qualityFilter]);
+  }, [search, statusFilter, qualityFilter, sourceFilter]);
 
   React.useEffect(() => {
     fetchLeads();
@@ -2146,6 +2160,7 @@ export function LeadsView({ user }: { user: UserProp }) {
     setSearchInput("");
     setStatusFilter("all");
     setQualityFilter("all");
+    setSourceFilter("all");
   }
 
   // ─── Derived counts for header chips ───────────────────────────
@@ -2285,6 +2300,20 @@ export function LeadsView({ user }: { user: UserProp }) {
               </SelectContent>
             </Select>
 
+            <Select value={sourceFilter} onValueChange={setSourceFilter}>
+              <SelectTrigger className="w-[150px]" size="sm">
+                <SelectValue placeholder="Source" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All sources</SelectItem>
+                {Object.entries(LEAD_SOURCE_META).map(([key, m]) => (
+                  <SelectItem key={key} value={key}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
             {hasFilters && (
               <Button
                 variant="ghost"
@@ -2327,6 +2356,7 @@ export function LeadsView({ user }: { user: UserProp }) {
                 const params = new URLSearchParams();
                 if (statusFilter) params.set("status", statusFilter);
                 if (qualityFilter) params.set("quality", qualityFilter);
+                if (sourceFilter !== "all") params.set("source", sourceFilter);
                 const qs = params.toString();
                 window.open(
                   `/api/leads/export${qs ? "?" + qs : ""}`,
@@ -2483,8 +2513,8 @@ export function LeadsView({ user }: { user: UserProp }) {
                           <StatusBadge status={lead.status} />
                         </TableCell>
                         <TableCell>
-                          <span className="text-xs capitalize text-muted-foreground">
-                            {lead.source}
+                          <span className="text-xs text-muted-foreground">
+                            {leadSourceLabel(lead.source)}
                           </span>
                         </TableCell>
                         <TableCell>

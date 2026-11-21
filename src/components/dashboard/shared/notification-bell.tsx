@@ -78,6 +78,8 @@ export function NotificationBell({
 
   useEffect(() => {
     let active = true;
+    let interval: ReturnType<typeof setInterval> | null = null;
+
     async function load() {
       try {
         const r = await fetch("/api/notifications", { cache: "no-store" });
@@ -87,11 +89,45 @@ export function NotificationBell({
         if (d.unread > 0) setSeen(false);
       } catch {}
     }
-    load();
-    const interval = setInterval(load, 30000);
+
+    function startPolling() {
+      // Avoid duplicate intervals if visibility flips repeatedly.
+      if (interval) return;
+      load();
+      interval = setInterval(load, 30000);
+    }
+
+    function stopPolling() {
+      if (!interval) return;
+      clearInterval(interval);
+      interval = null;
+    }
+
+    // Skip polling while the tab is hidden — no point burning requests
+    // (and server load) for a notification list the user can't see.
+    // When the tab becomes visible again, refresh immediately so the
+    // user sees fresh data on the first paint.
+    function onVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    }
+
+    if (document.visibilityState === "visible") {
+      startPolling();
+    } else {
+      // Tab opened in the background — still do one initial fetch so the
+      // bell badge shows the right count when the user switches to it.
+      load();
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     return () => {
       active = false;
-      clearInterval(interval);
+      stopPolling();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [businessId]);
 

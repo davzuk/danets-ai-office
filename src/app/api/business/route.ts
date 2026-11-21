@@ -5,7 +5,10 @@ import { withSession } from "@/lib/api";
 
 export async function GET(_req: NextRequest) {
   return withSession(async (user) => {
-    const business = await db.business.findUnique({
+    // Run the business lookup + counts in parallel. The previous
+    // implementation issued them serially and the cold-path latency was
+    // dominated by 4 sequential round trips.
+    const businessPromise = db.business.findUnique({
       where: { id: user.businessId },
       select: {
         id: true,
@@ -21,16 +24,24 @@ export async function GET(_req: NextRequest) {
         createdAt: true,
       },
     });
+
+    const [business, agents, kbItems, sessions, leads] = await Promise.all([
+      businessPromise,
+      db.aiAgent.count({ where: { businessId: user.businessId } }),
+      db.knowledgeBaseItem.count({ where: { businessId: user.businessId } }),
+      db.chatSession.count({ where: { businessId: user.businessId } }),
+      db.lead.count({ where: { businessId: user.businessId } }),
+    ]);
+
     const plan = await db.subscriptionPlan.findUnique({
       where: { name: business?.plan || "free" },
     });
-    const counts = {
-      agents: await db.aiAgent.count({ where: { businessId: user.businessId } }),
-      kbItems: await db.knowledgeBaseItem.count({ where: { businessId: user.businessId } }),
-      sessions: await db.chatSession.count({ where: { businessId: user.businessId } }),
-      leads: await db.lead.count({ where: { businessId: user.businessId } }),
+
+    return {
+      business,
+      plan,
+      counts: { agents, kbItems, sessions, leads },
     };
-    return { business, plan, counts };
   });
 }
 

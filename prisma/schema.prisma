@@ -13,20 +13,20 @@ datasource db {
 // ─── Tenancy & Auth ────────────────────────────────────────────────
 
 model Business {
-  id         String   @id @default(cuid())
-  name       String
-  publicKey  String   @unique @default(cuid())
-  industry   String?
-  email      String?
-  phone      String?
-  whatsapp   String?
-  plan       String   @default("free") // free | starter | pro | enterprise
-  status     String   @default("active") // active | suspended | deleted
-  enforce2fa Boolean  @default(false) // require 2FA for all members of this business
+  id               String    @id @default(cuid())
+  name             String
+  publicKey        String    @unique @default(cuid())
+  industry         String?
+  email            String?
+  phone            String?
+  whatsapp         String?
+  plan             String    @default("free") // free | starter | pro | enterprise
+  status           String    @default("active") // active | suspended | deleted
+  enforce2fa       Boolean   @default(false) // require 2FA for all members of this business
   deletedAt        DateTime?
   purgeScheduledAt DateTime?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   users                BusinessUser[]
   aiAgents             AiAgent[]
@@ -47,6 +47,9 @@ model Business {
   whatsappIntegration  WhatsAppIntegration[]
   automationWorkflows  AutomationWorkflow[]
   integrations         Integration[]
+  oauthConnections     OAuthConnection[]
+  contacts             Contact[]
+  touchpoints          Touchpoint[]
   subscription         BusinessSubscription?
   payments             Payment[]
   invoices             Invoice[]
@@ -73,8 +76,8 @@ model BusinessUser {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  sessions Session[]
+  business            Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  sessions            Session[]
   passwordResetTokens PasswordResetToken[]
 
   @@index([businessId])
@@ -188,6 +191,7 @@ model ChatSession {
   visitorEmail String?
   visitorPhone String?
   visitorId    String? // anonymous browser id
+  contactId    String?
   status       String   @default("active") // active | ended | handover
   summary      String?
   leadQuality  String? // low | medium | high
@@ -197,12 +201,15 @@ model ChatSession {
 
   business       Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
   agent          AiAgent?        @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  contact        Contact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
   messages       ChatMessage[]
   lead           Lead?
   supportTickets SupportTicket[]
 
   @@index([businessId])
   @@index([status])
+  @@index([contactId])
+  @@index([businessId, visitorId])
 }
 
 model ChatMessage {
@@ -230,30 +237,38 @@ model Lead {
   message           String?
   quality           String    @default("medium") // low | medium | high
   status            String    @default("new") // new | contacted | qualified | proposal_sent | negotiation | won | lost
-  source            String    @default("chatbot") // chatbot | website_form | manual | whatsapp | referral | social_media
+  source            String    @default("chatbot") // chatbot | website_form | manual | whatsapp | referral | social_media, or an attribution channel: organic_search | paid_search | social_organic | social_paid | email | direct (see src/lib/attribution.ts)
   // CRM fields
   dealValue         Float     @default(0)
   leadScore         Int       @default(0) // 0-100
   expectedCloseDate DateTime?
   assignedTo        String? // BusinessUser id
   company           String?
+  // Attribution (Phase 0 D): the unified Contact and the touchpoints that
+  // produced this lead. Touch ids are plain columns (no FK) so pruning a
+  // touchpoint never blocks or cascades into a lead.
+  contactId         String?
+  firstTouchId      String?
+  lastTouchId       String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   business   Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
   session    ChatSession?   @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  contact    Contact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
   notes      LeadNote[]
   tasks      LeadTask[]
   activities LeadActivity[]
 
-  @@index([businessId])
-  @@index([status])
-  @@index([assignedTo])
   // Dedupe within a tenant: a given email can only create one Lead per
   // Business. MySQL allows multiple NULL emails in a unique index, so
   // anonymous leads (no email collected) are unaffected. Pair-indexed
   // for query speed on the public widget's pre-submit dedupe lookup.
   @@unique([businessId, email], name: "Lead_businessId_email_key")
+  @@index([businessId])
+  @@index([status])
+  @@index([assignedTo])
+  @@index([contactId])
 }
 
 // ─── CRM: Lead Notes, Tasks, Activities ───────────────────────────
@@ -345,6 +360,7 @@ model SupportTicket {
   customerName     String?
   customerEmail    String?
   customerPhone    String?
+  contactId        String?
   // Assignment
   assignedTo       String? // BusinessUser id
   assignedName     String?
@@ -358,12 +374,14 @@ model SupportTicket {
   business    Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
   category    SupportTicketCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   chatSession ChatSession?           @relation(fields: [chatSessionId], references: [id], onDelete: SetNull)
+  contact     Contact?               @relation(fields: [contactId], references: [id], onDelete: SetNull)
   messages    SupportTicketMessage[]
   notes       SupportTicketNote[]
 
   @@index([businessId])
   @@index([status])
   @@index([priority])
+  @@index([contactId])
 }
 
 model SupportTicketMessage {
@@ -420,6 +438,7 @@ model QuoteRequest {
   businessId      String
   clientName      String
   companyName     String?
+  contactId       String?
   service         String
   requirements    String
   budgetRange     String?
@@ -446,12 +465,14 @@ model QuoteRequest {
   updatedAt       DateTime  @updatedAt
 
   business  Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  contact   Contact?            @relation(fields: [contactId], references: [id], onDelete: SetNull)
   documents GeneratedDocument[]
   items     ProposalItem[]
   followups ProposalFollowup[]
 
   @@index([businessId])
   @@index([status])
+  @@index([contactId])
 }
 
 // ─── Proposal Templates & Items ───────────────────────────────────
@@ -755,6 +776,35 @@ model AutomationRun {
 
 // ─── Integrations ─────────────────────────────────────────────────
 
+// OAuth-connected third-party accounts (Meta, Google, …). Tokens are
+// AES-256-GCM envelopes from src/lib/crypto.ts; never return them to clients.
+model OAuthConnection {
+  id                String    @id @default(cuid())
+  businessId        String
+  provider          String // meta | google
+  externalAccountId String // provider's user/account id
+  accountName       String?
+  accountEmail      String?
+  scopes            String    @db.Text // space-separated granted scopes
+  accessToken       Json // EncryptedPayload
+  refreshToken      Json? // EncryptedPayload
+  expiresAt         DateTime?
+  status            String    @default("active") // active | expired | revoked | error
+  lastError         String?   @db.Text
+  lastRefreshedAt   DateTime?
+  // Provider extras, e.g. Meta pages (with encrypted page tokens), GSC properties
+  metadata          Json?
+  connectedById     String? // BusinessUser id
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, provider, externalAccountId])
+  @@index([businessId])
+  @@index([status, expiresAt])
+}
+
 model Integration {
   id           String    @id @default(cuid())
   businessId   String
@@ -995,7 +1045,7 @@ model PlatformAdmin {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  sessions PlatformSession[]
+  sessions            PlatformSession[]
   passwordResetTokens PlatformPasswordResetToken[]
 
   @@index([email])
@@ -1255,4 +1305,77 @@ model Job {
   @@index([status, lockedAt])
   @@index([businessId])
   @@index([type])
+}
+
+// ─── Contacts + attribution (Phase 0, workstream D) ──────────────────
+// One person per tenant, unified across chat, leads, tickets and quotes.
+// Resolved by any identity (email, phone, widget visitor id, social ids);
+// see src/lib/contacts.ts.
+model Contact {
+  id          String   @id @default(cuid())
+  businessId  String
+  name        String?
+  email       String? // lowercased
+  phone       String? // normalised: leading + and digits
+  company     String?
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+  consent     Json? // { marketingEmail, whatsapp, sms: { granted, at, source } }
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business       Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  identities     ContactIdentity[]
+  touchpoints    Touchpoint[]
+  leads          Lead[]
+  chatSessions   ChatSession[]
+  supportTickets SupportTicket[]
+  quoteRequests  QuoteRequest[]
+
+  @@unique([businessId, email])
+  @@index([businessId, phone])
+  @@index([businessId, lastSeenAt])
+}
+
+model ContactIdentity {
+  id         String   @id @default(cuid())
+  businessId String
+  contactId  String
+  type       String // visitor | email | phone | whatsapp | fb_psid | ig_id | linkedin
+  value      String   @db.VarChar(191)
+  createdAt  DateTime @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, type, value])
+  @@index([contactId])
+}
+
+// One marketing touch: a site visit (once per browser session), chat start,
+// form submit, ad lead, social DM or email click.
+model Touchpoint {
+  id          String   @id @default(cuid())
+  businessId  String
+  contactId   String?
+  visitorId   String?  @db.VarChar(191)
+  kind        String // visit | chat_start | form_submit | ad_lead | social_dm | email_click
+  channel     String // organic_search | paid_search | social_organic | social_paid | email | referral | direct | whatsapp
+  source      String? // utm_source / referrer host / platform
+  medium      String?
+  campaign    String?
+  term        String?
+  content     String?
+  clickId     String?  @db.VarChar(500) // value of gclid | fbclid | li_fat_id | msclkid | …
+  clickIdType String? // which click-id parameter it came from
+  landingUrl  String?  @db.Text // origin + path only (query stripped)
+  referrer    String?  @db.Text // origin + path only
+  dedupeKey   String?  @unique @db.VarChar(191) // e.g. one visit per browser session
+  occurredAt  DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  contact  Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([businessId, occurredAt])
+  @@index([contactId, occurredAt])
+  @@index([businessId, visitorId])
 }

@@ -85,6 +85,7 @@ const API_MODULE_ROUTES: [string, ModuleKey][] = [
   ["/api/white-label", "white_label"],
   ["/api/automations", "automations"],
   ["/api/integrations", "integrations"],
+  ["/api/connections", "integrations"],
   ["/api/documents", "documents"],
   ["/api/analytics", "analytics"],
   ["/api/whatsapp", "whatsapp"],

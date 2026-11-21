@@ -18,6 +18,7 @@ const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const EXEMPT_PATH_PREFIXES = [
   "/api/payments/webhook",
   "/api/whatsapp/incoming",
+  "/api/webhooks/", // provider webhooks: authenticated by signature, no session
   "/api/public/",
   "/api/auth/login",
   "/api/auth/register",

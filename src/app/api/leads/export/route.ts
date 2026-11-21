@@ -22,10 +22,12 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status") || undefined;
   const quality = searchParams.get("quality") || undefined;
+  const source = searchParams.get("source")?.trim().slice(0, 50) || undefined;
 
   const where: any = { businessId: user.businessId };
   if (status) where.status = status;
   if (quality) where.quality = quality;
+  if (source) where.source = source;
 
   const leads = await db.lead.findMany({
     where,

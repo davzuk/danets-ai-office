@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
     include: { business: true },
   });
   if (!user || !(await bcrypt.compare(password, user.password))) {
-    await recordAttempt(ip, emailLower, user?.businessId, false, req.headers.get("user-agent"));
+    await recordAttempt(ip, emailLower, user?.businessId ?? null, false, req.headers.get("user-agent"));
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
   if (user.business.status !== "active") {

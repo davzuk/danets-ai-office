@@ -5,6 +5,8 @@ import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { createNotification } from "@/lib/activity";
 import { fireTrigger } from "@/lib/automation";
 import { requireQuota, LimitExceededError } from "@/lib/plan-quota";
+import { captureInbound } from "@/lib/inbound-attribution";
+import { leadSourceFromChannel } from "@/lib/attribution";
 
 const leadSchema = z.object({
   pk: z.string().min(1),
@@ -14,6 +16,9 @@ const leadSchema = z.object({
   phone: z.string().max(40).optional().or(z.literal("")),
   service: z.string().max(200).optional(),
   message: z.string().max(2000).optional(),
+  visitorId: z.string().max(191).nullable().optional(),
+  // Validated (and size-capped) by captureInbound; bad attribution never rejects a lead.
+  attribution: z.unknown().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -32,7 +37,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { pk, sessionId, name, email, phone, service, message } = parsed.data;
+  const { pk, sessionId, name, email, phone, service, message, attribution } = parsed.data;
 
   const business = await db.business.findUnique({
     where: { publicKey: pk, status: "active" },
@@ -49,12 +54,33 @@ export async function POST(req: NextRequest) {
 
   // Verify session belongs to this business if provided
   let validSessionId: string | undefined;
+  let sessionVisitorId: string | null = null;
   if (sessionId) {
     const s = await db.chatSession.findFirst({
       where: { id: sessionId, businessId: business.id },
     });
-    if (s) validSessionId = s.id;
+    if (s) {
+      validSessionId = s.id;
+      sessionVisitorId = s.visitorId;
+    }
   }
+
+  // Unified contact + touchpoints (first touch drives Lead.source).
+  // Recorded even when the lead turns out to be a duplicate: a returning
+  // visitor submitting again is a real touch on the same contact.
+  const inbound = await captureInbound({
+    businessId: business.id,
+    kind: "form_submit",
+    visitorId: parsed.data.visitorId || sessionVisitorId,
+    attribution,
+    profile: { name, email, phone },
+  });
+  const contactId = inbound?.contactId ?? null;
+  const linkExisting = async (leadId: string) => {
+    if (contactId) {
+      await db.lead.updateMany({ where: { id: leadId, contactId: null }, data: { contactId } });
+    }
+  };
 
   // Prevent duplicate leads from same session.
   if (validSessionId) {
@@ -62,6 +88,7 @@ export async function POST(req: NextRequest) {
       where: { sessionId: validSessionId },
     });
     if (existing) {
+      await linkExisting(existing.id);
       return NextResponse.json({
         leadId: existing.id,
         alreadyExists: true,
@@ -87,6 +114,7 @@ export async function POST(req: NextRequest) {
       },
     });
     if (existing) {
+      await linkExisting(existing.id);
       return NextResponse.json({
         leadId: existing.id,
         alreadyExists: true,
@@ -120,7 +148,10 @@ export async function POST(req: NextRequest) {
         message: message || null,
         quality,
         status: "new",
-        source: "chatbot",
+        source: inbound?.attributed ? leadSourceFromChannel(inbound.channel) : "chatbot",
+        contactId,
+        firstTouchId: inbound?.firstTouch.id ?? null,
+        lastTouchId: inbound?.touch.id ?? null,
       },
     });
   } catch (e: any) {
@@ -138,6 +169,7 @@ export async function POST(req: NextRequest) {
         },
       });
       if (existing) {
+        await linkExisting(existing.id);
         return NextResponse.json({
           leadId: existing.id,
           alreadyExists: true,
@@ -157,6 +189,7 @@ export async function POST(req: NextRequest) {
         visitorEmail: email || undefined,
         visitorPhone: phone || undefined,
         leadQuality: quality,
+        ...(contactId ? { contactId } : {}),
       },
     });
   }

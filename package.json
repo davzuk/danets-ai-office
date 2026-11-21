@@ -16,6 +16,7 @@
     "db:reset": "prisma migrate reset",
     "db:seed": "npx tsx scripts/seed.ts",
     "worker": "tsx --conditions=react-server --tsconfig tsconfig.json scripts/worker.ts",
+    "contacts:backfill": "tsx --conditions=react-server --tsconfig tsconfig.json scripts/backfill-contacts.ts",
     "test:db": "vitest run --config vitest.db.config.ts"
   },
   "dependencies": {
@@ -81,6 +82,7 @@
     "react-syntax-highlighter": "^15.6.1",
     "recharts": "^2.15.4",
     "redis": "^6.1.0",
+    "server-only": "^0.0.1",
     "sharp": "^0.34.3",
     "sonner": "^2.0.6",
     "tailwind-merge": "^3.3.1",

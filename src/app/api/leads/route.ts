@@ -19,6 +19,7 @@ export function GET(req: NextRequest) {
     const status = searchParams.get("status") || undefined;
     const quality = searchParams.get("quality") || undefined;
     const q = searchParams.get("q")?.trim() || undefined;
+    const source = searchParams.get("source")?.trim().slice(0, 50) || undefined;
     const cursor = decodeCursor(searchParams.get("cursor"));
     const take = clampPageSize(
       Number(searchParams.get("take") || 0) || undefined
@@ -30,6 +31,7 @@ export function GET(req: NextRequest) {
     const where: any = { businessId: user.businessId };
     if (status && validStatuses.includes(status)) where.status = status;
     if (quality && validQualities.includes(quality)) where.quality = quality;
+    if (source) where.source = source;
     if (q) {
       where.OR = [
         { name: { contains: q } },

@@ -96,6 +96,7 @@ export function AppShell({
     email: string;
     businessName: string;
     businessId: string;
+    isSuperAdmin?: boolean;
     isImpersonating?: boolean;
   };
   active: ViewId;
