@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { purgeBusinessMedia } from "@/lib/media";
 import { requireSuperAdmin } from "@/lib/super-admin";
 import { logActivity } from "@/lib/activity";
 import { getTenantUsage } from "@/lib/tenant-usage";
@@ -164,6 +165,8 @@ export async function DELETE(_req: NextRequest, { params }: RouteCtx) {
     );
   }
 
+  // Stored files are outside the DB cascade: remove them first.
+  await purgeBusinessMedia(id);
   await db.business.delete({ where: { id } });
 
   await logActivity({

@@ -23,6 +23,7 @@ import {
   Plug,
   CreditCard,
   Lock,
+  Images,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DanetsLogo } from "@/components/dashboard/shared/danets-logo";
@@ -43,6 +44,7 @@ export type ViewId =
   | "quotes"
   | "tickets"
   | "documents"
+  | "media"
   | "whatsapp"
   | "automations"
   | "analytics"
@@ -68,6 +70,7 @@ const NAV: NavItem[] = [
   { id: "tickets", label: "Support Tickets", icon: Ticket, group: "main", desc: "Customer support" },
   { id: "quotes", label: "Quotes & Proposals", icon: FileText, group: "tools", desc: "AI proposal generator" },
   { id: "documents", label: "Document Assistant", icon: FileText, group: "tools", desc: "AI document Q&A" },
+  { id: "media", label: "Media Library", icon: Images, group: "tools", desc: "Images & videos" },
   { id: "whatsapp", label: "WhatsApp", icon: MessageCircle, group: "tools", desc: "Templates & automation" },
   { id: "automations", label: "Automations", icon: Zap, group: "tools", desc: "Workflow builder" },
   { id: "analytics", label: "Analytics", icon: BarChart3, group: "tools", desc: "Reports & insights" },

@@ -156,6 +156,18 @@ With **Inbox** switched on for a Page or Instagram account, Messenger and Instag
 - When someone types an email or phone number in a DM, a lead is created (`source` = first touch, usually `social_organic`); **Create lead** does the same by hand.
 - WhatsApp stays on its own screen for now.
 
+## Media library
+
+**Media Library** (sidebar) stores the images and videos used in posts and ads. Every upload is type-checked by its bytes (not its name), limited to 8 MB per image (JPEG, PNG, WebP, GIF) and 100 MB per video (MP4, MOV, WebM), and counted against the plan's storage quota (`mediaStorageMbLimit`: Free 250 MB, Starter/Business 2 GB, Pro/Premium 10 GB, Enterprise 50 GB; overridable per tenant).
+
+- Images are re-encoded with sharp: orientation applied, longest side capped at 2048 px, and all metadata (EXIF, GPS, camera details) removed. **Videos are stored as uploaded**, metadata included, because there is no ffmpeg step.
+- `STORAGE_DRIVER=local` (default): files go to `STORAGE_LOCAL_DIR` (default `./storage/media`, git-ignored) and are served from `/api/media/files/...`. Use it for development or a single server with a persistent disk only; it doesn't work across several instances or on ephemeral filesystems.
+- `STORAGE_DRIVER=s3`: any S3-compatible store (Cloudflare R2, AWS S3, DigitalOcean Spaces, MinIO). Set `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_PUBLIC_URL` and, for AWS, `S3_REGION` (R2 uses `auto`). The bucket must be **publicly readable** at `S3_PUBLIC_URL` (on R2: a custom domain or the r2.dev URL), because Instagram and LinkedIn fetch post media by URL. File names carry 96 random bits, so links can't be guessed, but anyone who has a link can open it.
+- Switching driver later doesn't move existing files; stored URLs keep pointing at the old location.
+- Uploads go through the middleware, so `experimental.proxyClientMaxBodySize` in `next.config.ts` is raised to 105 MB. A reverse proxy in front (nginx `client_max_body_size`, Cloudflare's 100 MB limit on lower plans) must allow the same.
+- The storage check runs per file, so two uploads at the same moment can overshoot the quota by up to one file each.
+- Deleting a workspace from the platform console deletes its files from storage too.
+
 ## Contacts and lead attribution
 
 Every widget chat, lead and ticket is linked to a unified **Contact** (matched by email, phone or the widget's visitor id), and the widget records where the visitor came from as **touchpoints**: UTM tags, ad click ids (`gclid`, `msclkid`, `fbclid`, `li_fat_id`, …) and the referrer. A lead's **Source** is the channel of its first touch (`organic_search`, `paid_search`, `social_organic`, `social_paid`, `email`, `referral`, `direct`, `whatsapp`); leads from clients that send no attribution keep `chatbot`. Lead detail → **Journey** shows the timeline; Analytics → **Leads by Channel** charts it.

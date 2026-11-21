@@ -21,6 +21,9 @@ const nextConfig: NextConfig = {
   // this directive every dashboard view pulls the whole tree. The
   // radix packages similarly have lots of files we don't all use.
   experimental: {
+    // The middleware buffers request bodies and cuts them at 10 MB by default;
+    // media uploads allow 100 MB videos (see MEDIA_LIMITS in src/lib/media.ts).
+    proxyClientMaxBodySize: "105mb",
     optimizePackageImports: [
       "lucide-react",
       "@radix-ui/react-dialog",

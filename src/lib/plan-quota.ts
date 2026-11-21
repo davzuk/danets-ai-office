@@ -14,7 +14,8 @@ export type QuotaResource =
   | "whatsappTemplates"
   | "integrations"
   | "proposalTemplates"
-  | "quotes";
+  | "quotes"
+  | "mediaStorageMb";
 
 export interface EffectiveLimits {
   plan: string;
@@ -32,6 +33,7 @@ export interface EffectiveLimits {
   integrationLimit: number;
   proposalTemplateLimit: number;
   quoteLimit: number;
+  mediaStorageMbLimit: number;
 }
 
 export interface QuotaUsage {
@@ -48,6 +50,8 @@ export interface QuotaUsage {
   integrations: number;
   proposalTemplates: number;
   quotes: number;
+  /** Media library size in MB (rounded up). */
+  mediaStorageMb: number;
 }
 
 export interface QuotaCheckResult {
@@ -81,6 +85,7 @@ export const RESOURCE_LABELS: Record<QuotaResource, string> = {
   integrations: "integrations",
   proposalTemplates: "proposal templates",
   quotes: "monthly quotes",
+  mediaStorageMb: "MB of media storage",
 };
 
 export class LimitExceededError extends Error {
@@ -135,6 +140,7 @@ export async function getEffectiveLimits(
       integrationLimit: planRow?.integrationLimit ?? 3,
       proposalTemplateLimit: planRow?.proposalTemplateLimit ?? 10,
       quoteLimit: planRow?.quoteLimit ?? 50,
+      mediaStorageMbLimit: planRow?.mediaStorageMbLimit ?? 1024,
     };
 
     return {
@@ -155,6 +161,7 @@ export async function getEffectiveLimits(
       proposalTemplateLimit:
         override?.proposalTemplateLimit ?? base.proposalTemplateLimit,
       quoteLimit: override?.quoteLimit ?? base.quoteLimit,
+      mediaStorageMbLimit: override?.mediaStorageMbLimit ?? base.mediaStorageMbLimit,
     };
   });
 }
@@ -178,6 +185,7 @@ export async function getQuotaUsage(businessId: string): Promise<QuotaUsage> {
     integrations,
     proposalTemplates,
     quotes,
+    media,
   ] = await Promise.all([
     db.chatSession.count({
       where: { businessId, createdAt: { gte: monthStart } },
@@ -202,6 +210,7 @@ export async function getQuotaUsage(businessId: string): Promise<QuotaUsage> {
     db.quoteRequest.count({
       where: { businessId, createdAt: { gte: monthStart } },
     }),
+    db.mediaAsset.aggregate({ where: { businessId }, _sum: { sizeBytes: true } }),
   ]);
 
   return {
@@ -218,6 +227,7 @@ export async function getQuotaUsage(businessId: string): Promise<QuotaUsage> {
     integrations,
     proposalTemplates,
     quotes,
+    mediaStorageMb: Math.ceil((media._sum.sizeBytes ?? 0) / (1024 * 1024)),
   };
   });
 }
@@ -253,6 +263,8 @@ function limitForResource(
       return limits.proposalTemplateLimit;
     case "quotes":
       return limits.quoteLimit;
+    case "mediaStorageMb":
+      return limits.mediaStorageMbLimit;
   }
 }
 
@@ -287,6 +299,8 @@ function usedForResource(
       return usage.proposalTemplates;
     case "quotes":
       return usage.quotes;
+    case "mediaStorageMb":
+      return usage.mediaStorageMb;
   }
 }
 

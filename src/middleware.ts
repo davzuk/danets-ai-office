@@ -44,6 +44,7 @@ const CSP_BASE = [
   "script-src 'self' 'unsafe-inline' 'strict-dynamic' https://js.paystack.co https://checkout.flutterwave.com",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
+  "media-src 'self' blob: https:",
   "font-src 'self' data:",
   "connect-src 'self' https://api.paystack.co https://api.flutterwave.com wss:",
   "frame-src https://js.paystack.co https://checkout.flutterwave.com",

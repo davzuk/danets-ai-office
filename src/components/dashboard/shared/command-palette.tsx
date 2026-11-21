@@ -33,6 +33,7 @@ import {
   Plug,
   CreditCard,
   Lock,
+  Images,
 } from "lucide-react";
 import type { ViewId } from "@/components/dashboard/app-shell";
 import { useTheme } from "next-themes";
@@ -71,6 +72,7 @@ const NAV_ITEMS: {
   { id: "tickets", label: "Support Tickets", icon: Ticket, hint: "Customer support" },
   { id: "quotes", label: "Quotes & Proposals", icon: FileText, hint: "AI proposal generator" },
   { id: "documents", label: "Document Assistant", icon: FileText, hint: "AI document Q&A" },
+  { id: "media", label: "Media Library", icon: Images, hint: "Images & videos" },
   { id: "whatsapp", label: "WhatsApp", icon: MessageCircle, hint: "Templates & automation" },
   { id: "automations", label: "Automations", icon: Zap, hint: "Workflow builder" },
   { id: "analytics", label: "Analytics", icon: BarChart3, hint: "Reports & insights" },

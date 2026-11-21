@@ -53,6 +53,7 @@ model Business {
   brandProfile         BrandProfile?
   socialAccounts       SocialAccount[]
   metaLeadForms        MetaLeadForm[]
+  mediaAssets          MediaAsset[]
   subscription         BusinessSubscription?
   payments             Payment[]
   invoices             Invoice[]
@@ -584,6 +585,7 @@ model SubscriptionPlan {
   integrationLimit      Int      @default(3)
   proposalTemplateLimit Int      @default(10)
   quoteLimit            Int      @default(50)
+  mediaStorageMbLimit   Int      @default(1024) // media library, in MB (0 = unlimited)
   auditRetentionDays    Int      @default(30)
   chatRetentionDays     Int      @default(90)
   leadRetentionDays     Int      @default(365)
@@ -608,6 +610,7 @@ model BusinessLimitOverride {
   integrationLimit      Int?
   proposalTemplateLimit Int?
   quoteLimit            Int?
+  mediaStorageMbLimit   Int?
   notes                 String?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -1507,4 +1510,28 @@ model MetaLeadForm {
 
   @@unique([socialAccountId, formId])
   @@index([businessId])
+}
+
+// Media library (Phase 1 I): images and videos for posts. Files live in
+// object storage (or local disk in dev); this row is the index.
+model MediaAsset {
+  id           String   @id @default(cuid())
+  businessId   String
+  kind         String // image | video
+  storageKey   String   @unique @db.VarChar(191)
+  url          String   @db.Text // public URL (Meta and LinkedIn fetch from it)
+  mimeType     String
+  sizeBytes    Int
+  width        Int?
+  height       Int?
+  altText      String?  @db.Text
+  originalName String?
+  source       String   @default("upload") // upload | ai_generated | stock
+  createdById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, createdAt])
 }
