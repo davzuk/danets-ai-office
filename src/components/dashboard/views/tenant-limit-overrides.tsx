@@ -8,28 +8,29 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { LIMIT_FIELDS, formatLimit, type LimitKey, type LimitOverrides, type LimitValues } from "@/lib/limit-fields";
 
 interface LimitsData {
   businessId: string;
   plan: string;
-  planDefaults: {
-    chatLimit: number;
-    leadLimit: number;
-    kbLimit: number;
-    agentLimit: number;
-  };
-  override: {
-    chatLimit: number | null;
-    leadLimit: number | null;
-    kbLimit: number | null;
-    agentLimit: number | null;
-    notes: string | null;
-    updatedAt: string;
-  } | null;
+  planDefaults: LimitValues;
+  override: (LimitOverrides & { notes: string | null; updatedAt: string }) | null;
 }
 
-function numOrEmpty(v: number | null | undefined) {
-  return v == null ? "" : String(v);
+type Form = Record<LimitKey, string> & { notes: string };
+
+function toForm(o: LimitsData["override"]): Form {
+  return {
+    ...(Object.fromEntries(LIMIT_FIELDS.map((f) => [f.key, o?.[f.key] == null ? "" : String(o[f.key])])) as Record<LimitKey, string>),
+    notes: o?.notes || "",
+  };
+}
+
+function parseOptionalInt(v: string): number | null {
+  const trimmed = v.trim();
+  if (!trimmed) return null;
+  const n = parseInt(trimmed, 10);
+  return Number.isNaN(n) || n < 0 ? null : n;
 }
 
 export function TenantLimitOverrides({
@@ -44,48 +45,29 @@ export function TenantLimitOverrides({
   const [data, setData] = React.useState<LimitsData | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
-  const [form, setForm] = React.useState({
-    chatLimit: "",
-    leadLimit: "",
-    kbLimit: "",
-    agentLimit: "",
-    notes: "",
-  });
+  const [form, setForm] = React.useState<Form>(() => toForm(null));
 
-  async function load() {
+  const load = React.useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch(`/api/super-admin/businesses/${businessId}/limits`, {
         cache: "no-store",
       });
       if (!res.ok) throw new Error(`Failed (${res.status})`);
-      const json = await res.json();
+      const json: LimitsData = await res.json();
       setData(json);
-      const o = json.override;
-      setForm({
-        chatLimit: numOrEmpty(o?.chatLimit),
-        leadLimit: numOrEmpty(o?.leadLimit),
-        kbLimit: numOrEmpty(o?.kbLimit),
-        agentLimit: numOrEmpty(o?.agentLimit),
-        notes: o?.notes || "",
-      });
+      setForm(toForm(json.override));
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to load limits");
     } finally {
       setLoading(false);
     }
-  }
-
-  React.useEffect(() => {
-    load();
   }, [businessId]);
 
-  function parseOptionalInt(v: string): number | null {
-    const trimmed = v.trim();
-    if (!trimmed) return null;
-    const n = parseInt(trimmed, 10);
-    return Number.isNaN(n) ? null : n;
-  }
+  React.useEffect(() => {
+    const t = setTimeout(load, 0);
+    return () => clearTimeout(t);
+  }, [load]);
 
   async function save() {
     setSaving(true);
@@ -94,10 +76,7 @@ export function TenantLimitOverrides({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          chatLimit: parseOptionalInt(form.chatLimit),
-          leadLimit: parseOptionalInt(form.leadLimit),
-          kbLimit: parseOptionalInt(form.kbLimit),
-          agentLimit: parseOptionalInt(form.agentLimit),
+          ...Object.fromEntries(LIMIT_FIELDS.map((f) => [f.key, parseOptionalInt(form[f.key])])),
           notes: form.notes.trim() || null,
         }),
       });
@@ -143,6 +122,7 @@ export function TenantLimitOverrides({
   }
 
   if (!data) return null;
+  const overridden = LIMIT_FIELDS.filter((f) => data.override?.[f.key] != null).length;
 
   return (
     <div className="rounded-lg border p-3 space-y-3">
@@ -150,60 +130,32 @@ export function TenantLimitOverrides({
         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
           <Gauge className="h-3.5 w-3.5" /> Custom Quota Overrides
         </div>
-        {data.override && (
+        {data.override && overridden > 0 && (
           <Badge variant="outline" className="text-[10px]">
-            Override active
+            {overridden} override{overridden === 1 ? "" : "s"} active
           </Badge>
         )}
       </div>
       <p className="text-xs text-muted-foreground">
-        Leave blank to use the <strong className="capitalize">{data.plan}</strong> plan
-        default. Set a value to override for this tenant only.
+        Leave blank to use the <strong className="capitalize">{data.plan}</strong> plan value (shown greyed out). Enter a
+        number to override it for this tenant only; 0 means unlimited.
       </p>
-      <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground">
-        <span>Plan defaults:</span>
-        <span className="text-right tabular-nums">
-          {data.planDefaults.chatLimit} chats · {data.planDefaults.leadLimit} leads ·{" "}
-          {data.planDefaults.kbLimit} KB · {data.planDefaults.agentLimit} agents
-        </span>
-      </div>
       <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <Label className="text-xs">Chat limit/mo</Label>
-          <Input
-            value={form.chatLimit}
-            onChange={(e) => setForm((f) => ({ ...f, chatLimit: e.target.value }))}
-            placeholder={String(data.planDefaults.chatLimit)}
-            className="h-8 text-sm"
-          />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Lead limit/mo</Label>
-          <Input
-            value={form.leadLimit}
-            onChange={(e) => setForm((f) => ({ ...f, leadLimit: e.target.value }))}
-            placeholder={String(data.planDefaults.leadLimit)}
-            className="h-8 text-sm"
-          />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">KB items (total)</Label>
-          <Input
-            value={form.kbLimit}
-            onChange={(e) => setForm((f) => ({ ...f, kbLimit: e.target.value }))}
-            placeholder={String(data.planDefaults.kbLimit)}
-            className="h-8 text-sm"
-          />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">AI agents (total)</Label>
-          <Input
-            value={form.agentLimit}
-            onChange={(e) => setForm((f) => ({ ...f, agentLimit: e.target.value }))}
-            placeholder={String(data.planDefaults.agentLimit)}
-            className="h-8 text-sm"
-          />
-        </div>
+        {LIMIT_FIELDS.map((f) => (
+          <div key={f.key} className="space-y-1">
+            <Label className="text-xs" title={"hint" in f ? f.hint : undefined}>
+              {f.label}{" "}
+              <span className="font-normal text-muted-foreground">({f.unit === "/mo" ? "per month" : f.unit === "MB" ? "MB" : "total"})</span>
+            </Label>
+            <Input
+              value={form[f.key]}
+              onChange={(e) => setForm((cur) => ({ ...cur, [f.key]: e.target.value }))}
+              placeholder={`${formatLimit(data.planDefaults[f.key], f.unit)} (plan)`}
+              inputMode="numeric"
+              className="h-8 text-sm"
+            />
+          </div>
+        ))}
       </div>
       <div className="space-y-1">
         <Label className="text-xs">Notes (internal)</Label>

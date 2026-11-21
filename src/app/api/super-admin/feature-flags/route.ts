@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireSuperAdmin } from "@/lib/super-admin";
 import { logActivity } from "@/lib/activity";
+import { listModuleFlags } from "@/lib/module-registry";
 
 const createSchema = z.object({
   key: z
@@ -25,7 +26,17 @@ export async function GET() {
     include: { _count: { select: { overrides: true } } },
   });
 
+  // Which dashboard modules each flag unlocks, and module flags nobody has created yet
+  // (a module whose flag is missing is off for every tenant).
+  const moduleFlags = listModuleFlags();
+  const existing = new Set(flags.map((f) => f.key));
+  const missing = [...new Set(moduleFlags.filter((m) => !existing.has(m.flagKey)).map((m) => m.flagKey))].map((flagKey) => ({
+    key: flagKey,
+    modules: moduleFlags.filter((m) => m.flagKey === flagKey).map(({ module, label, minPlan }) => ({ module, label, minPlan })),
+  }));
+
   return NextResponse.json({
+    missingModuleFlags: missing,
     flags: flags.map((f) => ({
       id: f.id,
       key: f.key,
@@ -33,6 +44,7 @@ export async function GET() {
       description: f.description,
       enabled: f.enabled,
       overrideCount: f._count.overrides,
+      modules: moduleFlags.filter((m) => m.flagKey === f.key).map(({ module, label, minPlan }) => ({ module, label, minPlan })),
       createdAt: f.createdAt.toISOString(),
       updatedAt: f.updatedAt.toISOString(),
     })),
@@ -90,6 +102,7 @@ const overrideSchema = z.object({
 export async function PATCH(req: NextRequest) {
   const auth = await requireSuperAdmin();
   if (!auth.success) return auth.error;
+  const { user } = auth;
 
   const body = await req.json().catch(() => ({}));
 
@@ -107,7 +120,7 @@ export async function PATCH(req: NextRequest) {
 
     const business = await db.business.findUnique({
       where: { id: parsed.data.businessId },
-      select: { id: true },
+      select: { id: true, name: true },
     });
     if (!business) return NextResponse.json({ error: "Business not found" }, { status: 404 });
 
@@ -124,6 +137,16 @@ export async function PATCH(req: NextRequest) {
         enabled: parsed.data.enabled,
       },
       update: { enabled: parsed.data.enabled },
+    });
+
+    await logActivity({
+      businessId: business.id,
+      userId: user.userId,
+      userName: `${user.name} (Super Admin)`,
+      action: "feature_flag_override_set",
+      module: "business",
+      description: `${parsed.data.enabled ? "Enabled" : "Disabled"} ${flag.key} for ${business.name}`,
+      metadata: { flagKey: flag.key, enabled: parsed.data.enabled },
     });
 
     return NextResponse.json({ override });
@@ -148,10 +171,24 @@ export async function PATCH(req: NextRequest) {
     data.description = parsed.data.description?.trim() || null;
   }
 
+  const before = await db.platformFeatureFlag.findUnique({ where: { key: parsed.data.key } });
+  if (!before) return NextResponse.json({ error: "Flag not found" }, { status: 404 });
   const flag = await db.platformFeatureFlag.update({
     where: { key: parsed.data.key },
     data,
   });
+
+  if (data.enabled !== undefined && data.enabled !== before.enabled) {
+    await logActivity({
+      businessId: user.businessId,
+      userId: user.userId,
+      userName: `${user.name} (Super Admin)`,
+      action: flag.enabled ? "feature_flag_enabled" : "feature_flag_disabled",
+      module: "business",
+      description: `${flag.enabled ? "Enabled" : "Disabled"} feature flag ${flag.key} globally`,
+      metadata: { flagKey: flag.key },
+    });
+  }
 
   return NextResponse.json({ flag });
 }

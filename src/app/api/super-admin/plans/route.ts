@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireSuperAdmin } from "@/lib/super-admin";
+import { logActivity } from "@/lib/activity";
+import { LIMIT_FIELDS, pickLimits, type LimitKey } from "@/lib/limit-fields";
 
 // GET /api/super-admin/plans — subscription plan catalog
 export async function GET() {
@@ -23,10 +25,7 @@ export async function GET() {
       id: p.id,
       name: p.name,
       priceUsd: p.priceUsd,
-      chatLimit: p.chatLimit,
-      leadLimit: p.leadLimit,
-      kbLimit: p.kbLimit,
-      agentLimit: p.agentLimit,
+      ...pickLimits(p, true),
       auditRetentionDays: p.auditRetentionDays,
       chatRetentionDays: p.chatRetentionDays,
       leadRetentionDays: p.leadRetentionDays,
@@ -39,13 +38,15 @@ export async function GET() {
   });
 }
 
+const limitShape = Object.fromEntries(LIMIT_FIELDS.map((f) => [f.key, z.number().int().min(0).optional()])) as Record<
+  LimitKey,
+  z.ZodOptional<z.ZodNumber>
+>;
+
 const patchSchema = z.object({
   name: z.string().min(1),
   priceUsd: z.number().min(0).optional(),
-  chatLimit: z.number().int().min(0).optional(),
-  leadLimit: z.number().int().min(0).optional(),
-  kbLimit: z.number().int().min(0).optional(),
-  agentLimit: z.number().int().min(0).optional(),
+  ...limitShape,
   auditRetentionDays: z.number().int().min(1).optional(),
   chatRetentionDays: z.number().int().min(1).optional(),
   leadRetentionDays: z.number().int().min(1).optional(),
@@ -71,12 +72,11 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Plan not found" }, { status: 404 });
   }
 
-  const data: any = {};
+  const data: Record<string, unknown> = {};
   if (parsed.data.priceUsd !== undefined) data.priceUsd = parsed.data.priceUsd;
-  if (parsed.data.chatLimit !== undefined) data.chatLimit = parsed.data.chatLimit;
-  if (parsed.data.leadLimit !== undefined) data.leadLimit = parsed.data.leadLimit;
-  if (parsed.data.kbLimit !== undefined) data.kbLimit = parsed.data.kbLimit;
-  if (parsed.data.agentLimit !== undefined) data.agentLimit = parsed.data.agentLimit;
+  for (const f of LIMIT_FIELDS) {
+    if (parsed.data[f.key] !== undefined) data[f.key] = parsed.data[f.key];
+  }
   if (parsed.data.auditRetentionDays !== undefined) data.auditRetentionDays = parsed.data.auditRetentionDays;
   if (parsed.data.chatRetentionDays !== undefined) data.chatRetentionDays = parsed.data.chatRetentionDays;
   if (parsed.data.leadRetentionDays !== undefined) data.leadRetentionDays = parsed.data.leadRetentionDays;
@@ -87,6 +87,19 @@ export async function PATCH(req: NextRequest) {
     where: { name: parsed.data.name },
     data,
   });
+
+  const changed = Object.keys(data).filter((k) => JSON.stringify(data[k]) !== JSON.stringify((existing as Record<string, unknown>)[k]));
+  if (changed.length) {
+    await logActivity({
+      businessId: auth.user.businessId,
+      userId: auth.user.userId,
+      userName: `${auth.user.name} (Super Admin)`,
+      action: "plan_updated",
+      module: "subscription",
+      description: `Updated the ${plan.name} plan (${changed.join(", ")})`,
+      metadata: Object.fromEntries(changed.map((k) => [k, { from: (existing as Record<string, unknown>)[k], to: data[k] }])),
+    });
+  }
 
   return NextResponse.json({
     plan: {

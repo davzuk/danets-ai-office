@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireSuperAdmin } from "@/lib/super-admin";
+import { logActivity } from "@/lib/activity";
+import { listModuleFlags } from "@/lib/module-registry";
 
 // DELETE /api/super-admin/feature-flags/[key]?businessId= — remove tenant override
 export async function DELETE(
@@ -10,19 +12,42 @@ export async function DELETE(
   const auth = await requireSuperAdmin();
   if (!auth.success) return auth.error;
 
+  const { user } = auth;
   const { key } = await params;
   const businessId = new URL(req.url).searchParams.get("businessId");
 
   if (businessId) {
-    await db.businessFeatureFlag
+    const removed = await db.businessFeatureFlag
       .delete({
         where: { businessId_flagKey: { businessId, flagKey: key } },
       })
       .catch(() => null);
+    if (removed) {
+      await logActivity({
+        businessId,
+        userId: user.userId,
+        userName: `${user.name} (Super Admin)`,
+        action: "feature_flag_override_removed",
+        module: "business",
+        description: `Removed the ${key} override (back to the global setting)`,
+        metadata: { flagKey: key },
+      });
+    }
     return NextResponse.json({ ok: true });
   }
 
-  await db.platformFeatureFlag.delete({ where: { key } }).catch(() => null);
+  const deleted = await db.platformFeatureFlag.delete({ where: { key } }).catch(() => null);
+  if (deleted) {
+    await logActivity({
+      businessId: user.businessId,
+      userId: user.userId,
+      userName: `${user.name} (Super Admin)`,
+      action: "feature_flag_deleted",
+      module: "business",
+      description: `Deleted feature flag ${key}`,
+      metadata: { flagKey: key, modulesLocked: listModuleFlags().filter((m) => m.flagKey === key).map((m) => m.module) },
+    });
+  }
   return NextResponse.json({ ok: true });
 }
 

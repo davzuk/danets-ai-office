@@ -3,17 +3,25 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireSuperAdmin } from "@/lib/super-admin";
 import { logActivity } from "@/lib/activity";
+import { LIMIT_FIELDS, pickLimits, type LimitKey } from "@/lib/limit-fields";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
+// null = use the plan's value; a number replaces it for this tenant (0 = unlimited).
+const limitShape = Object.fromEntries(LIMIT_FIELDS.map((f) => [f.key, z.number().int().min(0).nullable().optional()])) as Record<
+  LimitKey,
+  z.ZodOptional<z.ZodNullable<z.ZodNumber>>
+>;
+
 const patchSchema = z.object({
-  chatLimit: z.number().int().min(0).nullable().optional(),
-  leadLimit: z.number().int().min(0).nullable().optional(),
-  kbLimit: z.number().int().min(0).nullable().optional(),
-  agentLimit: z.number().int().min(0).nullable().optional(),
+  ...limitShape,
   notes: z.string().max(500).nullable().optional(),
   clear: z.boolean().optional(),
 });
+
+function overrideView(o: { notes: string | null; updatedAt: Date } & Partial<Record<LimitKey, number | null>>) {
+  return { ...pickLimits(o, false), notes: o.notes, updatedAt: o.updatedAt.toISOString() };
+}
 
 // GET /api/super-admin/businesses/[id]/limits
 export async function GET(_req: NextRequest, { params }: RouteCtx) {
@@ -36,22 +44,8 @@ export async function GET(_req: NextRequest, { params }: RouteCtx) {
   return NextResponse.json({
     businessId: id,
     plan: business.plan,
-    planDefaults: {
-      chatLimit: planRow?.chatLimit ?? 100,
-      leadLimit: planRow?.leadLimit ?? 50,
-      kbLimit: planRow?.kbLimit ?? 25,
-      agentLimit: planRow?.agentLimit ?? 1,
-    },
-    override: business.limitOverride
-      ? {
-          chatLimit: business.limitOverride.chatLimit,
-          leadLimit: business.limitOverride.leadLimit,
-          kbLimit: business.limitOverride.kbLimit,
-          agentLimit: business.limitOverride.agentLimit,
-          notes: business.limitOverride.notes,
-          updatedAt: business.limitOverride.updatedAt.toISOString(),
-        }
-      : null,
+    planDefaults: pickLimits(planRow, true),
+    override: business.limitOverride ? overrideView(business.limitOverride) : null,
   });
 }
 
@@ -89,18 +83,10 @@ export async function PATCH(req: NextRequest, { params }: RouteCtx) {
     return NextResponse.json({ ok: true, override: null });
   }
 
-  const data: {
-    chatLimit?: number | null;
-    leadLimit?: number | null;
-    kbLimit?: number | null;
-    agentLimit?: number | null;
-    notes?: string | null;
-  } = {};
-
-  if (parsed.data.chatLimit !== undefined) data.chatLimit = parsed.data.chatLimit;
-  if (parsed.data.leadLimit !== undefined) data.leadLimit = parsed.data.leadLimit;
-  if (parsed.data.kbLimit !== undefined) data.kbLimit = parsed.data.kbLimit;
-  if (parsed.data.agentLimit !== undefined) data.agentLimit = parsed.data.agentLimit;
+  const data: Partial<Record<LimitKey, number | null>> & { notes?: string | null } = {};
+  for (const f of LIMIT_FIELDS) {
+    if (parsed.data[f.key] !== undefined) data[f.key] = parsed.data[f.key];
+  }
   if (parsed.data.notes !== undefined) data.notes = parsed.data.notes;
 
   const override = await db.businessLimitOverride.upsert({
@@ -119,14 +105,5 @@ export async function PATCH(req: NextRequest, { params }: RouteCtx) {
     metadata: data,
   });
 
-  return NextResponse.json({
-    override: {
-      chatLimit: override.chatLimit,
-      leadLimit: override.leadLimit,
-      kbLimit: override.kbLimit,
-      agentLimit: override.agentLimit,
-      notes: override.notes,
-      updatedAt: override.updatedAt.toISOString(),
-    },
-  });
+  return NextResponse.json({ override: overrideView(override) });
 }

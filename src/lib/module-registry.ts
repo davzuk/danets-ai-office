@@ -150,3 +150,17 @@ export function viewToModule(view: string): ModuleKey | null {
   }
   return null;
 }
+
+export interface ModuleFlagUse {
+  flagKey: string;
+  module: ModuleKey;
+  label: string;
+  minPlan: string;
+}
+
+/** Every feature flag a module is gated on, for the platform console. */
+export function listModuleFlags(): ModuleFlagUse[] {
+  return (Object.entries(MODULE_REGISTRY) as [ModuleKey, ModuleDef][])
+    .filter(([, def]) => !!def.flagKey)
+    .map(([module, def]) => ({ flagKey: def.flagKey!, module, label: def.label, minPlan: def.minPlan }));
+}

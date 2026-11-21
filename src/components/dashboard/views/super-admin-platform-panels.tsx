@@ -63,6 +63,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { LIMIT_FIELDS, formatLimit, type LimitKey, type LimitValues } from "@/lib/limit-fields";
 import {
   PlatformSetupPanel,
   PlatformGeneralPanel,
@@ -87,14 +88,10 @@ function fmtMoney(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
 }
 
-interface PlanRow {
+interface PlanRow extends LimitValues {
   id: string;
   name: string;
   priceUsd: number;
-  chatLimit: number;
-  leadLimit: number;
-  kbLimit: number;
-  agentLimit: number;
   auditRetentionDays: number;
   chatRetentionDays: number;
   leadRetentionDays: number;
@@ -113,6 +110,12 @@ interface AnnouncementRow {
   endsAt: string | null;
 }
 
+interface FlagModule {
+  module: string;
+  label: string;
+  minPlan: string;
+}
+
 interface FlagRow {
   id: string;
   key: string;
@@ -120,7 +123,11 @@ interface FlagRow {
   description: string | null;
   enabled: boolean;
   overrideCount: number;
+  /** Dashboard modules this flag unlocks (empty for plain rollout flags). */
+  modules: FlagModule[];
 }
+
+const planPlus = (p: string) => `${p.charAt(0).toUpperCase()}${p.slice(1)}${p === "enterprise" ? "" : "+"}`;
 
 export function SuperAdminPlatformPanel({
   businesses,
@@ -188,12 +195,11 @@ function PlansPanel() {
   const [loading, setLoading] = React.useState(true);
   const [editPlan, setEditPlan] = React.useState<PlanRow | null>(null);
   const [saving, setSaving] = React.useState(false);
+  const [limits, setLimits] = React.useState<Record<LimitKey, string>>(
+    () => Object.fromEntries(LIMIT_FIELDS.map((f) => [f.key, ""])) as Record<LimitKey, string>
+  );
   const [form, setForm] = React.useState({
     priceUsd: "",
-    chatLimit: "",
-    leadLimit: "",
-    kbLimit: "",
-    agentLimit: "",
     auditRetentionDays: "",
     chatRetentionDays: "",
     leadRetentionDays: "",
@@ -221,12 +227,9 @@ function PlansPanel() {
 
   function openEdit(plan: PlanRow) {
     setEditPlan(plan);
+    setLimits(Object.fromEntries(LIMIT_FIELDS.map((f) => [f.key, String(plan[f.key] ?? f.fallback)])) as Record<LimitKey, string>);
     setForm({
       priceUsd: String(plan.priceUsd),
-      chatLimit: String(plan.chatLimit),
-      leadLimit: String(plan.leadLimit),
-      kbLimit: String(plan.kbLimit),
-      agentLimit: String(plan.agentLimit ?? 1),
       auditRetentionDays: String(plan.auditRetentionDays ?? 30),
       chatRetentionDays: String(plan.chatRetentionDays ?? 90),
       leadRetentionDays: String(plan.leadRetentionDays ?? 365),
@@ -245,10 +248,7 @@ function PlansPanel() {
         body: JSON.stringify({
           name: editPlan.name,
           priceUsd: parseFloat(form.priceUsd) || 0,
-          chatLimit: parseInt(form.chatLimit, 10) || 0,
-          leadLimit: parseInt(form.leadLimit, 10) || 0,
-          kbLimit: parseInt(form.kbLimit, 10) || 0,
-          agentLimit: parseInt(form.agentLimit, 10) || 0,
+          ...Object.fromEntries(LIMIT_FIELDS.map((f) => [f.key, Math.max(0, parseInt(limits[f.key], 10) || 0)])),
           auditRetentionDays: parseInt(form.auditRetentionDays, 10) || 30,
           chatRetentionDays: parseInt(form.chatRetentionDays, 10) || 90,
           leadRetentionDays: parseInt(form.leadRetentionDays, 10) || 365,
@@ -315,8 +315,9 @@ function PlansPanel() {
                     </TableCell>
                     <TableCell className="tabular-nums">{fmtMoney(p.priceUsd)}/mo</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {p.chatLimit.toLocaleString()} chats · {p.leadLimit.toLocaleString()} leads ·{" "}
-                      {p.kbLimit.toLocaleString()} KB · {p.agentLimit.toLocaleString()} agents
+                      {formatLimit(p.chatLimit, "total")} chats/mo · {formatLimit(p.leadLimit, "total")} leads/mo ·{" "}
+                      {formatLimit(p.seatLimit, "total")} seats · {formatLimit(p.mediaStorageMbLimit, "MB")} media
+                      <span className="block opacity-70">+ {LIMIT_FIELDS.length - 4} more limits</span>
                     </TableCell>
                     <TableCell>{p.tenantCount}</TableCell>
                     <TableCell>
@@ -338,7 +339,7 @@ function PlansPanel() {
       </Card>
 
       <Dialog open={!!editPlan} onOpenChange={(o) => !o && setEditPlan(null)}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="capitalize">Edit {editPlan?.name} Plan</DialogTitle>
             <DialogDescription>Changes apply to new subscriptions and quota checks.</DialogDescription>
@@ -354,22 +355,22 @@ function PlansPanel() {
                 <Switch checked={form.isActive} onCheckedChange={(v) => setForm((f) => ({ ...f, isActive: v }))} />
               </div>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="space-y-1.5">
-                <Label>Chat limit/mo</Label>
-                <Input value={form.chatLimit} onChange={(e) => setForm((f) => ({ ...f, chatLimit: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Lead limit/mo</Label>
-                <Input value={form.leadLimit} onChange={(e) => setForm((f) => ({ ...f, leadLimit: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>KB limit (total)</Label>
-                <Input value={form.kbLimit} onChange={(e) => setForm((f) => ({ ...f, kbLimit: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Agent limit (total)</Label>
-                <Input value={form.agentLimit} onChange={(e) => setForm((f) => ({ ...f, agentLimit: e.target.value }))} />
+            <div className="space-y-1.5">
+              <Label>Limits</Label>
+              <p className="text-xs text-muted-foreground">0 means unlimited. Tenants can be given their own values under Tenants → Custom Quota Overrides.</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {LIMIT_FIELDS.map((f) => (
+                  <div key={f.key} className="space-y-1">
+                    <Label className="text-xs font-normal" title={"hint" in f ? f.hint : undefined}>
+                      {f.label} <span className="text-muted-foreground">({f.unit === "/mo" ? "per month" : f.unit === "MB" ? "MB" : "total"})</span>
+                    </Label>
+                    <Input
+                      value={limits[f.key]}
+                      inputMode="numeric"
+                      onChange={(e) => setLimits((cur) => ({ ...cur, [f.key]: e.target.value }))}
+                    />
+                  </div>
+                ))}
               </div>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -712,6 +713,7 @@ function FeatureFlagsPanel({ businesses }: { businesses: { id: string; name: str
   const [saving, setSaving] = React.useState(false);
   const [form, setForm] = React.useState({ key: "", name: "", description: "", enabled: false });
   const [deleteKey, setDeleteKey] = React.useState<string | null>(null);
+  const [missing, setMissing] = React.useState<{ key: string; modules: FlagModule[] }[]>([]);
 
   async function load() {
     setLoading(true);
@@ -720,6 +722,7 @@ function FeatureFlagsPanel({ businesses }: { businesses: { id: string; name: str
       if (!res.ok) throw new Error(`Failed (${res.status})`);
       const data = await res.json();
       setFlags(data.flags || []);
+      setMissing(data.missingModuleFlags || []);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to load flags");
     } finally {
@@ -797,6 +800,32 @@ function FeatureFlagsPanel({ businesses }: { businesses: { id: string; name: str
       setFlags((prev) => prev.map((f) => (f.key === flag.key ? { ...f, enabled: !f.enabled } : f)));
     } catch {
       toast.error("Toggle failed");
+    }
+  }
+
+  async function createModuleFlag(m: { key: string; modules: FlagModule[] }) {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/super-admin/feature-flags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: m.key,
+          name: m.modules.map((x) => x.label).join(" / "),
+          description: `Unlocks the ${m.modules.map((x) => x.label).join(", ")} module.`,
+          enabled: false,
+        }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Failed");
+      }
+      toast.success(`Created ${m.key} (off). Switch it on globally or per tenant.`);
+      load();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Create failed");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -903,6 +932,15 @@ function FeatureFlagsPanel({ businesses }: { businesses: { id: string; name: str
                     <TableCell className="pl-6">
                       <div className="text-sm font-medium">{f.name}</div>
                       {f.description && <div className="text-xs text-muted-foreground">{f.description}</div>}
+                      {f.modules?.length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {f.modules.map((m) => (
+                            <Badge key={m.module} variant="outline" className="h-5 text-[10px] font-normal">
+                              Unlocks {m.label} · {planPlus(m.minPlan)}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>
                       <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{f.key}</code>
@@ -956,6 +994,27 @@ function FeatureFlagsPanel({ businesses }: { businesses: { id: string; name: str
                 ))}
               </TableBody>
             </Table>
+          )}
+          {!loading && missing.length > 0 && (
+            <div className="border-t px-6 py-4 space-y-2">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Module flags not created yet</div>
+              <p className="text-xs text-muted-foreground">
+                These modules are gated on a flag that doesn&apos;t exist, so they are off for every tenant. Create the flag to manage them here.
+              </p>
+              {missing.map((m) => (
+                <div key={m.key} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
+                  <div className="min-w-0">
+                    <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{m.key}</code>
+                    <span className="ml-2 text-sm">
+                      {m.modules.map((x) => `${x.label} (${planPlus(x.minPlan)})`).join(", ")}
+                    </span>
+                  </div>
+                  <Button size="sm" variant="outline" disabled={saving} onClick={() => createModuleFlag(m)} className="gap-1.5 shrink-0">
+                    <Plus className="h-3.5 w-3.5" /> Create
+                  </Button>
+                </div>
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>
@@ -1094,7 +1153,18 @@ function FeatureFlagsPanel({ businesses }: { businesses: { id: string; name: str
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete flag {deleteKey}?</AlertDialogTitle>
-            <AlertDialogDescription>All tenant overrides for this flag will also be removed.</AlertDialogDescription>
+            <AlertDialogDescription>
+              All tenant overrides for this flag will also be removed.
+              {(() => {
+                const mods = flags.find((f) => f.key === deleteKey)?.modules ?? [];
+                return mods.length > 0 ? (
+                  <span className="mt-2 block font-medium text-destructive">
+                    {mods.map((m) => m.label).join(", ")} {mods.length === 1 ? "is" : "are"} gated on this flag and will be
+                    switched off for every tenant. To pause a module, turn the flag off instead.
+                  </span>
+                ) : null;
+              })()}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>

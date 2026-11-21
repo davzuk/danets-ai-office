@@ -270,14 +270,58 @@ export async function getPlatformSetupStatus(): Promise<PlatformSetupStatus> {
     required: false,
   });
 
+  // Mirrors resolvePlatformDefault in src/lib/llm/resolve.ts.
+  const env = process.env;
+  const aiDefault = env.AI_DEFAULT_PROVIDER?.trim().toLowerCase();
+  const aiProvider =
+    aiDefault === "anthropic" || aiDefault === "openai" || aiDefault === "zai"
+      ? aiDefault
+      : env.ANTHROPIC_API_KEY
+        ? "anthropic"
+        : "zai";
+  const aiReady =
+    aiProvider === "anthropic" ? !!env.ANTHROPIC_API_KEY : aiProvider === "openai" ? !!(env.OPENAI_API_KEY && (env.OPENAI_DEFAULT_MODEL || env.AI_DEFAULT_MODEL)) : false;
   checks.push({
     id: "ai_provider",
-    label: "AI provider (OpenAI)",
-    status: emailInfo.openaiConfigured ? "ok" : "warning",
-    message: emailInfo.openaiConfigured
-      ? "OPENAI_API_KEY configured"
-      : "Set OPENAI_API_KEY for live AI chat responses",
+    label: "AI provider",
+    status: aiReady ? "ok" : "warning",
+    message: aiReady
+      ? `Platform default: ${aiProvider === "anthropic" ? "Anthropic (Claude)" : "OpenAI"}`
+      : aiProvider === "openai"
+        ? "AI_DEFAULT_PROVIDER=openai needs OPENAI_API_KEY and OPENAI_DEFAULT_MODEL; falling back to the built-in z-ai model"
+        : "No ANTHROPIC_API_KEY: AI features use the built-in z-ai model (tenants can add their own key)",
     required: false,
+  });
+
+  const metaApp = !!(env.META_APP_ID && env.META_APP_SECRET);
+  const metaWebhook = !!env.META_WEBHOOK_VERIFY_TOKEN;
+  checks.push({
+    id: "meta_app",
+    label: "Meta app (Facebook & Instagram)",
+    status: metaApp && metaWebhook ? "ok" : "warning",
+    message: !metaApp
+      ? "Set META_APP_ID and META_APP_SECRET to let tenants connect Pages, Instagram and Lead Ads"
+      : !metaWebhook
+        ? "Set META_WEBHOOK_VERIFY_TOKEN so Meta can verify the webhook (leads, DMs, comments)"
+        : "App credentials and webhook verify token configured",
+    required: false,
+  });
+
+  const storageDriver = (env.STORAGE_DRIVER || "local").toLowerCase();
+  const s3Missing = ["S3_ENDPOINT", "S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "S3_PUBLIC_URL"].filter((k) => !env[k]);
+  checks.push({
+    id: "media_storage",
+    label: "Media storage",
+    status: storageDriver === "s3" ? (s3Missing.length ? "error" : "ok") : env.NODE_ENV === "production" ? "warning" : "ok",
+    message:
+      storageDriver === "s3"
+        ? s3Missing.length
+          ? `STORAGE_DRIVER=s3 is missing ${s3Missing.join(", ")}: uploads will fail`
+          : `S3-compatible bucket, public at ${env.S3_PUBLIC_URL}`
+        : env.NODE_ENV === "production"
+          ? "Local disk: fine for one server with a persistent disk; use STORAGE_DRIVER=s3 for several instances"
+          : "Local disk (development)",
+    required: storageDriver === "s3",
   });
 
   const defaultPlan = await db.subscriptionPlan.findUnique({
