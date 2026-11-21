@@ -5,6 +5,7 @@ import { withSession } from "@/lib/api";
 import { AppError } from "@/lib/app-error";
 import { logActivity } from "@/lib/activity";
 import { AUTO_REPLY_MODES, toPublicSocialAccount } from "@/lib/social/accounts";
+import { queueLeadSync } from "@/lib/social/lead-forms";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
@@ -37,6 +38,8 @@ export function PATCH(req: NextRequest, { params }: RouteCtx) {
       throw new AppError("Lead sync is only available for Facebook Pages", { status: 400, code: "INVALID_REQUEST" });
     }
     const updated = await db.socialAccount.update({ where: { id: row.id }, data });
+    // Switching lead sync on lists the Page's forms and backfills the last 90 days.
+    if (data.leadSyncEnabled && !row.leadSyncEnabled && updated.status === "active") await queueLeadSync(updated);
     await logActivity({
       businessId: user.businessId,
       userId: user.userId,

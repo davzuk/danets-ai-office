@@ -111,7 +111,8 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { PipelineBoard } from "@/components/dashboard/views/lead-pipeline-board";
-import { LayoutGrid, List } from "lucide-react";
+import { FileText, LayoutGrid, List } from "lucide-react";
+import { LeadFormsPanel } from "@/components/dashboard/views/lead-forms-panel";
 
 interface UserProp {
   userId: string;
@@ -1717,7 +1718,7 @@ export function LeadsView({ user }: { user: UserProp }) {
   const [scoring, setScoring] = React.useState(false);
 
   const [deleteTarget, setDeleteTarget] = React.useState<Lead | null>(null);
-  const [viewMode, setViewMode] = React.useState<"list" | "pipeline">("list");
+  const [viewMode, setViewMode] = React.useState<"list" | "pipeline" | "forms">("list");
 
   // ─── Debounce search input ─────────────────────────────────────
   const debouncedSearch = useDebouncedValue(searchInput.trim(), 350);
@@ -2347,6 +2348,16 @@ export function LeadsView({ user }: { user: UserProp }) {
                 <LayoutGrid size={14} />
                 <span className="hidden sm:inline">Pipeline</span>
               </Button>
+              <Button
+                variant={viewMode === "forms" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setViewMode("forms")}
+                className="rounded-none gap-1.5 h-8"
+                title="Meta Lead Ads forms"
+              >
+                <FileText size={14} />
+                <span className="hidden sm:inline">Lead forms</span>
+              </Button>
             </div>
 
             <Button
@@ -2391,7 +2402,9 @@ export function LeadsView({ user }: { user: UserProp }) {
       </Card>
 
       {/* Pipeline board */}
-      {viewMode === "pipeline" ? (
+      {viewMode === "forms" ? (
+        <LeadFormsPanel onOpenIntegrations={() => window.location.assign("/app?view=integrations")} />
+      ) : viewMode === "pipeline" ? (
         <Card className="p-4">
           <div className="flex items-center justify-between mb-3">
             <div>

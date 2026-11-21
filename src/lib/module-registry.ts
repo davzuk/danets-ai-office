@@ -102,6 +102,7 @@ const API_MODULE_ROUTES: [string, ModuleKey][] = [
   ["/api/tickets", "tickets"],
   ["/api/quotes", "quotes"],
   ["/api/leads", "leads"],
+  ["/api/lead-forms", "leads"],
   ["/api/usage", "usage"],
   ["/api/agent", "agent"],
   ["/api/team", "settings"],

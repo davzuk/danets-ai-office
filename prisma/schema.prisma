@@ -52,6 +52,7 @@ model Business {
   touchpoints          Touchpoint[]
   brandProfile         BrandProfile?
   socialAccounts       SocialAccount[]
+  metaLeadForms        MetaLeadForm[]
   subscription         BusinessSubscription?
   payments             Payment[]
   invoices             Invoice[]
@@ -236,7 +237,7 @@ model Lead {
   email             String?
   phone             String?
   service           String?
-  message           String?
+  message           String?   @db.Text
   quality           String    @default("medium") // low | medium | high
   status            String    @default("new") // new | contacted | qualified | proposal_sent | negotiation | won | lost
   source            String    @default("chatbot") // chatbot | website_form | manual | whatsapp | referral | social_media, or an attribution channel: organic_search | paid_search | social_organic | social_paid | email | direct (see src/lib/attribution.ts)
@@ -252,6 +253,9 @@ model Lead {
   contactId         String?
   firstTouchId      String?
   lastTouchId       String?
+  // Id in the system the lead was imported from, e.g. "meta:<leadgen_id>".
+  // Unique per business so webhook retries and pollers never duplicate a lead.
+  externalRef       String?   @db.VarChar(191)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -267,6 +271,7 @@ model Lead {
   // anonymous leads (no email collected) are unaffected. Pair-indexed
   // for query speed on the public widget's pre-submit dedupe lookup.
   @@unique([businessId, email], name: "Lead_businessId_email_key")
+  @@unique([businessId, externalRef])
   @@index([businessId])
   @@index([status])
   @@index([assignedTo])
@@ -1442,6 +1447,7 @@ model SocialAccount {
 
   business   Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
   connection OAuthConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  leadForms  MetaLeadForm[]
 
   @@unique([platform, externalId])
   @@index([businessId])
@@ -1460,4 +1466,30 @@ model MetaDataDeletionRequest {
   completedAt DateTime?
 
   @@index([metaUserId])
+}
+
+// A Meta Lead Ads form on a connected Page. Created when the poller lists the
+// Page's forms or a lead arrives from an unknown form.
+model MetaLeadForm {
+  id              String    @id @default(cuid())
+  businessId      String
+  socialAccountId String
+  formId          String    @db.VarChar(191)
+  name            String
+  metaStatus      String? // ACTIVE | ARCHIVED | DELETED | DRAFT (Meta's status)
+  enabled         Boolean   @default(true) // import leads from this form
+  questions       Json? // [{ key, label, type }] from Meta
+  fieldMapping    Json? // { [questionKey]: "name" | "email" | "phone" | "company" | "service" | "message" | "ignore" }
+  leadsImported   Int       @default(0)
+  lastLeadAt      DateTime?
+  // Poll cursor: leads created after this were already requested.
+  polledThrough   DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  business      Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([socialAccountId, formId])
+  @@index([businessId])
 }

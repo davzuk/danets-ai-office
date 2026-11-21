@@ -6,6 +6,7 @@ import type { z } from "zod";
 import { logger, serializeError } from "@/lib/logger";
 import type { JobDefinition } from "./define";
 import { connectionRefreshJob } from "./handlers/connection-refresh";
+import { metaLeadgenPollJob } from "./handlers/meta-leadgen";
 import { purgeJobsJob } from "./handlers/purge-jobs";
 import { enqueue } from "./queue";
 
@@ -25,6 +26,8 @@ export interface Schedule<S extends z.ZodType = z.ZodType> {
 export const SCHEDULES: Schedule[] = [
   { job: purgeJobsJob, everyMs: DAY, offsetMs: 3 * HOUR + 30 * MINUTE, payload: {} },
   { job: connectionRefreshJob, everyMs: HOUR, offsetMs: 10 * MINUTE, payload: {} },
+  // Catches Meta leads whose webhook was dropped.
+  { job: metaLeadgenPollJob, everyMs: HOUR, offsetMs: 25 * MINUTE, payload: {} },
 ];
 
 /** Start of the window containing `now`, shifted by the schedule's offset. */

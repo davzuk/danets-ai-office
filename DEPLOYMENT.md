@@ -135,6 +135,16 @@ Tenants connect Meta (Facebook Pages, Instagram, Lead Ads) and Google (Search Co
 
 Tokens are stored encrypted (same key as integration API keys). The hourly `connections.refresh` job renews Google tokens before they expire; Meta long-lived tokens (~60 days) can't be refreshed, so tenants get a reminder 7 days before expiry and the connection is marked expired afterwards. A revoked grant marks the connection revoked and notifies the tenant.
 
+## Meta Lead Ads
+
+With **Lead Ads** switched on for a Page (Integrations → Connected accounts), each Lead Ads submission becomes a Lead:
+
+- The `leadgen` webhook queues `meta.leadgen`, which fetches the lead with the Page token, maps its answers (Leads → **Lead forms** → Fields), records an `ad_lead` touchpoint with the campaign, ad set and ad names, and creates the lead with `source` = `social_paid` (or `social_organic` for organic forms). Then the usual notification, `new_lead` automations and AI scoring run.
+- Leads are idempotent on `Lead.externalRef = meta:<leadgen_id>`, so webhook retries and the poller never duplicate. A submission by an email that already has a lead adds an activity to that lead instead.
+- The hourly `meta.leadgen-poll` job lists each Page's forms and fetches leads the webhook missed. Switching Lead Ads on for a Page runs it immediately and backfills the last 90 days (Meta's retention). Admins can also press **Check for leads now**.
+- Ad leads count against the plan's `leads` quota. When it's used up the lead is not imported, the tenant is notified, and the job is left dead in the queue; a platform admin can retry it from the Jobs card after the tenant upgrades.
+- Test with Meta's [Lead Ads Testing Tool](https://developers.facebook.com/tools/lead-ads-testing). The app needs `leads_retrieval` and the Page must grant the app lead access (Meta Business Suite → Settings → Leads access).
+
 ## Contacts and lead attribution
 
 Every widget chat, lead and ticket is linked to a unified **Contact** (matched by email, phone or the widget's visitor id), and the widget records where the visitor came from as **touchpoints**: UTM tags, ad click ids (`gclid`, `msclkid`, `fbclid`, `li_fat_id`, …) and the referrer. A lead's **Source** is the channel of its first touch (`organic_search`, `paid_search`, `social_organic`, `social_paid`, `email`, `referral`, `direct`, `whatsapp`); leads from clients that send no attribution keep `chatbot`. Lead detail → **Journey** shows the timeline; Analytics → **Leads by Channel** charts it.

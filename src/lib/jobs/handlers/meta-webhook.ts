@@ -5,7 +5,8 @@ import { logger } from "@/lib/logger";
 import { metaEventDedupeKey, routeMetaWebhook, type MetaEvent } from "@/lib/social/meta-webhook-routing";
 import { enqueue } from "../queue";
 import { defineJob } from "../define";
-import { metaCommentJob, metaLeadgenJob, metaMessageJob } from "./meta-events";
+import { metaCommentJob, metaMessageJob } from "./meta-events";
+import { metaLeadgenJob } from "./meta-leadgen";
 
 // Meta webhook delivery: { object: "page" | "instagram" | …, entry: [...] }
 const metaWebhookSchema = z.object({
