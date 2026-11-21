@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { decryptApiKey, encryptApiKey } from "@/lib/crypto";
 import { logger, serializeError } from "@/lib/logger";
 import { getConnectionProvider } from "./registry";
+import { socialAccountToken } from "@/lib/social/accounts";
+import { unsubscribePage } from "@/lib/social/meta-graph";
 import type { ConnectedAccount, ConnectionProviderId, TokenSet } from "./types";
 
 /** Client-safe view of a connection: no tokens, no encrypted envelopes. */
@@ -93,6 +95,7 @@ export function decryptToken(payload: unknown): string | null {
 export async function deleteConnection(row: OAuthConnection): Promise<void> {
   const provider = getConnectionProvider(row.provider);
   const accessToken = decryptToken(row.accessToken);
+  if (row.provider === "meta") await unsubscribeMetaPages(row.id);
   if (provider && accessToken && row.status === "active") {
     try {
       await provider.revoke({
@@ -110,4 +113,20 @@ export async function deleteConnection(row: OAuthConnection): Promise<void> {
     }
   }
   await db.oAuthConnection.delete({ where: { id: row.id } });
+}
+
+/** Best effort: stop page webhooks before the grant goes. Rows cascade with the connection. */
+async function unsubscribeMetaPages(connectionId: string) {
+  const pages = await db.socialAccount.findMany({
+    where: { connectionId, platform: "facebook_page", subscribedAt: { not: null } },
+  });
+  for (const page of pages) {
+    const token = socialAccountToken(page);
+    if (!token) continue;
+    try {
+      await unsubscribePage(page.externalId, token);
+    } catch (e) {
+      logger.warn("Page webhook unsubscribe failed", { socialAccountId: page.id, ...serializeError(e) });
+    }
+  }
 }

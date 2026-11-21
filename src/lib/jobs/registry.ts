@@ -3,10 +3,22 @@
 import type { JobDefinition } from "./define";
 import { brandGenerateJob } from "./handlers/brand-generate";
 import { connectionExpiringJob, connectionRefreshJob } from "./handlers/connection-refresh";
+import { metaCommentJob, metaLeadgenJob, metaMessageJob } from "./handlers/meta-events";
 import { metaWebhookJob } from "./handlers/meta-webhook";
 import { purgeJobsJob } from "./handlers/purge-jobs";
+import { socialSubscribeJob } from "./handlers/social-subscribe";
 
-const definitions: JobDefinition[] = [purgeJobsJob, connectionRefreshJob, connectionExpiringJob, metaWebhookJob, brandGenerateJob];
+const definitions: JobDefinition[] = [
+  purgeJobsJob,
+  connectionRefreshJob,
+  connectionExpiringJob,
+  metaWebhookJob,
+  metaLeadgenJob,
+  metaMessageJob,
+  metaCommentJob,
+  brandGenerateJob,
+  socialSubscribeJob,
+];
 
 const byType = new Map<string, JobDefinition>();
 for (const def of definitions) {

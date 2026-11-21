@@ -51,6 +51,7 @@ model Business {
   contacts             Contact[]
   touchpoints          Touchpoint[]
   brandProfile         BrandProfile?
+  socialAccounts       SocialAccount[]
   subscription         BusinessSubscription?
   payments             Payment[]
   invoices             Invoice[]
@@ -804,7 +805,8 @@ model OAuthConnection {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business       Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  socialAccounts SocialAccount[]
 
   @@unique([businessId, provider, externalAccountId])
   @@index([businessId])
@@ -1410,4 +1412,52 @@ model BrandProfile {
   updatedAt        DateTime  @updatedAt
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+// ─── Social accounts (Phase 1, workstream F) ─────────────────────────
+// One publishable / inbox-able asset (Facebook Page, Instagram business
+// account, LinkedIn Page) reached through an OAuthConnection. Webhooks are
+// routed by (platform, externalId), so an asset belongs to one tenant.
+model SocialAccount {
+  id               String    @id @default(cuid())
+  businessId       String
+  connectionId     String
+  platform         String // facebook_page | instagram | linkedin_page
+  externalId       String    @db.VarChar(191) // Page id / IG business account id / LinkedIn org URN
+  parentExternalId String?   @db.VarChar(191) // IG: the Facebook Page it is linked to
+  name             String
+  username         String?
+  pictureUrl       String?   @db.Text
+  tasks            Json? // Meta Page roles granted to the user (MANAGE, CREATE_CONTENT, MODERATE, ...)
+  accessToken      Json? // encrypted envelope (Meta page token); null = use the connection's token
+  inboxEnabled     Boolean   @default(false)
+  leadSyncEnabled  Boolean   @default(false)
+  publishEnabled   Boolean   @default(true)
+  autoReply        String    @default("off") // off | suggest | auto
+  subscribedAt     DateTime?
+  status           String    @default("active") // active | revoked | error
+  lastError        String?   @db.Text
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  business   Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  connection OAuthConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([platform, externalId])
+  @@index([businessId])
+  @@index([connectionId])
+}
+
+// Meta "data deletion callback" requests (required for App Review).
+// Looked up by confirmation code on the public status page.
+model MetaDataDeletionRequest {
+  id          String    @id @default(cuid())
+  code        String    @unique @db.VarChar(64)
+  metaUserId  String    @db.VarChar(191)
+  status      String    @default("pending") // pending | completed
+  deleted     Json? // counts of what was removed
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  @@index([metaUserId])
 }

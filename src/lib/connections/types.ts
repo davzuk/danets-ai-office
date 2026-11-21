@@ -18,8 +18,26 @@ export interface ConnectedAccount {
   externalAccountId: string;
   name?: string;
   email?: string;
-  /** Provider extras. Secrets inside must already be encrypted. */
+  /** Provider extras shown in the UI. No secrets, encrypted or not. */
   metadata?: Record<string, unknown>;
+  /** Publishable / inbox-able assets (Pages, IG accounts), stored as SocialAccount rows. */
+  assets?: SocialAssetInput[];
+}
+
+export type SocialPlatform = "facebook_page" | "instagram" | "linkedin_page";
+
+export interface SocialAssetInput {
+  platform: SocialPlatform;
+  externalId: string;
+  /** IG: id of the Facebook Page the account is linked to. */
+  parentExternalId?: string | null;
+  name: string;
+  username?: string | null;
+  pictureUrl?: string | null;
+  /** Meta Page roles, e.g. ["MANAGE", "CREATE_CONTENT", "MODERATE"]. */
+  tasks?: string[];
+  /** Asset-level token as an encrypted envelope (Meta page token). */
+  accessToken?: unknown;
 }
 
 export type Env = Record<string, string | undefined>;

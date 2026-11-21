@@ -95,6 +95,7 @@ const API_MODULE_ROUTES: [string, ModuleKey][] = [
   ["/api/automations", "automations"],
   ["/api/integrations", "integrations"],
   ["/api/connections", "integrations"],
+  ["/api/social-accounts", "integrations"],
   ["/api/documents", "documents"],
   ["/api/analytics", "analytics"],
   ["/api/whatsapp", "whatsapp"],

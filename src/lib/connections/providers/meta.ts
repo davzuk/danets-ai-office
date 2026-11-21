@@ -8,18 +8,29 @@
 import { createHmac } from "crypto";
 import { encryptApiKey } from "@/lib/crypto";
 import { expiresAtFrom, form, providerFetch } from "../http";
-import type { Env, ProviderDefinition, TokenSet } from "../types";
+import type { Env, ProviderDefinition, SocialAssetInput, TokenSet } from "../types";
 
+// Every permission here needs Meta App Review before non-test users can grant it.
 export const META_DEFAULT_SCOPES = [
   "pages_show_list",
   "pages_read_engagement",
-  "pages_manage_metadata",
-  "pages_messaging",
-  "leads_retrieval",
+  "pages_manage_metadata", // subscribe Pages to webhooks
+  "pages_messaging", // Messenger inbox
+  "pages_manage_posts", // publish
+  "pages_manage_engagement", // reply to / hide comments
+  "pages_read_user_content", // read comments and visitor posts
+  "read_insights",
+  "leads_retrieval", // Lead Ads
   "instagram_basic",
   "instagram_manage_messages",
+  "instagram_manage_comments",
+  "instagram_content_publish",
+  "instagram_manage_insights",
   "business_management",
 ];
+
+/** Page webhook fields we subscribe to (POST /{page-id}/subscribed_apps). */
+export const META_PAGE_WEBHOOK_FIELDS = ["leadgen", "messages", "messaging_postbacks", "feed"];
 
 /** Graph API version. Keep current with Meta's changelog; override with META_GRAPH_VERSION. */
 const DEFAULT_GRAPH_VERSION = "v24.0";
@@ -28,7 +39,7 @@ function version(env: Env) {
   return env.META_GRAPH_VERSION || DEFAULT_GRAPH_VERSION;
 }
 
-function graph(env: Env, path: string) {
+export function graph(env: Env, path: string) {
   return `https://graph.facebook.com/${version(env)}${path}`;
 }
 
@@ -37,7 +48,7 @@ export function appSecretProof(accessToken: string, appSecret: string): string {
   return createHmac("sha256", appSecret).update(accessToken).digest("hex");
 }
 
-function authed(env: Env, accessToken: string, extra: Record<string, string> = {}) {
+export function authed(env: Env, accessToken: string, extra: Record<string, string> = {}) {
   return form({
     ...extra,
     access_token: accessToken,
@@ -59,7 +70,40 @@ interface MetaPage {
   name: string;
   access_token?: string;
   tasks?: string[];
-  instagram_business_account?: { id: string; username?: string };
+  picture?: { data?: { url?: string } };
+  instagram_business_account?: { id: string; username?: string; name?: string; profile_picture_url?: string };
+}
+
+/** Pages + linked Instagram accounts as SocialAccount inputs. Page tokens are encrypted here. */
+export function metaAssets(pages: MetaPage[]): SocialAssetInput[] {
+  const out: SocialAssetInput[] = [];
+  for (const p of pages) {
+    // Page tokens are secrets: only encrypted envelopes leave this function.
+    const token = p.access_token ? encryptApiKey(p.access_token) : null;
+    out.push({
+      platform: "facebook_page",
+      externalId: p.id,
+      name: p.name,
+      pictureUrl: p.picture?.data?.url ?? null,
+      tasks: p.tasks ?? [],
+      accessToken: token,
+    });
+    const ig = p.instagram_business_account;
+    if (ig) {
+      out.push({
+        platform: "instagram",
+        externalId: ig.id,
+        parentExternalId: p.id,
+        name: ig.name || ig.username || p.name,
+        username: ig.username ?? null,
+        pictureUrl: ig.profile_picture_url ?? null,
+        tasks: p.tasks ?? [],
+        // The Instagram Graph API (via Facebook Login) uses the linked Page's token.
+        accessToken: token,
+      });
+    }
+  }
+  return out;
 }
 
 export const metaProvider: ProviderDefinition = {
@@ -117,7 +161,7 @@ export const metaProvider: ProviderDefinition = {
     );
     const pages = await providerFetch<{ data: MetaPage[] }>(
       `${graph(env, "/me/accounts")}?${authed(env, tokens.accessToken, {
-        fields: "id,name,access_token,tasks,instagram_business_account{id,username}",
+        fields: "id,name,access_token,tasks,picture{url},instagram_business_account{id,username,name,profile_picture_url}",
         limit: "100",
       })}`
     );
@@ -125,18 +169,17 @@ export const metaProvider: ProviderDefinition = {
       externalAccountId: me.id,
       name: me.name,
       email: me.email,
+      // Display-only summary; tokens live on SocialAccount rows (assets).
       metadata: {
         pages: pages.data.map((p) => ({
           id: p.id,
           name: p.name,
-          tasks: p.tasks ?? [],
-          // Page tokens are secrets: stored only as encrypted envelopes.
-          accessToken: p.access_token ? encryptApiKey(p.access_token) : null,
           instagram: p.instagram_business_account
             ? { id: p.instagram_business_account.id, username: p.instagram_business_account.username ?? null }
             : null,
         })),
       },
+      assets: metaAssets(pages.data),
     };
   },
 

@@ -6,15 +6,25 @@ import { callbackUrl, getConnectionProvider } from "@/lib/connections/registry";
 import { OAUTH_STATE_COOKIE, verifyOAuthState } from "@/lib/connections/state";
 import { saveConnection } from "@/lib/connections/store";
 import { OAuthGrantError } from "@/lib/connections/types";
+import { enqueue } from "@/lib/jobs";
+import { socialSubscribeJob } from "@/lib/jobs/handlers/social-subscribe";
+import { syncSocialAccounts } from "@/lib/social/accounts";
 
 type RouteCtx = { params: Promise<{ provider: string }> };
 
-function backToApp(req: NextRequest, provider: string, status: "connected" | "error", reason?: string) {
+function backToApp(
+  req: NextRequest,
+  provider: string,
+  status: "connected" | "error",
+  reason?: string,
+  extra: Record<string, string> = {}
+) {
   const url = new URL("/app", req.nextUrl.origin);
   url.searchParams.set("view", "integrations");
   url.searchParams.set("connection", provider);
   url.searchParams.set("status", status);
   if (reason) url.searchParams.set("reason", reason);
+  for (const [k, v] of Object.entries(extra)) url.searchParams.set(k, v);
   const res = NextResponse.redirect(url);
   // One-shot: the state cookie is never reusable.
   res.cookies.set(OAUTH_STATE_COOKIE, "", { path: `/api/connections/${provider}/callback`, maxAge: 0 });
@@ -70,6 +80,21 @@ export async function GET(req: NextRequest, { params }: RouteCtx) {
       account,
     });
 
+    // Pages / IG accounts become SocialAccount rows; Pages get webhook subscriptions.
+    let conflicts = 0;
+    if (account.assets) {
+      const sync = await syncSocialAccounts(conn, account.assets);
+      conflicts = sync.conflicts.length;
+      for (const row of sync.synced) {
+        if (row.platform !== "facebook_page") continue;
+        await enqueue(
+          socialSubscribeJob,
+          { socialAccountId: row.id },
+          { businessId: session.businessId, dedupeKey: `social-subscribe:${row.id}:${row.updatedAt.getTime()}` }
+        );
+      }
+    }
+
     await logActivity({
       businessId: session.businessId,
       userId: session.userId,
@@ -77,9 +102,9 @@ export async function GET(req: NextRequest, { params }: RouteCtx) {
       action: "connection_added",
       module: "integrations",
       description: `Connected ${provider.label} account ${account.name ?? account.externalAccountId}`,
-      metadata: { connectionId: conn.id, provider: provider.id, scopes: tokens.scopes },
+      metadata: { connectionId: conn.id, provider: provider.id, scopes: tokens.scopes, assets: account.assets?.length ?? 0, conflicts },
     });
-    return backToApp(req, provider.id, "connected");
+    return backToApp(req, provider.id, "connected", undefined, conflicts ? { conflicts: String(conflicts) } : {});
   } catch (e) {
     logger.error("OAuth connect failed", { provider: provider.id, ...serializeError(e) });
     return backToApp(req, provider.id, "error", e instanceof OAuthGrantError ? "rejected" : "provider");

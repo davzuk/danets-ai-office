@@ -17,6 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { SocialAccountRows, type SocialAccountView } from "./social-account-rows";
 
 interface ProviderInfo {
   id: string;
@@ -34,7 +35,11 @@ interface Connection {
   status: "active" | "expired" | "revoked" | "error";
   expiresAt: string | null;
   lastError: string | null;
-  assets: { id: string; name: string; instagram?: { id: string; username: string | null } | null }[];
+  assets: {
+    id: string;
+    name: string;
+    instagram?: { id: string; username: string | null } | null;
+  }[];
 }
 
 const STATUS_STYLE: Record<Connection["status"], string> = {
@@ -57,6 +62,7 @@ const CALLBACK_ERRORS: Record<string, string> = {
 export function ConnectedAccounts() {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
+  const [socialAccounts, setSocialAccounts] = useState<SocialAccountView[]>([]);
   const [canManage, setCanManage] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -69,6 +75,7 @@ export function ConnectedAccounts() {
       if (!res.ok) throw new Error(data.error || "Failed to load connected accounts");
       setProviders(data.providers ?? []);
       setConnections(data.connections ?? []);
+      setSocialAccounts(data.socialAccounts ?? []);
       setCanManage(!!data.canManage);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to load connected accounts");
@@ -88,15 +95,28 @@ export function ConnectedAccounts() {
     const provider = params.get("connection");
     const status = params.get("status");
     if (!provider || !status) return;
+    const conflicts = Number(params.get("conflicts") ?? 0);
     if (status === "connected") toast.success("Account connected");
-    else toast.error("Couldn't connect the account", { description: CALLBACK_ERRORS[params.get("reason") ?? ""] });
+    if (status === "connected" && conflicts > 0) {
+      toast.warning(
+        `${conflicts} page${conflicts === 1 ? " is" : "s are"} already connected to another Danets workspace`,
+        {
+          description: "Disconnect it there first, then reconnect here to manage it from this workspace.",
+        },
+      );
+    } else
+      toast.error("Couldn't connect the account", {
+        description: CALLBACK_ERRORS[params.get("reason") ?? ""],
+      });
     window.history.replaceState(null, "", window.location.pathname);
   }, []);
 
   async function connect(providerId: string) {
     setBusy(providerId);
     try {
-      const res = await fetch(`/api/connections/${providerId}/start`, { method: "POST" });
+      const res = await fetch(`/api/connections/${providerId}/start`, {
+        method: "POST",
+      });
       const data = await res.json();
       if (!res.ok || !data.url) throw new Error(data.error || "Could not start the connection");
       window.location.assign(data.url);
@@ -109,11 +129,14 @@ export function ConnectedAccounts() {
   async function disconnect(conn: Connection) {
     setBusy(conn.id);
     try {
-      const res = await fetch(`/api/connections/accounts/${conn.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/connections/accounts/${conn.id}`, {
+        method: "DELETE",
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Could not disconnect");
       toast.success("Account disconnected");
       setConnections((prev) => prev.filter((c) => c.id !== conn.id));
+      setSocialAccounts((prev) => prev.filter((a) => a.connectionId !== conn.id));
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Could not disconnect");
     } finally {
@@ -166,50 +189,68 @@ export function ConnectedAccounts() {
                   </p>
                 )}
 
-                {conns.map((c) => (
-                  <div key={c.id} className="flex flex-col gap-2 rounded-md bg-muted/40 p-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="space-y-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-medium truncate">{c.accountName ?? c.accountEmail ?? "Account"}</span>
-                        <Badge className={STATUS_STYLE[c.status]} variant="secondary">
-                          {c.status}
-                        </Badge>
-                      </div>
-                      {c.assets.length > 0 && (
-                        <div className="text-xs text-muted-foreground">
-                          {c.assets.length} page{c.assets.length === 1 ? "" : "s"}:{" "}
-                          {c.assets
-                            .map((a) => (a.instagram?.username ? `${a.name} (@${a.instagram.username})` : a.name))
-                            .join(", ")}
+                {conns.map((c) => {
+                  const assets = socialAccounts.filter((a) => a.connectionId === c.id);
+                  return (
+                    <div key={c.id} className="space-y-3 rounded-md bg-muted/40 p-3">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-medium truncate">
+                              {c.accountName ?? c.accountEmail ?? "Account"}
+                            </span>
+                            <Badge className={STATUS_STYLE[c.status]} variant="secondary">
+                              {c.status}
+                            </Badge>
+                          </div>
+                          {assets.length === 0 && c.assets.length > 0 && (
+                            <div className="text-xs text-muted-foreground">
+                              {c.assets.length} page
+                              {c.assets.length === 1 ? "" : "s"}:{" "}
+                              {c.assets
+                                .map((a) => (a.instagram?.username ? `${a.name} (@${a.instagram.username})` : a.name))
+                                .join(", ")}
+                            </div>
+                          )}
+                          {c.expiresAt && c.status === "active" && (
+                            <div className="text-xs text-muted-foreground">
+                              Access renews{" "}
+                              {c.provider === "meta" ? "until" : "automatically; current token valid until"}{" "}
+                              {new Date(c.expiresAt).toLocaleDateString()}
+                            </div>
+                          )}
+                          {c.status !== "active" && c.lastError && (
+                            <div className="text-xs text-destructive flex items-start gap-1">
+                              <AlertTriangle className="size-3 mt-0.5 shrink-0" /> {c.lastError}
+                            </div>
+                          )}
                         </div>
-                      )}
-                      {c.expiresAt && c.status === "active" && (
-                        <div className="text-xs text-muted-foreground">
-                          Access renews {c.provider === "meta" ? "until" : "automatically; current token valid until"}{" "}
-                          {new Date(c.expiresAt).toLocaleDateString()}
-                        </div>
-                      )}
-                      {c.status !== "active" && c.lastError && (
-                        <div className="text-xs text-destructive flex items-start gap-1">
-                          <AlertTriangle className="size-3 mt-0.5 shrink-0" /> {c.lastError}
-                        </div>
-                      )}
-                    </div>
-                    {canManage && (
-                      <div className="flex gap-2 shrink-0">
-                        {c.status !== "active" && p.configured && (
-                          <Button size="sm" onClick={() => connect(p.id)} disabled={busy === p.id}>
-                            Reconnect
-                          </Button>
+                        {canManage && (
+                          <div className="flex gap-2 shrink-0">
+                            {c.status !== "active" && p.configured && (
+                              <Button size="sm" onClick={() => connect(p.id)} disabled={busy === p.id}>
+                                Reconnect
+                              </Button>
+                            )}
+                            <Button size="sm" variant="ghost" onClick={() => setToRemove(c)} disabled={busy === c.id}>
+                              {busy === c.id ? (
+                                <Loader2 className="size-4 animate-spin" />
+                              ) : (
+                                <Unlink className="size-4" />
+                              )}
+                              Disconnect
+                            </Button>
+                          </div>
                         )}
-                        <Button size="sm" variant="ghost" onClick={() => setToRemove(c)} disabled={busy === c.id}>
-                          {busy === c.id ? <Loader2 className="size-4 animate-spin" /> : <Unlink className="size-4" />}
-                          Disconnect
-                        </Button>
                       </div>
-                    )}
-                  </div>
-                ))}
+                      <SocialAccountRows
+                        accounts={assets}
+                        canManage={canManage}
+                        onChange={(next) => setSocialAccounts((prev) => prev.map((a) => (a.id === next.id ? next : a)))}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             );
           })
