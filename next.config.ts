@@ -5,34 +5,32 @@ const isProduction = process.env.NODE_ENV === "production";
 /**
  * Content Security Policy.
  *
- * `'unsafe-inline'` and `'unsafe-eval'` are kept for scripts and styles to
- * avoid breaking Next.js dev tooling + React 19 Server Component hydration,
- * which still rely on inline runtime scripts at this version. A CSP-nonce
- * variant is a deliberate follow-up (out of scope for P11).
+ * The middleware in `src/middleware.ts` mints a per-request nonce and
+ * sets a `Content-Security-Policy` header on every page response with
+ * that nonce baked into `script-src`. We deliberately do NOT set a CSP
+ * header here for page routes — that would race the middleware and
+ * the per-request nonce would be ignored.
  *
- * The `frame-src` and `connect-src` allow Paystack + Flutterwave so the
- * payment iframe and verify API continue to load. `frame-ancestors 'none'`
- * blocks clickjacking via `<iframe>` embedding on third-party origins
- * (replaces the older X-Frame-Options for modern browsers, but we keep both
- * for legacy compatibility).
+ * API routes keep their own tight policy (`default-src 'none'`) set
+ * here — they never execute script.
  */
-const CSP = [
-  "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.paystack.co https://checkout.flutterwave.com",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https:",
-  "font-src 'self' data:",
-  "connect-src 'self' https://api.paystack.co https://api.flutterwave.com wss:",
-  "frame-src https://js.paystack.co https://checkout.flutterwave.com",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-].join("; ");
-
 const nextConfig: NextConfig = {
   output: "standalone",
   serverExternalPackages: ["pdf-parse", "@napi-rs/canvas", "mammoth"],
+  // lucide-react ships every icon in one file (~1.5MB ESM); without
+  // this directive every dashboard view pulls the whole tree. The
+  // radix packages similarly have lots of files we don't all use.
+  experimental: {
+    optimizePackageImports: [
+      "lucide-react",
+      "@radix-ui/react-dialog",
+      "@radix-ui/react-dropdown-menu",
+      "@radix-ui/react-popover",
+      "@radix-ui/react-select",
+      "@radix-ui/react-tabs",
+      "@radix-ui/react-tooltip",
+    ],
+  },
   typescript: {
     ignoreBuildErrors: false,
   },
@@ -49,7 +47,6 @@ const nextConfig: NextConfig = {
         // directives they don't recognize, so adding new ones is safe.
         value: "camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), accelerometer=(), gyroscope=()",
       },
-      { key: "Content-Security-Policy", value: CSP },
     ];
 
     // HSTS only in production — local dev runs over plain HTTP and HSTS

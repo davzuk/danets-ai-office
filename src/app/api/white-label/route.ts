@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
+import { requireReauth } from "@/lib/reauth";
 import { logActivity } from "@/lib/activity";
+import { sanitizeWhiteLabelCss } from "@/lib/white-label-css";
 
 export async function GET(_req: NextRequest) {
   let user;
@@ -27,6 +29,18 @@ const updateSchema = z.object({
 export async function PUT(req: NextRequest) {
   let user;
   try { user = await requireSession(); } catch { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
+  // White-label binding is a high-blast-radius action: it can bind a
+  // custom domain (account takeover risk) and rewrite the entire brand.
+  // Require a fresh credential within the last REAUTH_WINDOW_MINUTES so
+  // a stolen session cookie alone can't do it.
+  try {
+    await requireReauth({ userId: user.userId, sessionId: user.sessionId ?? "" });
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: e?.message || "Reauthentication required", code: "REAUTH_REQUIRED" },
+      { status: e?.status || 401 }
+    );
+  }
   const body = await req.json().catch(() => null);
   const parsed = updateSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
@@ -39,7 +53,17 @@ export async function PUT(req: NextRequest) {
   if (d.appName) data.appName = d.appName.trim();
   if (d.appShortName) data.appShortName = d.appShortName.trim();
   if (d.hideBranding !== undefined) data.hideBranding = d.hideBranding;
-  if (d.customCss !== undefined) data.customCss = d.customCss || null;
+  if (d.customCss !== undefined) {
+    try {
+      const sanitized = sanitizeWhiteLabelCss(d.customCss || "");
+      data.customCss = sanitized || null;
+    } catch (e: any) {
+      return NextResponse.json(
+        { error: e?.message || "Invalid CSS" },
+        { status: 400 }
+      );
+    }
+  }
   if (d.isActive !== undefined) data.isActive = d.isActive;
 
   let config = await db.whiteLabelConfig.findUnique({ where: { businessId: user.businessId } });

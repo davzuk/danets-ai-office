@@ -1,32 +1,87 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { Loader2 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
 import { ErrorBoundary } from "@/components/error-boundary";
-import { AuthScreen } from "@/components/auth/auth-screen";
 import { AppShell, type ViewId } from "@/components/dashboard/app-shell";
-import { OverviewView } from "@/components/dashboard/views/overview-view";
-import { AgentView } from "@/components/dashboard/views/agent-view";
-import { KnowledgeView } from "@/components/dashboard/views/knowledge-view";
-import { ConversationsView } from "@/components/dashboard/views/conversations-view";
-import { LeadsView } from "@/components/dashboard/views/leads-view";
-import { QuotesView } from "@/components/dashboard/views/quotes-view";
-import { TicketsView } from "@/components/dashboard/views/tickets-view";
-import { DocumentsView } from "@/components/dashboard/views/documents-view";
-import { WhatsAppView } from "@/components/dashboard/views/whatsapp-view";
-import { UsageView } from "@/components/dashboard/views/usage-view";
-import { EmbedView } from "@/components/dashboard/views/embed-view";
-import { SettingsView } from "@/components/dashboard/views/settings-view";
-import { AuditLogsView } from "@/components/dashboard/views/audit-logs-view";
-import { AutomationsView } from "@/components/dashboard/views/automations-view";
-import { IntegrationsView } from "@/components/dashboard/views/integrations-view";
-import { SubscriptionView } from "@/components/dashboard/views/subscription-view";
-import { AnalyticsView } from "@/components/dashboard/views/analytics-view";
 import {
   ModuleLockedView,
   getViewLockInfo,
 } from "@/components/dashboard/shared/module-locked-view";
+
+// Lazy-load every view. The dashboard is the largest single client chunk in
+// the app, and most users only ever visit 2-3 tabs in a session. Each
+// dynamic import keeps the initial payload under ~150kB and lets Vite/Rspack
+// code-split the bundles per route.
+const OverviewView = dynamic(
+  () => import("@/components/dashboard/views/overview-view").then((m) => m.OverviewView),
+  { ssr: false }
+);
+const AgentView = dynamic(
+  () => import("@/components/dashboard/views/agent-view").then((m) => m.AgentView),
+  { ssr: false }
+);
+const KnowledgeView = dynamic(
+  () => import("@/components/dashboard/views/knowledge-view").then((m) => m.KnowledgeView),
+  { ssr: false }
+);
+const ConversationsView = dynamic(
+  () => import("@/components/dashboard/views/conversations-view").then((m) => m.ConversationsView),
+  { ssr: false }
+);
+const LeadsView = dynamic(
+  () => import("@/components/dashboard/views/leads-view").then((m) => m.LeadsView),
+  { ssr: false }
+);
+const QuotesView = dynamic(
+  () => import("@/components/dashboard/views/quotes-view").then((m) => m.QuotesView),
+  { ssr: false }
+);
+const TicketsView = dynamic(
+  () => import("@/components/dashboard/views/tickets-view").then((m) => m.TicketsView),
+  { ssr: false }
+);
+const DocumentsView = dynamic(
+  () => import("@/components/dashboard/views/documents-view").then((m) => m.DocumentsView),
+  { ssr: false }
+);
+const WhatsAppView = dynamic(
+  () => import("@/components/dashboard/views/whatsapp-view").then((m) => m.WhatsAppView),
+  { ssr: false }
+);
+const UsageView = dynamic(
+  () => import("@/components/dashboard/views/usage-view").then((m) => m.UsageView),
+  { ssr: false }
+);
+const EmbedView = dynamic(
+  () => import("@/components/dashboard/views/embed-view").then((m) => m.EmbedView),
+  { ssr: false }
+);
+const SettingsView = dynamic(
+  () => import("@/components/dashboard/views/settings-view").then((m) => m.SettingsView),
+  { ssr: false }
+);
+const AuditLogsView = dynamic(
+  () => import("@/components/dashboard/views/audit-logs-view").then((m) => m.AuditLogsView),
+  { ssr: false }
+);
+const AutomationsView = dynamic(
+  () => import("@/components/dashboard/views/automations-view").then((m) => m.AutomationsView),
+  { ssr: false }
+);
+const IntegrationsView = dynamic(
+  () => import("@/components/dashboard/views/integrations-view").then((m) => m.IntegrationsView),
+  { ssr: false }
+);
+const SubscriptionView = dynamic(
+  () => import("@/components/dashboard/views/subscription-view").then((m) => m.SubscriptionView),
+  { ssr: false }
+);
+const AnalyticsView = dynamic(
+  () => import("@/components/dashboard/views/analytics-view").then((m) => m.AnalyticsView),
+  { ssr: false }
+);
 
 interface AuthUser {
   userId: string;
@@ -51,7 +106,7 @@ interface ModuleAccessInfo {
   enabledModules: string[];
 }
 
-export default function Home() {
+export default function AppHome() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
   const [moduleAccess, setModuleAccess] = useState<ModuleAccessInfo | null>(null);
@@ -62,6 +117,12 @@ export default function Home() {
     fetch("/api/auth/me")
       .then((r) => r.json())
       .then((data) => {
+        if (!data.user) {
+          // Unauthenticated visitors land on the public marketing site,
+          // and go through /login to enter the dashboard.
+          window.location.href = "/login";
+          return;
+        }
         if (data.user?.isImpersonating) {
           setUser(data.user);
           setSubscription(null);
@@ -76,46 +137,25 @@ export default function Home() {
           setUser(data.user);
           setSubscription(data.subscription ?? null);
           setModuleAccess(data.modules ?? null);
+          // Deep link back from the OAuth connect flow (/api/connections/*/callback).
+          if (new URLSearchParams(window.location.search).get("view") === "integrations") {
+            setView("integrations");
+          }
         }
+      })
+      .catch(() => {
+        window.location.href = "/login";
       })
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) {
+  // `!user` covers the window between a redirect being issued (to /login or
+  // /platform) and the navigation actually happening, plus a failed /me call.
+  if (loading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.3 }}
-        >
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </motion.div>
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.4 }}
-      >
-        <AuthScreen onAuthed={(u) => {
-          if (u.isSuperAdmin) {
-            window.location.href = "/platform";
-            return;
-          }
-          setUser(u);
-          fetch("/api/auth/me")
-            .then((r) => r.json())
-            .then((data) => {
-              setSubscription(data.subscription ?? null);
-              setModuleAccess(data.modules ?? null);
-            });
-        }} />
-      </motion.div>
     );
   }
 
@@ -166,22 +206,16 @@ export default function Home() {
           setSubscription(null);
           setModuleAccess(null);
           setView("overview");
+          window.location.href = "/login";
         }}
         onSessionChange={setUser}
         subscription={subscription}
         moduleAccess={moduleAccess}
       >
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={view}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-          >
-            {renderView()}
-          </motion.div>
-        </AnimatePresence>
+        {/* key={view} forces a remount so the CSS fade re-runs on navigation */}
+        <div key={view} className="animate-view-fade">
+          {renderView()}
+        </div>
       </AppShell>
     </ErrorBoundary>
   );

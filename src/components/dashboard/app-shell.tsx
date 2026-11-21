@@ -96,6 +96,7 @@ export function AppShell({
     email: string;
     businessName: string;
     businessId: string;
+    isSuperAdmin?: boolean;
     isImpersonating?: boolean;
   };
   active: ViewId;
@@ -313,7 +314,7 @@ export function AppShell({
           subscription={subscription ?? null}
           onNavigate={onNavigate}
         />
-        <main className="flex-1 p-4 lg:p-6 overflow-x-hidden">
+        <main id="main" tabIndex={-1} className="flex-1 p-4 lg:p-6 overflow-x-hidden">
           {children}
         </main>
 
@@ -334,6 +335,7 @@ export function AppShell({
         onOpenChange={setCmdOpen}
         onNavigate={handleNavigate}
         moduleAccess={moduleAccess}
+        isPlatformAdmin={!!user?.isSuperAdmin}
       />
     </div>
   );

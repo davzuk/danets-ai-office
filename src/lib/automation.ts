@@ -82,26 +82,28 @@ async function executeWorkflow(
     errorMsg = e?.message || String(e);
   }
 
-  // Log the run
-  await db.automationRun.create({
-    data: {
-      workflowId: workflow.id,
-      businessId: workflow.businessId,
-      triggerData: JSON.stringify({ triggerType: workflow.triggerType, ...ctx }),
-      actionData: JSON.stringify(actionData),
-      status,
-      error: errorMsg,
-    },
-  });
-
-  // Increment run count + update lastRunAt
-  await db.automationWorkflow.update({
-    where: { id: workflow.id },
-    data: {
-      runCount: { increment: 1 },
-      lastRunAt: new Date(),
-    },
-  });
+  // Log the run + bump the workflow's runCount atomically. Without the
+  // transaction a crash between the two leaves the row count out of sync
+  // with the run history.
+  await db.$transaction([
+    db.automationRun.create({
+      data: {
+        workflowId: workflow.id,
+        businessId: workflow.businessId,
+        triggerData: safeStringify({ triggerType: workflow.triggerType, ...ctx }),
+        actionData: safeStringify(actionData),
+        status,
+        error: errorMsg,
+      },
+    }),
+    db.automationWorkflow.update({
+      where: { id: workflow.id },
+      data: {
+        runCount: { increment: 1 },
+        lastRunAt: new Date(),
+      },
+    }),
+  ]);
 }
 
 async function executeAction(
@@ -250,6 +252,27 @@ function parseConfig(configStr: string | null): Record<string, any> {
   } catch {
     return {};
   }
+}
+
+/**
+ * Safe JSON stringify that strips `__proto__`, `constructor`, and prototype
+ * pollution payloads. Anything we persist as JSON must go through here so a
+ * compromised workflow config can't smuggle in a payload that pollutes the
+ * prototype chain when the JSON is later read back.
+ */
+function safeStringify(value: unknown): string {
+  return JSON.stringify(sanitizeJson(value));
+}
+
+function sanitizeJson(value: unknown): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(sanitizeJson);
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (k === "__proto__" || k === "constructor" || k === "prototype") continue;
+    out[k] = sanitizeJson(v);
+  }
+  return out;
 }
 
 function getNotificationTitle(type: string, ctx: TriggerContext): string {

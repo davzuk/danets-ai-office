@@ -33,10 +33,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { pdf } from "@react-pdf/renderer";
-import { ProposalPDF } from "@/components/dashboard/views/proposal-pdf";
-import {
-  Card,
+import { Card,
   CardContent,
   CardDescription,
   CardFooter,
@@ -870,6 +867,14 @@ export function QuotesView({ user }: { user: User }) {
       const dateStr = activeQuote?.createdAt
         ? format(new Date(activeQuote.createdAt), "dd MMM yyyy")
         : format(new Date(), "dd MMM yyyy");
+      // Lazy-load the PDF renderer + ProposalPDF template. @react-pdf/renderer
+      // is ~250kB gzipped and we only need it when the user explicitly clicks
+      // "Download as PDF". Skipping it on the initial quotes-view chunk keeps
+      // the dashboard's first-paint payload small.
+      const [{ pdf }, { ProposalPDF }] = await Promise.all([
+        import("@react-pdf/renderer"),
+        import("@/components/dashboard/views/proposal-pdf"),
+      ]);
       const element = (
         <ProposalPDF
           title={doc.title}

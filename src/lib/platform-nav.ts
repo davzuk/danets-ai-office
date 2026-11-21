@@ -10,6 +10,11 @@ import {
   Crown,
   CreditCard,
   Receipt,
+  Newspaper,
+  FileText,
+  Link as LinkIcon,
+  Boxes,
+  ImageIcon,
 } from "lucide-react";
 
 export type PlatformTabId =
@@ -22,9 +27,16 @@ export type PlatformTabId =
   | "platform"
   | "subscriptions"
   | "payments"
-  | "invoices";
+  | "invoices"
+  | "cms-pages"
+  | "cms-posts"
+  | "cms-nav"
+  | "cms-blocks"
+  | "cms-media"
+  | "cms-contacts"
+  | "cms-site";
 
-export type PlatformNavGroup = "main" | "billing" | "system";
+export type PlatformNavGroup = "main" | "billing" | "system" | "cms";
 
 export interface PlatformNavItem {
   id: PlatformTabId;
@@ -43,6 +55,13 @@ export const PLATFORM_NAV: PlatformNavItem[] = [
   { id: "subscriptions", label: "Subscriptions", icon: Crown, group: "billing", desc: "Plans & trials" },
   { id: "payments", label: "Payments", icon: CreditCard, group: "billing", desc: "Transactions" },
   { id: "invoices", label: "Invoices", icon: Receipt, group: "billing", desc: "Billing records" },
+  { id: "cms-pages", label: "Pages", icon: FileText, group: "cms", desc: "Marketing site pages" },
+  { id: "cms-posts", label: "Blog posts", icon: Newspaper, group: "cms", desc: "News & articles" },
+  { id: "cms-nav", label: "Navigation", icon: LinkIcon, group: "cms", desc: "Top nav & footer" },
+  { id: "cms-blocks", label: "Blocks", icon: Boxes, group: "cms", desc: "Block library" },
+  { id: "cms-media", label: "Media", icon: ImageIcon, group: "cms", desc: "Images & uploads" },
+  { id: "cms-contacts", label: "Contact inbox", icon: Receipt, group: "cms", desc: "Website form submissions" },
+  { id: "cms-site", label: "Site settings", icon: Settings2, group: "cms", desc: "Brand, contact & SEO defaults" },
   { id: "platform", label: "Platform", icon: Settings2, group: "system", desc: "Setup, plans, email, retention" },
   { id: "audit", label: "Audit Logs", icon: History, group: "system", desc: "Activity timeline" },
 ];
@@ -50,6 +69,7 @@ export const PLATFORM_NAV: PlatformNavItem[] = [
 export const PLATFORM_NAV_GROUPS: { key: PlatformNavGroup; label: string }[] = [
   { key: "main", label: "Operations" },
   { key: "billing", label: "Billing" },
+  { key: "cms", label: "Website CMS" },
   { key: "system", label: "System" },
 ];
 

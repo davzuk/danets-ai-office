@@ -5,6 +5,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ServiceWorkerRegister } from "@/components/pwa/register-sw";
 import { CsrfProvider } from "@/components/csrf-provider";
+import { QueryProvider } from "@/components/query-provider";
+import { SkipToMain } from "@/components/a11y/skip-to-main";
 
 const inter = Inter({
   variable: "--font-geist-sans",
@@ -65,15 +67,17 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
+        {/* WCAG 2.4.1: keyboard users can bypass nav and jump to #main. */}
+        <SkipToMain />
         <ThemeProvider
           attribute="class"
           defaultTheme="light"
           enableSystem
           disableTransitionOnChange
         >
-          <CsrfProvider>
-            {children}
-          </CsrfProvider>
+          <QueryProvider>
+            <CsrfProvider>{children}</CsrfProvider>
+          </QueryProvider>
           <Toaster />
           <ServiceWorkerRegister />
         </ThemeProvider>

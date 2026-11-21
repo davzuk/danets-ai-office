@@ -70,6 +70,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { ConnectedAccounts } from "./connected-accounts";
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -1247,6 +1248,8 @@ export function IntegrationsView({ user }: { user: IntegrationsUser }) {
           ))}
         </div>
       )}
+
+      <ConnectedAccounts />
 
       {/* Empty / footer notice */}
       {!loading && integrations.length === 0 ? (

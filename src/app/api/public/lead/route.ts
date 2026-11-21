@@ -5,6 +5,8 @@ import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { createNotification } from "@/lib/activity";
 import { fireTrigger } from "@/lib/automation";
 import { requireQuota, LimitExceededError } from "@/lib/plan-quota";
+import { captureInbound } from "@/lib/inbound-attribution";
+import { leadSourceFromChannel } from "@/lib/attribution";
 
 const leadSchema = z.object({
   pk: z.string().min(1),
@@ -14,6 +16,9 @@ const leadSchema = z.object({
   phone: z.string().max(40).optional().or(z.literal("")),
   service: z.string().max(200).optional(),
   message: z.string().max(2000).optional(),
+  visitorId: z.string().max(191).nullable().optional(),
+  // Validated (and size-capped) by captureInbound; bad attribution never rejects a lead.
+  attribution: z.unknown().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -32,7 +37,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { pk, sessionId, name, email, phone, service, message } = parsed.data;
+  const { pk, sessionId, name, email, phone, service, message, attribution } = parsed.data;
 
   const business = await db.business.findUnique({
     where: { publicKey: pk, status: "active" },
@@ -49,19 +54,67 @@ export async function POST(req: NextRequest) {
 
   // Verify session belongs to this business if provided
   let validSessionId: string | undefined;
+  let sessionVisitorId: string | null = null;
   if (sessionId) {
     const s = await db.chatSession.findFirst({
       where: { id: sessionId, businessId: business.id },
     });
-    if (s) validSessionId = s.id;
+    if (s) {
+      validSessionId = s.id;
+      sessionVisitorId = s.visitorId;
+    }
   }
 
-  // Prevent duplicate leads from same session
+  // Unified contact + touchpoints (first touch drives Lead.source).
+  // Recorded even when the lead turns out to be a duplicate: a returning
+  // visitor submitting again is a real touch on the same contact.
+  const inbound = await captureInbound({
+    businessId: business.id,
+    kind: "form_submit",
+    visitorId: parsed.data.visitorId || sessionVisitorId,
+    attribution,
+    profile: { name, email, phone },
+  });
+  const contactId = inbound?.contactId ?? null;
+  const linkExisting = async (leadId: string) => {
+    if (contactId) {
+      await db.lead.updateMany({ where: { id: leadId, contactId: null }, data: { contactId } });
+    }
+  };
+
+  // Prevent duplicate leads from same session.
   if (validSessionId) {
     const existing = await db.lead.findUnique({
       where: { sessionId: validSessionId },
     });
     if (existing) {
+      await linkExisting(existing.id);
+      return NextResponse.json({
+        leadId: existing.id,
+        alreadyExists: true,
+        quality: existing.quality,
+      });
+    }
+  }
+
+  // Prevent duplicate leads by (businessId, email). The unique index
+  // `Lead_businessId_email_key` enforces this at the DB layer; we do a
+  // best-effort pre-check so we don't burn a quota slot on a submission
+  // that would be rejected with P2002 anyway. The defensive catch around
+  // `db.lead.create` below handles concurrent inserts (a race between
+  // two tabs both reading "no existing lead" then both inserting).
+  const normalisedEmail = email?.trim().toLowerCase() || null;
+  if (normalisedEmail) {
+    const existing = await db.lead.findUnique({
+      where: {
+        Lead_businessId_email_key: {
+          businessId: business.id,
+          email: normalisedEmail,
+        },
+      },
+    });
+    if (existing) {
+      await linkExisting(existing.id);
       return NextResponse.json({
         leadId: existing.id,
         alreadyExists: true,
@@ -82,20 +135,50 @@ export async function POST(req: NextRequest) {
     throw e;
   }
 
-  const lead = await db.lead.create({
-    data: {
-      businessId: business.id,
-      sessionId: validSessionId,
-      name,
-      email: email || null,
-      phone: phone || null,
-      service: service || null,
-      message: message || null,
-      quality,
-      status: "new",
-      source: "chatbot",
-    },
-  });
+  let lead;
+  try {
+    lead = await db.lead.create({
+      data: {
+        businessId: business.id,
+        sessionId: validSessionId,
+        name,
+        email: normalisedEmail,
+        phone: phone || null,
+        service: service || null,
+        message: message || null,
+        quality,
+        status: "new",
+        source: inbound?.attributed ? leadSourceFromChannel(inbound.channel) : "chatbot",
+        contactId,
+        firstTouchId: inbound?.firstTouch.id ?? null,
+        lastTouchId: inbound?.touch.id ?? null,
+      },
+    });
+  } catch (e: any) {
+    // P2002 = unique constraint violation. If a concurrent request
+    // inserted the same (businessId, email) between our pre-check and
+    // our create, fall back to fetching that row and reporting it as
+    // `alreadyExists` so the client UX stays consistent.
+    if (e?.code === "P2002" && normalisedEmail) {
+      const existing = await db.lead.findUnique({
+        where: {
+          Lead_businessId_email_key: {
+            businessId: business.id,
+            email: normalisedEmail,
+          },
+        },
+      });
+      if (existing) {
+        await linkExisting(existing.id);
+        return NextResponse.json({
+          leadId: existing.id,
+          alreadyExists: true,
+          quality: existing.quality,
+        });
+      }
+    }
+    throw e;
+  }
 
   // Update session visitor info if linked
   if (validSessionId) {
@@ -106,6 +189,7 @@ export async function POST(req: NextRequest) {
         visitorEmail: email || undefined,
         visitorPhone: phone || undefined,
         leadQuality: quality,
+        ...(contactId ? { contactId } : {}),
       },
     });
   }

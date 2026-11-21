@@ -10,6 +10,7 @@ import {
   initializePaystackCheckout,
   isFlutterwaveConfigured,
   isPaystackConfigured,
+  isTestCheckoutAllowed,
   mockCheckoutUrl,
 } from "@/lib/payment-gateway";
 
@@ -48,6 +49,19 @@ export async function POST(req: NextRequest) {
 
   if (amount === 0) {
     return handleFreePlan(user, planName);
+  }
+
+  const gatewayConfigured =
+    provider === "paystack"
+      ? isPaystackConfigured()
+      : provider === "flutterwave"
+        ? isFlutterwaveConfigured()
+        : true;
+  if (!gatewayConfigured && !isTestCheckoutAllowed()) {
+    return NextResponse.json(
+      { error: "This payment method isn't available right now. Please choose another or contact support." },
+      { status: 503 }
+    );
   }
 
   const reference = `DAN-${Date.now()}-${randomBytes(4).toString("hex")}`;

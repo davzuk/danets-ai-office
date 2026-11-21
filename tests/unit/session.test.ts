@@ -205,13 +205,12 @@ describe("session rotation (P10)", () => {
     });
     expect(newToken).toBeTruthy();
     expect(newToken).not.toBe(row.token);
-    // Old row gone, new row present.
-    expect(sessions.has(row.id)).toBe(false);
-    let foundNew: any | null = null;
-    for (const s of sessions.values()) {
-      if (s.token === newToken) foundNew = s;
-    }
+    // Rotation is an atomic in-place update: same row, new token, and the
+    // old token no longer resolves to any session.
+    const foundNew = sessions.get(row.id);
     expect(foundNew).toBeTruthy();
+    expect(foundNew.token).toBe(newToken);
+    expect([...sessions.values()].some((s) => s.token === row.token)).toBe(false);
     expect(foundNew.businessUserId).toBe(row.businessUserId);
     expect(foundNew.businessId).toBe(row.businessId);
     expect(foundNew.absoluteExpiresAt.getTime()).toBe(row.absoluteExpiresAt.getTime());

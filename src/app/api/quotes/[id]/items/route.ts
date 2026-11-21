@@ -65,25 +65,27 @@ export function DELETE(req: NextRequest, { params }: RouteCtx) {
     });
     if (!existing) throw new Error("Item not found");
 
-    await db.proposalItem.delete({ where: { id: itemId } });
+    // Atomic: delete the item + recompute totals in one tx.
+    await db.$transaction(async (tx) => {
+      await tx.proposalItem.delete({ where: { id: itemId } });
 
-    // Recalculate quote totals
-    const items = await db.proposalItem.findMany({
-      where: { quoteRequestId: id },
-      select: { total: true },
-    });
-    const subtotal = items.reduce((sum, i) => sum + i.total, 0);
-    const discountAmount =
-      quote.discountType === "percentage"
-        ? (subtotal * quote.discount) / 100
-        : quote.discount;
-    const afterDiscount = Math.max(0, subtotal - discountAmount);
-    const taxAmount = (afterDiscount * quote.taxRate) / 100;
-    const total = afterDiscount + taxAmount;
+      const items = await tx.proposalItem.findMany({
+        where: { quoteRequestId: id },
+        select: { total: true },
+      });
+      const subtotal = items.reduce((sum, i) => sum + i.total, 0);
+      const discountAmount =
+        quote.discountType === "percentage"
+          ? (subtotal * quote.discount) / 100
+          : quote.discount;
+      const afterDiscount = Math.max(0, subtotal - discountAmount);
+      const taxAmount = (afterDiscount * quote.taxRate) / 100;
+      const total = afterDiscount + taxAmount;
 
-    await db.quoteRequest.update({
-      where: { id },
-      data: { subtotal, taxAmount, total },
+      await tx.quoteRequest.update({
+        where: { id },
+        data: { subtotal, taxAmount, total },
+      });
     });
 
     return { ok: true, id: itemId };
@@ -110,21 +112,42 @@ export function POST(req: NextRequest, { params }: RouteCtx) {
     // Get current item count for sortOrder
     const count = await db.proposalItem.count({ where: { quoteRequestId: id } });
 
-    const item = await db.proposalItem.create({
-      data: {
-        quoteRequestId: id,
-        description: d.description.trim(),
-        quantity: d.quantity,
-        unitPrice: d.unitPrice,
-        total,
-        sortOrder: count,
-      },
-    });
+    // Atomic: create the item + recompute the quote's totals in one tx.
+    // Without this, a crash between `create` and `update` leaves a stale
+    // subtotal/total on the quote that doesn't match its line items.
+    const { item, subtotal, taxAmount, total: grandTotal } =
+      await db.$transaction(async (tx) => {
+        const created = await tx.proposalItem.create({
+          data: {
+            quoteRequestId: id,
+            description: d.description.trim(),
+            quantity: d.quantity,
+            unitPrice: d.unitPrice,
+            total,
+            sortOrder: count,
+          },
+        });
 
-    // Recalculate quote totals
-    await recalculateTotals(id, quote.discount, quote.discountType, quote.taxRate);
+        const items = await tx.proposalItem.findMany({
+          where: { quoteRequestId: id },
+          select: { total: true },
+        });
+        const sub = items.reduce((sum, i) => sum + i.total, 0);
+        const discountAmount =
+          quote.discountType === "percentage"
+            ? (sub * quote.discount) / 100
+            : quote.discount;
+        const afterDiscount = Math.max(0, sub - discountAmount);
+        const tax = (afterDiscount * quote.taxRate) / 100;
+        const tot = afterDiscount + tax;
+        await tx.quoteRequest.update({
+          where: { id },
+          data: { subtotal: sub, taxAmount: tax, total: tot },
+        });
+        return { item: created, subtotal: sub, taxAmount: tax, total: tot };
+      });
 
-    return { item };
+    return { item, subtotal, taxAmount, total: grandTotal };
   });
 }
 

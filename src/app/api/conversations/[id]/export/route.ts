@@ -18,8 +18,8 @@ export async function GET(
 
   const { id } = await params;
 
-  const session = await db.chatSession.findUnique({
-    where: { id },
+  const session = await db.chatSession.findFirst({
+    where: { id, businessId: user.businessId },
     include: {
       messages: {
         orderBy: { createdAt: "asc" },
@@ -29,7 +29,7 @@ export async function GET(
     },
   });
 
-  if (!session || session.businessId !== user.businessId) {
+  if (!session) {
     return NextResponse.json(
       { error: "Conversation not found" },
       { status: 404 }

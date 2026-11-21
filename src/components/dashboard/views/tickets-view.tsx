@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import {
   Loader2,
   Search,
@@ -1943,10 +1944,10 @@ export function TicketsView({ user }: { user: UserProp }) {
   const [deleteTarget, setDeleteTarget] = React.useState<Ticket | null>(null);
 
   // ─── Debounce search input ─────────────────────────────────────
+  const debouncedSearch = useDebouncedValue(searchInput.trim(), 350);
   React.useEffect(() => {
-    const t = setTimeout(() => setSearch(searchInput.trim()), 350);
-    return () => clearTimeout(t);
-  }, [searchInput]);
+    setSearch(debouncedSearch);
+  }, [debouncedSearch]);
 
   const hasFilters =
     !!search || statusFilter !== "all" || priorityFilter !== "all";

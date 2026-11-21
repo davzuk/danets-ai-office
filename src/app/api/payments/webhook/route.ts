@@ -59,11 +59,21 @@ async function handlePaystackWebhook(body: Record<string, unknown>) {
     return NextResponse.json({ error: "Payment not found" }, { status: 404 });
   }
 
-  if (event === "charge.success" && payment.status !== "success") {
+  if (event === "charge.success") {
+    // Atomic claim: only one webhook delivery wins. Concurrent retries
+    // observe count=0 and skip the activate path, which would otherwise
+    // race and double-bill or duplicate invoice rows.
+    const claimed = await db.payment.updateMany({
+      where: { id: payment.id, status: "pending" },
+      data: { status: "processing", verifiedAt: new Date() },
+    });
+    if (claimed.count === 0) {
+      return NextResponse.json({ status: "already_processed" });
+    }
     await activateSubscriptionFromPayment(payment.id);
-  } else if (event === "charge.failed" && payment.status === "pending") {
-    await db.payment.update({
-      where: { id: payment.id },
+  } else if (event === "charge.failed") {
+    await db.payment.updateMany({
+      where: { id: payment.id, status: { in: ["pending", "processing"] } },
       data: { status: "failed", verifiedAt: new Date() },
     });
   }
@@ -85,7 +95,14 @@ async function handleFlutterwaveWebhook(body: Record<string, unknown>) {
     return NextResponse.json({ error: "Payment not found" }, { status: 404 });
   }
 
-  if (event === "charge.completed" && data?.status === "successful" && payment.status !== "success") {
+  if (event === "charge.completed" && data?.status === "successful") {
+    const claimed = await db.payment.updateMany({
+      where: { id: payment.id, status: "pending" },
+      data: { status: "processing", verifiedAt: new Date() },
+    });
+    if (claimed.count === 0) {
+      return NextResponse.json({ status: "already_processed" });
+    }
     await activateSubscriptionFromPayment(payment.id);
   }
 

@@ -5,6 +5,12 @@ import { aiChat, logUsage } from "@/lib/ai";
 import { withSession } from "@/lib/api";
 import { requireAiQuota } from "@/lib/plan-limits";
 import { requireQuota } from "@/lib/plan-quota";
+import {
+  beforeCursorWhere,
+  clampPageSize,
+  decodeCursor,
+  encodeCursor,
+} from "@/lib/cursor-pagination";
 
 const createSchema = z.object({
   clientName: z.string().min(1, "Client name is required").max(120),
@@ -93,11 +99,23 @@ async function generateProposalForQuote(
   };
 }
 
-// GET /api/quotes — list QuoteRequests for the business, with latest proposal doc.
-export async function GET() {
+// GET /api/quotes — list QuoteRequests for the business, with latest
+// proposal doc. Cursor-paginated via ?cursor=<base64> / ?take=<n>.
+export async function GET(req: NextRequest) {
   return withSession(async (user) => {
-    const quotes = await db.quoteRequest.findMany({
-      where: { businessId: user.businessId },
+    const url = new URL(req.url);
+    const cursor = decodeCursor(url.searchParams.get("cursor"));
+    const take = clampPageSize(
+      Number(url.searchParams.get("take") || 0) || undefined,
+      50,
+      200
+    );
+
+    const where: any = { businessId: user.businessId };
+    Object.assign(where, beforeCursorWhere(cursor));
+
+    const rows = await db.quoteRequest.findMany({
+      where,
       include: {
         documents: {
           where: { type: "proposal" },
@@ -106,10 +124,17 @@ export async function GET() {
         },
       },
       orderBy: { createdAt: "desc" },
+      take: take + 1,
     });
+    const hasMore = rows.length > take;
+    const page = rows.slice(0, take);
+    const last = page[page.length - 1];
+    const nextCursor = hasMore && last
+      ? encodeCursor({ t: last.createdAt.toISOString(), id: last.id })
+      : null;
 
     return {
-      quotes: quotes.map((q) => ({
+      quotes: page.map((q) => ({
         id: q.id,
         clientName: q.clientName,
         companyName: q.companyName,
@@ -139,6 +164,7 @@ export async function GET() {
             }
           : null,
       })),
+      nextCursor,
     };
   });
 }

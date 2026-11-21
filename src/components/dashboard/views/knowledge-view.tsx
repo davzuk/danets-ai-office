@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import {
   BookOpen,
   Plus,
@@ -536,12 +537,10 @@ export function KnowledgeView({ user: _user }: { user: KbUser }) {
   const fetchInFlight = useRef(false);
 
   // Debounced search (300ms)
+  const debounced = useDebouncedValue(searchInput.trim(), 300);
   useEffect(() => {
-    const t = setTimeout(() => {
-      setDebouncedSearch(searchInput.trim());
-    }, 300);
-    return () => clearTimeout(t);
-  }, [searchInput]);
+    setDebouncedSearch(debounced);
+  }, [debounced]);
 
   const loadStats = useCallback(async () => {
     try {

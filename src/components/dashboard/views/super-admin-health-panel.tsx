@@ -31,6 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { SuperAdminJobsCard } from "./super-admin-jobs-card";
 
 interface HealthRow {
   businessId: string;
@@ -136,6 +137,8 @@ export function SuperAdminHealthPanel({
           </CardContent>
         </Card>
       </div>
+
+      <SuperAdminJobsCard />
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-4">

@@ -1,17 +1,29 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
+import {
+  beforeCursorWhere,
+  clampPageSize,
+  decodeCursor,
+  encodeCursor,
+} from "@/lib/cursor-pagination";
 
-// List leads for the current business.
-// Supports ?status=, ?quality=, ?q= (search name/email/phone).
-// Ordered by createdAt desc, includes related chatSession (id + visitorEmail).
-// Capped at 200 rows.
+// List leads for the current business. Supports ?status=, ?quality=,
+// ?q= (search name/email/phone), and cursor-based pagination via
+// ?cursor=<base64> / ?take=<n>. Ordered by createdAt desc with id as
+// the tiebreaker so the (businessId, createdAt) compound index from
+// the P17 migration can satisfy the query without a sort step.
 export function GET(req: NextRequest) {
   return withSession(async (user) => {
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status") || undefined;
     const quality = searchParams.get("quality") || undefined;
     const q = searchParams.get("q")?.trim() || undefined;
+    const source = searchParams.get("source")?.trim().slice(0, 50) || undefined;
+    const cursor = decodeCursor(searchParams.get("cursor"));
+    const take = clampPageSize(
+      Number(searchParams.get("take") || 0) || undefined
+    );
 
     const validStatuses = ["new", "contacted", "qualified", "proposal_sent", "negotiation", "won", "lost"];
     const validQualities = ["low", "medium", "high"];
@@ -19,6 +31,7 @@ export function GET(req: NextRequest) {
     const where: any = { businessId: user.businessId };
     if (status && validStatuses.includes(status)) where.status = status;
     if (quality && validQualities.includes(quality)) where.quality = quality;
+    if (source) where.source = source;
     if (q) {
       where.OR = [
         { name: { contains: q } },
@@ -26,17 +39,26 @@ export function GET(req: NextRequest) {
         { phone: { contains: q } },
       ];
     }
+    Object.assign(where, beforeCursorWhere(cursor));
 
-    const leads = await db.lead.findMany({
+    // Fetch `take + 1` so we can tell whether there's another page without
+    // a separate `count()` round-trip.
+    const rows = await db.lead.findMany({
       where,
       orderBy: { createdAt: "desc" },
-      take: 200,
+      take: take + 1,
       include: {
         session: {
           select: { id: true, visitorEmail: true },
         },
       },
     });
+    const hasMore = rows.length > take;
+    const leads = rows.slice(0, take);
+    const last = leads[leads.length - 1];
+    const nextCursor = hasMore && last
+      ? encodeCursor({ t: last.createdAt.toISOString(), id: last.id })
+      : null;
 
     return {
       leads: leads.map((l) => ({
@@ -57,6 +79,7 @@ export function GET(req: NextRequest) {
         createdAt: l.createdAt.toISOString(),
         updatedAt: l.updatedAt.toISOString(),
       })),
+      nextCursor,
     };
   });
 }

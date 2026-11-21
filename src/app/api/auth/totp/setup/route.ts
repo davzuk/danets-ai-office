@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
+import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import {
   generateBackupCodes,
   generateTotpSecret,
@@ -10,6 +11,13 @@ import {
   hashBackupCode,
   verifyTotpCode,
 } from "@/lib/totp";
+
+// Per-user rate limit on TOTP attempts: 5 per 10 minutes. The 6-digit TOTP
+// space (10^6 = 1M codes) is large enough that 30/hour is well above any
+// legitimate pattern but still throttles brute-force on a stolen cookie.
+async function totpRateLimit(userId: string) {
+  return rateLimit(`totp:${userId}`, 5, 10 * 60_000);
+}
 
 // GET /api/auth/totp/setup — begin tenant 2FA setup
 export async function GET() {
@@ -47,6 +55,21 @@ export async function POST(req: NextRequest) {
     session = await requireSession();
   } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const ipRl = await rateLimit(`totp-ip:${getClientIp(req)}`, 20, 10 * 60_000);
+  if (!ipRl.success) {
+    return NextResponse.json(
+      { error: "Too many 2FA attempts. Try again later." },
+      { status: 429 }
+    );
+  }
+  const rl = await totpRateLimit(session.userId);
+  if (!rl.success) {
+    return NextResponse.json(
+      { error: "Too many 2FA attempts. Try again later." },
+      { status: 429 }
+    );
   }
 
   const body = await req.json().catch(() => null);
@@ -97,6 +120,14 @@ export async function DELETE(req: NextRequest) {
     session = await requireSession();
   } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const rl = await totpRateLimit(session.userId);
+  if (!rl.success) {
+    return NextResponse.json(
+      { error: "Too many 2FA attempts. Try again later." },
+      { status: 429 }
+    );
   }
 
   const body = await req.json().catch(() => ({}));

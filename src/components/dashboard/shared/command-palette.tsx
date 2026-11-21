@@ -44,6 +44,19 @@ interface CommandPaletteProps {
   moduleAccess?: {
     modules: Record<string, { enabled: boolean; requiredPlanLabel: string }>;
   } | null;
+  /**
+   * When true, surfaces a platform-admin hint in the placeholder copy so
+   * the user knows their cross-tenant actions (impersonation, plan
+   * overrides) are in scope. The default copy says "Type a command…"
+   * which is correct for tenant admins but misleading for platform staff
+   * who use Cmd+K to jump into tenant views.
+   */
+  isPlatformAdmin?: boolean;
+}
+
+/** The platform console is a separate page, not a dashboard view. */
+function openPlatform(tab: "overview" | "tenants" | "users") {
+  window.location.href = tab === "overview" ? "/platform" : `/platform?tab=${tab}`;
 }
 
 const NAV_ITEMS: {
@@ -76,6 +89,7 @@ export function CommandPalette({
   onOpenChange,
   onNavigate,
   moduleAccess,
+  isPlatformAdmin = false,
 }: CommandPaletteProps) {
   const { theme, setTheme } = useTheme();
 
@@ -86,9 +100,47 @@ export function CommandPalette({
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandInput placeholder="Type a command or search…" />
+      <CommandInput
+        placeholder={
+          isPlatformAdmin
+            ? "Search workspaces, jump to tenant, or run an admin action…"
+            : "Type a command or search…"
+        }
+      />
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
+
+        {isPlatformAdmin ? (
+          <CommandGroup heading="Platform">
+            <CommandItem
+              value="open platform control plane admin dashboard"
+              onSelect={() => run(() => openPlatform("overview"))}
+              className="gap-2"
+            >
+              <Lock size={16} className="text-primary" />
+              <span>Open Platform Control Plane</span>
+              <span className="ml-auto text-xs text-muted-foreground">
+                /platform
+              </span>
+            </CommandItem>
+            <CommandItem
+              value="search tenants businesses accounts"
+              onSelect={() => run(() => openPlatform("tenants"))}
+              className="gap-2"
+            >
+              <Search size={16} className="text-muted-foreground" />
+              <span>Search Tenants</span>
+            </CommandItem>
+            <CommandItem
+              value="search platform users admin staff"
+              onSelect={() => run(() => openPlatform("users"))}
+              className="gap-2"
+            >
+              <Users size={16} className="text-muted-foreground" />
+              <span>Search Platform Users</span>
+            </CommandItem>
+          </CommandGroup>
+        ) : null}
 
         <CommandGroup heading="Navigation">
           {NAV_ITEMS.map((item) => {

@@ -5,18 +5,29 @@ import { withSession } from "@/lib/api";
 import { logActivity, createNotification } from "@/lib/activity";
 import { fireTrigger } from "@/lib/automation";
 import { requireQuota } from "@/lib/plan-quota";
+import {
+  beforeCursorWhere,
+  clampPageSize,
+  decodeCursor,
+  encodeCursor,
+} from "@/lib/cursor-pagination";
 
 const VALID_STATUSES = ["open", "pending", "in_progress", "resolved", "closed"];
 const VALID_PRIORITIES = ["low", "medium", "high", "urgent"];
 
 // GET /api/tickets — list tickets for the business
-// Supports ?status=, ?priority=, ?q= (search subject/customer)
+// Supports ?status=, ?priority=, ?q= (search subject/customer),
+// plus cursor-based pagination via ?cursor=<base64> / ?take=<n>.
 export function GET(req: NextRequest) {
   return withSession(async (user) => {
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status") || undefined;
     const priority = searchParams.get("priority") || undefined;
     const q = searchParams.get("q")?.trim() || undefined;
+    const cursor = decodeCursor(searchParams.get("cursor"));
+    const take = clampPageSize(
+      Number(searchParams.get("take") || 0) || undefined
+    );
 
     const where: any = { businessId: user.businessId };
     if (status && VALID_STATUSES.includes(status)) where.status = status;
@@ -28,19 +39,26 @@ export function GET(req: NextRequest) {
         { customerEmail: { contains: q } },
       ];
     }
+    Object.assign(where, beforeCursorWhere(cursor));
 
-    const tickets = await db.supportTicket.findMany({
+    const rows = await db.supportTicket.findMany({
       where,
       orderBy: { createdAt: "desc" },
-      take: 200,
+      take: take + 1,
       include: {
         category: { select: { id: true, name: true, color: true } },
         messages: { orderBy: { createdAt: "desc" }, take: 1, select: { content: true, createdAt: true } },
       },
     });
+    const hasMore = rows.length > take;
+    const page = rows.slice(0, take);
+    const last = page[page.length - 1];
+    const nextCursor = hasMore && last
+      ? encodeCursor({ t: last.createdAt.toISOString(), id: last.id })
+      : null;
 
     return {
-      tickets: tickets.map((t) => ({
+      tickets: page.map((t) => ({
         id: t.id,
         subject: t.subject,
         description: t.description,
@@ -59,6 +77,7 @@ export function GET(req: NextRequest) {
         updatedAt: t.updatedAt.toISOString(),
         resolvedAt: t.resolvedAt?.toISOString() || null,
       })),
+      nextCursor,
     };
   });
 }

@@ -6,7 +6,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { PlatformAuthScreen } from "@/components/auth/platform-auth-screen";
 import { PlatformShell } from "@/components/platform/platform-shell";
 import { SuperAdminView } from "@/components/dashboard/views/super-admin-view";
-import type { PlatformTabId } from "@/lib/platform-nav";
+import { PLATFORM_NAV, type PlatformTabId } from "@/lib/platform-nav";
 
 interface PlatformUser {
   userId: string;
@@ -33,8 +33,14 @@ export default function PlatformPage() {
     ])
       .then(([platform, tenant]) => {
         if (tenant.user?.isImpersonating) {
-          window.location.href = "/";
+          // "/" is the public marketing site; the tenant dashboard is /app.
+          window.location.href = "/app";
           return;
+        }
+        // Deep link from the dashboard command palette (?tab=tenants|users).
+        const tab = new URLSearchParams(window.location.search).get("tab");
+        if (tab && PLATFORM_NAV.some((n) => n.id === tab)) {
+          setActiveTab(tab as PlatformTabId);
         }
         if (platform.admin) {
           setUser(platform.admin);

@@ -3,12 +3,19 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { requireSuperAdmin } from "@/lib/super-admin";
+import { requireReauth } from "@/lib/reauth";
 import { logActivity } from "@/lib/activity";
 
 const patchSchema = z.object({
   name: z.string().min(2).max(80).optional(),
   role: z.enum(["admin", "member"]).optional(),
   password: z.string().min(6).max(100).optional(),
+  // Fresh credential the calling admin must present when changing a password.
+  // Without this, a stolen super-admin session could reset any tenant user's
+  // password and pivot to that account. The audit theme #2 lists this as a
+  // privileged action that previously relied on requireSession alone.
+  reauthPassword: z.string().min(1).optional(),
+  reauthTotpCode: z.string().optional(),
 });
 
 type RouteCtx = { params: Promise<{ id: string }> };
@@ -33,6 +40,40 @@ export async function PATCH(req: NextRequest, { params }: RouteCtx) {
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+  }
+
+  // Password resets are the highest-blast-radius admin action — the
+  // target user can be locked out or handed over to an attacker. Force
+  // the calling admin to re-prove their own credential first.
+  if (parsed.data.password) {
+    const { verifyPlatformFreshCredential } = await import("@/lib/reauth");
+    // For platform admins, the session ID comes from requireSuperAdmin's
+    // resolved platform session row. For tenant super-admins, fall back
+    // to the tenant session ID on the SessionUser.
+    const sessionId = auth.isPlatformAdmin
+      ? admin.sessionId ?? ""
+      : admin.sessionId ?? "";
+    if (!sessionId) {
+      return NextResponse.json(
+        { error: "Reauthentication requires an active session", code: "REAUTH_REQUIRED" },
+        { status: 401 }
+      );
+    }
+    try {
+      await verifyPlatformFreshCredential(
+        admin.userId,
+        sessionId,
+        {
+          currentPassword: parsed.data.reauthPassword,
+          totpCode: parsed.data.reauthTotpCode,
+        }
+      );
+    } catch (e: any) {
+      return NextResponse.json(
+        { error: e?.message || "Reauthentication required", code: "REAUTH_REQUIRED" },
+        { status: e?.status || 401 }
+      );
+    }
   }
 
   const data: { name?: string; role?: string; password?: string } = {};

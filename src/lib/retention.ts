@@ -49,7 +49,7 @@ export async function applyRetentionForBusiness(businessId: string) {
 
   const policy = await getRetentionPolicy(business.plan);
 
-  const [auditDeleted, chatsDeleted, leadsDeleted] = await Promise.all([
+  const [auditDeleted, chatsDeleted, leadsDeleted, touchesDeleted] = await Promise.all([
     db.activityLog.deleteMany({
       where: {
         businessId,
@@ -68,6 +68,15 @@ export async function applyRetentionForBusiness(businessId: string) {
         createdAt: { lt: daysAgo(policy.leadRetentionDays) },
       },
     }),
+    // Anonymous touchpoints (visitor never became a contact) follow the chat
+    // window. Touchpoints on a known contact live as long as the contact.
+    db.touchpoint.deleteMany({
+      where: {
+        businessId,
+        contactId: null,
+        occurredAt: { lt: daysAgo(policy.chatRetentionDays) },
+      },
+    }),
   ]);
 
   return {
@@ -78,6 +87,7 @@ export async function applyRetentionForBusiness(businessId: string) {
       auditLogs: auditDeleted.count,
       chatSessions: chatsDeleted.count,
       leads: leadsDeleted.count,
+      touchpoints: touchesDeleted.count,
     },
   };
 }
@@ -98,4 +108,60 @@ export async function applyRetentionAll() {
   }
 
   return results;
+}
+
+/**
+ * Apply scheduled plan downgrades. Each BusinessSubscription row may carry
+ * a `downgradeScheduledFor` set by the billing flow when a customer downgrades
+ * at the end of a billing cycle. When that date passes, this function
+ * transitions the subscription + business row to the new plan within a
+ * transaction. Without this job, customers who downgrade keep being billed
+ * on the old plan indefinitely.
+ */
+export async function applyScheduledDowngrades(now = new Date()) {
+  const due = await db.businessSubscription.findMany({
+    where: {
+      downgradeScheduledFor: { lte: now, not: null },
+      status: "active",
+    },
+    select: {
+      id: true,
+      businessId: true,
+      downgradeTargetPlan: true,
+    },
+  });
+
+  const applied: Array<{ businessId: string; planName: string }> = [];
+
+  for (const sub of due) {
+    const planName = sub.downgradeTargetPlan;
+    if (!planName) continue;
+    const plan = await db.subscriptionPlan.findUnique({
+      where: { name: planName },
+      select: { priceUsd: true },
+    });
+    if (!plan) continue;
+
+    // Single transaction: clear the schedule + flip the plan. Without this,
+    // a crash between fields leaves the schedule set but the plan unchanged.
+    await db.$transaction([
+      db.businessSubscription.update({
+        where: { id: sub.id },
+        data: {
+          planName,
+          monthlyFee: plan.priceUsd,
+          downgradeScheduledFor: null,
+          downgradeTargetPlan: null,
+        },
+      }),
+      db.business.update({
+        where: { id: sub.businessId },
+        data: { plan: planName },
+      }),
+    ]);
+
+    applied.push({ businessId: sub.businessId, planName });
+  }
+
+  return { applied, scanned: due.length };
 }

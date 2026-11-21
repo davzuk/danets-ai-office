@@ -13,18 +13,20 @@ datasource db {
 // ─── Tenancy & Auth ────────────────────────────────────────────────
 
 model Business {
-  id         String   @id @default(cuid())
-  name       String
-  publicKey  String   @unique @default(cuid())
-  industry   String?
-  email      String?
-  phone      String?
-  whatsapp   String?
-  plan       String   @default("free") // free | starter | pro | enterprise
-  status     String   @default("active") // active | suspended
-  enforce2fa Boolean  @default(false) // require 2FA for all members of this business
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id               String    @id @default(cuid())
+  name             String
+  publicKey        String    @unique @default(cuid())
+  industry         String?
+  email            String?
+  phone            String?
+  whatsapp         String?
+  plan             String    @default("free") // free | starter | pro | enterprise
+  status           String    @default("active") // active | suspended | deleted
+  enforce2fa       Boolean   @default(false) // require 2FA for all members of this business
+  deletedAt        DateTime?
+  purgeScheduledAt DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   users                BusinessUser[]
   aiAgents             AiAgent[]
@@ -45,6 +47,9 @@ model Business {
   whatsappIntegration  WhatsAppIntegration[]
   automationWorkflows  AutomationWorkflow[]
   integrations         Integration[]
+  oauthConnections     OAuthConnection[]
+  contacts             Contact[]
+  touchpoints          Touchpoint[]
   subscription         BusinessSubscription?
   payments             Payment[]
   invoices             Invoice[]
@@ -52,16 +57,18 @@ model Business {
   whiteLabel           WhiteLabelConfig?
   featureFlagOverrides BusinessFeatureFlag[]
   limitOverride        BusinessLimitOverride?
+
+  @@index([purgeScheduledAt])
 }
 
 model BusinessUser {
-  id           String   @id @default(cuid())
-  businessId   String
-  name         String
-  email        String   @unique
-  password     String // bcrypt hash
-  role         String   @default("admin") // admin | member
-  isSuperAdmin Boolean  @default(false) // Danets TecPro internal super admin
+  id              String   @id @default(cuid())
+  businessId      String
+  name            String
+  email           String   @unique
+  password        String // bcrypt hash
+  role            String   @default("admin") // admin | member
+  isSuperAdmin    Boolean  @default(false) // Danets TecPro internal super admin
   totpSecret      String? // base32 secret when 2FA enabled
   totpPending     String? // pending secret during setup
   totpEnabled     Boolean  @default(false)
@@ -69,10 +76,26 @@ model BusinessUser {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  sessions Session[]
+  business            Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  sessions            Session[]
+  passwordResetTokens PasswordResetToken[]
 
   @@index([businessId])
+}
+
+model PasswordResetToken {
+  id         String    @id @default(cuid())
+  userId     String
+  businessId String
+  tokenHash  String    @unique // SHA-256 of the cleartext token sent in the email
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  user BusinessUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model Session {
@@ -168,6 +191,7 @@ model ChatSession {
   visitorEmail String?
   visitorPhone String?
   visitorId    String? // anonymous browser id
+  contactId    String?
   status       String   @default("active") // active | ended | handover
   summary      String?
   leadQuality  String? // low | medium | high
@@ -177,12 +201,15 @@ model ChatSession {
 
   business       Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
   agent          AiAgent?        @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  contact        Contact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
   messages       ChatMessage[]
   lead           Lead?
   supportTickets SupportTicket[]
 
   @@index([businessId])
   @@index([status])
+  @@index([contactId])
+  @@index([businessId, visitorId])
 }
 
 model ChatMessage {
@@ -210,25 +237,38 @@ model Lead {
   message           String?
   quality           String    @default("medium") // low | medium | high
   status            String    @default("new") // new | contacted | qualified | proposal_sent | negotiation | won | lost
-  source            String    @default("chatbot") // chatbot | website_form | manual | whatsapp | referral | social_media
+  source            String    @default("chatbot") // chatbot | website_form | manual | whatsapp | referral | social_media, or an attribution channel: organic_search | paid_search | social_organic | social_paid | email | direct (see src/lib/attribution.ts)
   // CRM fields
   dealValue         Float     @default(0)
   leadScore         Int       @default(0) // 0-100
   expectedCloseDate DateTime?
   assignedTo        String? // BusinessUser id
   company           String?
+  // Attribution (Phase 0 D): the unified Contact and the touchpoints that
+  // produced this lead. Touch ids are plain columns (no FK) so pruning a
+  // touchpoint never blocks or cascades into a lead.
+  contactId         String?
+  firstTouchId      String?
+  lastTouchId       String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   business   Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
   session    ChatSession?   @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  contact    Contact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
   notes      LeadNote[]
   tasks      LeadTask[]
   activities LeadActivity[]
 
+  // Dedupe within a tenant: a given email can only create one Lead per
+  // Business. MySQL allows multiple NULL emails in a unique index, so
+  // anonymous leads (no email collected) are unaffected. Pair-indexed
+  // for query speed on the public widget's pre-submit dedupe lookup.
+  @@unique([businessId, email], name: "Lead_businessId_email_key")
   @@index([businessId])
   @@index([status])
   @@index([assignedTo])
+  @@index([contactId])
 }
 
 // ─── CRM: Lead Notes, Tasks, Activities ───────────────────────────
@@ -320,6 +360,7 @@ model SupportTicket {
   customerName     String?
   customerEmail    String?
   customerPhone    String?
+  contactId        String?
   // Assignment
   assignedTo       String? // BusinessUser id
   assignedName     String?
@@ -333,12 +374,14 @@ model SupportTicket {
   business    Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
   category    SupportTicketCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   chatSession ChatSession?           @relation(fields: [chatSessionId], references: [id], onDelete: SetNull)
+  contact     Contact?               @relation(fields: [contactId], references: [id], onDelete: SetNull)
   messages    SupportTicketMessage[]
   notes       SupportTicketNote[]
 
   @@index([businessId])
   @@index([status])
   @@index([priority])
+  @@index([contactId])
 }
 
 model SupportTicketMessage {
@@ -395,6 +438,7 @@ model QuoteRequest {
   businessId      String
   clientName      String
   companyName     String?
+  contactId       String?
   service         String
   requirements    String
   budgetRange     String?
@@ -421,12 +465,14 @@ model QuoteRequest {
   updatedAt       DateTime  @updatedAt
 
   business  Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  contact   Contact?            @relation(fields: [contactId], references: [id], onDelete: SetNull)
   documents GeneratedDocument[]
   items     ProposalItem[]
   followups ProposalFollowup[]
 
   @@index([businessId])
   @@index([status])
+  @@index([contactId])
 }
 
 // ─── Proposal Templates & Items ───────────────────────────────────
@@ -730,6 +776,35 @@ model AutomationRun {
 
 // ─── Integrations ─────────────────────────────────────────────────
 
+// OAuth-connected third-party accounts (Meta, Google, …). Tokens are
+// AES-256-GCM envelopes from src/lib/crypto.ts; never return them to clients.
+model OAuthConnection {
+  id                String    @id @default(cuid())
+  businessId        String
+  provider          String // meta | google
+  externalAccountId String // provider's user/account id
+  accountName       String?
+  accountEmail      String?
+  scopes            String    @db.Text // space-separated granted scopes
+  accessToken       Json // EncryptedPayload
+  refreshToken      Json? // EncryptedPayload
+  expiresAt         DateTime?
+  status            String    @default("active") // active | expired | revoked | error
+  lastError         String?   @db.Text
+  lastRefreshedAt   DateTime?
+  // Provider extras, e.g. Meta pages (with encrypted page tokens), GSC properties
+  metadata          Json?
+  connectedById     String? // BusinessUser id
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, provider, externalAccountId])
+  @@index([businessId])
+  @@index([status, expiresAt])
+}
+
 model Integration {
   id           String    @id @default(cuid())
   businessId   String
@@ -752,21 +827,21 @@ model Integration {
 // ─── Subscription Management ──────────────────────────────────────
 
 model BusinessSubscription {
-  id                      String    @id @default(cuid())
-  businessId              String    @unique
-  planName                String // free | starter | business | premium | enterprise
-  status                  String    @default("active") // active | trial | past_due | canceled | expired
-  startDate               DateTime  @default(now())
-  endDate                 DateTime?
-  trialEndsAt             DateTime?
-  monthlyFee              Float     @default(0)
-  paymentMethod           String? // paystack | flutterwave | bank_transfer | manual
-  paymentRef              String? // transaction reference
-  downgradeScheduledFor   DateTime? // when a scheduled downgrade takes effect
-  downgradeTargetPlan     String? // target plan for the scheduled downgrade
-  metadata                Json? // free-form JSON for additional transition state
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
+  id                    String    @id @default(cuid())
+  businessId            String    @unique
+  planName              String // free | starter | business | premium | enterprise
+  status                String    @default("active") // active | trial | past_due | canceled | expired
+  startDate             DateTime  @default(now())
+  endDate               DateTime?
+  trialEndsAt           DateTime?
+  monthlyFee            Float     @default(0)
+  paymentMethod         String? // paystack | flutterwave | bank_transfer | manual
+  paymentRef            String? // transaction reference
+  downgradeScheduledFor DateTime? // when a scheduled downgrade takes effect
+  downgradeTargetPlan   String? // target plan for the scheduled downgrade
+  metadata              Json? // free-form JSON for additional transition state
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
   payments Payment[]
@@ -802,6 +877,23 @@ model Payment {
   @@index([businessId])
   @@index([status])
   @@index([reference])
+}
+
+// Login attempt tracking. Per-IP and per-email rate limiting + account
+// lockout for /api/auth/login. The IP and email indexes make the per-pair
+// count query O(log n) without scanning the full table.
+model LoginAttempt {
+  id          String   @id @default(cuid())
+  ip          String
+  email       String
+  businessId  String?
+  succeeded   Boolean  @default(false)
+  userAgent   String?
+  attemptedAt DateTime @default(now())
+
+  @@index([ip, attemptedAt])
+  @@index([email, attemptedAt])
+  @@index([attemptedAt])
 }
 
 model Invoice {
@@ -953,7 +1045,8 @@ model PlatformAdmin {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  sessions PlatformSession[]
+  sessions            PlatformSession[]
+  passwordResetTokens PlatformPasswordResetToken[]
 
   @@index([email])
 }
@@ -969,4 +1062,320 @@ model PlatformSession {
 
   @@index([token])
   @@index([platformAdminId])
+}
+
+model PlatformPasswordResetToken {
+  id        String    @id @default(cuid())
+  adminId   String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  admin PlatformAdmin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([expiresAt])
+}
+
+// ─── Public Website CMS ───────────────────────────────────────────
+//
+// Powers the public marketing site (home, features, pricing, blog,
+// docs, changelog, legal). Pages and posts are block-based so marketing
+// can compose the site without redeploying. Edited from the super-admin
+// console at /platform/cms. Single-tenant for now; the CmsSite wrapper
+// is in place so multi-site / white-label publishing can be added later.
+
+model CmsSite {
+  id           String   @id @default(cuid())
+  // Single-row table for now; multi-site ready (per-domain white-label).
+  domain       String?  @unique
+  brandName    String   @default("Danets AI Automation")
+  tagline      String?
+  description  String?
+  supportEmail String?
+  logoUrl      String?
+  faviconUrl   String?
+  primaryColor String   @default("#1d4ed8")
+  accentColor  String   @default("#84cc16")
+  socialLinks  Json? // { twitter, linkedin, github, facebook, instagram }
+  seoDefaults  Json? // { title, description, ogImage }
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  pages     CmsPage[]
+  posts     CmsPost[]
+  navItems  CmsNavItem[]
+  blocks    CmsBlock[]
+  media     CmsMedia[]
+  authors   CmsAuthor[]
+  tags      CmsTag[]
+  changelog CmsChangelogEntry[]
+}
+
+model CmsPage {
+  id          String    @id @default(cuid())
+  slug        String    @unique // e.g. "features", "pricing", "about"
+  title       String
+  description String?
+  ogImage     String?
+  status      String    @default("draft") // draft | published | archived
+  publishedAt DateTime?
+  // Body is an ordered list of { blockId | blockKey, props } entries.
+  // Stored as JSON so the editor can reorder/insert without migrations.
+  blocks      Json      @default("[]")
+  // Per-page overrides for { title, description, canonical, noindex, ogImage }.
+  seo         Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  siteId String?
+  site   CmsSite? @relation(fields: [siteId], references: [id], onDelete: SetNull)
+
+  @@index([status, publishedAt])
+}
+
+model CmsPost {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  title       String
+  excerpt     String?
+  coverImage  String?
+  bodyMdx     String    @default("") // MDX source rendered with @mdxeditor/editor
+  status      String    @default("draft") // draft | published | archived
+  publishedAt DateTime?
+  seo         Json?
+  authorId    String?
+  siteId      String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  author CmsAuthor? @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  site   CmsSite?   @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  tags   CmsTag[]   @relation("PostTags")
+
+  @@index([status, publishedAt])
+}
+
+model CmsAuthor {
+  id        String   @id @default(cuid())
+  name      String
+  bio       String?
+  avatarUrl String?
+  twitter   String?
+  linkedin  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  siteId String?
+  site   CmsSite? @relation(fields: [siteId], references: [id], onDelete: SetNull)
+
+  posts CmsPost[]
+}
+
+model CmsTag {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+
+  siteId String?
+  site   CmsSite? @relation(fields: [siteId], references: [id], onDelete: SetNull)
+
+  posts CmsPost[] @relation("PostTags")
+}
+
+model CmsNavItem {
+  id        String   @id @default(cuid())
+  parentId  String?
+  label     String
+  href      String // /pricing, /blog, https://...
+  order     Int      @default(0)
+  visible   Boolean  @default(true)
+  icon      String? // lucide icon name for the mega-menu
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parent   CmsNavItem?  @relation("NavTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children CmsNavItem[] @relation("NavTree")
+  siteId   String?
+  site     CmsSite?     @relation(fields: [siteId], references: [id], onDelete: SetNull)
+
+  @@index([siteId, order])
+}
+
+model CmsBlock {
+  id           String   @id @default(cuid())
+  key          String   @unique // "hero", "feature-grid", "testimonials", ...
+  label        String
+  description  String?
+  // Zod-like schema describing the editable fields, used to generate
+  // the admin form. Stored as JSON so we can evolve block schemas
+  // without migrations.
+  schema       Json
+  defaultProps Json     @default("{}")
+  icon         String? // lucide icon name
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  siteId String?
+  site   CmsSite? @relation(fields: [siteId], references: [id], onDelete: SetNull)
+}
+
+model CmsMedia {
+  id         String   @id @default(cuid())
+  filename   String
+  mimeType   String
+  sizeBytes  Int
+  url        String
+  altText    String?
+  width      Int?
+  height     Int?
+  storageKey String? // local /uploads path or CDN key
+  uploadedBy String? // userId
+  createdAt  DateTime @default(now())
+
+  siteId String?
+  site   CmsSite? @relation(fields: [siteId], references: [id], onDelete: SetNull)
+
+  @@index([siteId, createdAt])
+}
+
+model CmsChangelogEntry {
+  id          String   @id @default(cuid())
+  version     String // e.g. "2024.05.0"
+  title       String
+  body        String // markdown
+  kind        String   @default("release") // release | improvement | fix | security
+  publishedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  siteId String?
+  site   CmsSite? @relation(fields: [siteId], references: [id], onDelete: SetNull)
+
+  @@index([publishedAt])
+}
+
+// ─── Public Site Contacts ─────────────────────────────────────────
+//
+// Submissions from the public /contact form land directly in the
+// existing Lead model so the existing CRM dashboard picks them up.
+// This view mirrors what marketing wants to see in the CMS console.
+
+model CmsContactSubmission {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  phone     String?
+  company   String?
+  message   String
+  pageSlug  String? // where the form was submitted from
+  leadId    String? // linked to existing Lead if accepted
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// ─── Background jobs ──────────────────────────────────────────────
+// MySQL-backed queue (src/lib/jobs). Workers claim rows with
+// SELECT ... FOR UPDATE SKIP LOCKED, so several workers can run safely.
+
+model Job {
+  id          String    @id @default(cuid())
+  businessId  String? // tenant the job acts for; null for platform jobs
+  type        String // registered job type, e.g. "system.purge-jobs"
+  payload     Json
+  status      String    @default("queued") // queued | running | succeeded | dead
+  runAt       DateTime  @default(now())
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5)
+  lockedAt    DateTime?
+  lockedBy    String?
+  lastError   String?   @db.Text
+  // Idempotent enqueue: a second enqueue with the same key returns the
+  // existing row. Recurring schedules use "sched:<type>:<window start>".
+  dedupeKey   String?   @unique
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  finishedAt  DateTime?
+
+  @@index([status, runAt])
+  @@index([status, lockedAt])
+  @@index([businessId])
+  @@index([type])
+}
+
+// ─── Contacts + attribution (Phase 0, workstream D) ──────────────────
+// One person per tenant, unified across chat, leads, tickets and quotes.
+// Resolved by any identity (email, phone, widget visitor id, social ids);
+// see src/lib/contacts.ts.
+model Contact {
+  id          String   @id @default(cuid())
+  businessId  String
+  name        String?
+  email       String? // lowercased
+  phone       String? // normalised: leading + and digits
+  company     String?
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+  consent     Json? // { marketingEmail, whatsapp, sms: { granted, at, source } }
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business       Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  identities     ContactIdentity[]
+  touchpoints    Touchpoint[]
+  leads          Lead[]
+  chatSessions   ChatSession[]
+  supportTickets SupportTicket[]
+  quoteRequests  QuoteRequest[]
+
+  @@unique([businessId, email])
+  @@index([businessId, phone])
+  @@index([businessId, lastSeenAt])
+}
+
+model ContactIdentity {
+  id         String   @id @default(cuid())
+  businessId String
+  contactId  String
+  type       String // visitor | email | phone | whatsapp | fb_psid | ig_id | linkedin
+  value      String   @db.VarChar(191)
+  createdAt  DateTime @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, type, value])
+  @@index([contactId])
+}
+
+// One marketing touch: a site visit (once per browser session), chat start,
+// form submit, ad lead, social DM or email click.
+model Touchpoint {
+  id          String   @id @default(cuid())
+  businessId  String
+  contactId   String?
+  visitorId   String?  @db.VarChar(191)
+  kind        String // visit | chat_start | form_submit | ad_lead | social_dm | email_click
+  channel     String // organic_search | paid_search | social_organic | social_paid | email | referral | direct | whatsapp
+  source      String? // utm_source / referrer host / platform
+  medium      String?
+  campaign    String?
+  term        String?
+  content     String?
+  clickId     String?  @db.VarChar(500) // value of gclid | fbclid | li_fat_id | msclkid | …
+  clickIdType String? // which click-id parameter it came from
+  landingUrl  String?  @db.Text // origin + path only (query stripped)
+  referrer    String?  @db.Text // origin + path only
+  dedupeKey   String?  @unique @db.VarChar(191) // e.g. one visit per browser session
+  occurredAt  DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  contact  Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([businessId, occurredAt])
+  @@index([contactId, occurredAt])
+  @@index([businessId, visitorId])
 }

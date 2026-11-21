@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
+import { requireReauth } from "@/lib/reauth";
 import { logActivity } from "@/lib/activity";
 import { getQuotaUsage, getEffectiveLimits } from "@/lib/plan-quota";
 import { applyPlanTransition, validatePlanTransition } from "@/lib/plan-transitions";
@@ -108,6 +109,12 @@ const updateSchema = z.object({
 // PUT /api/subscription — update subscription (change plan, record payment)
 export function PUT(req: NextRequest) {
   return withSession(async (user) => {
+    // Plan transitions are high-blast-radius: a downgrade triggers
+    // quota reaping and lost revenue, an upgrade changes billing. The
+    // audit requires a fresh credential for any state change that
+    // crosses a trust boundary — we honour that here.
+    await requireReauth({ userId: user.userId, sessionId: user.sessionId ?? "" });
+
     const body = await req.json().catch(() => null);
     const parsed = updateSchema.safeParse(body);
     if (!parsed.success) {

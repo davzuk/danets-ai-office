@@ -42,6 +42,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { leadSourceColor, leadSourceLabel } from "@/lib/channel-meta";
 import { Progress } from "@/components/ui/progress";
 
 // ─── Types ────────────────────────────────────────────────────────────
@@ -192,7 +193,7 @@ const FEATURE_COLORS: Record<string, string> = {
 };
 
 function sourceColor(s: string): string {
-  return SOURCE_COLORS[s] || "#64748b";
+  return SOURCE_COLORS[s] || leadSourceColor(s);
 }
 function statusColor(s: string): string {
   return STATUS_COLORS[s] || "#64748b";
@@ -619,15 +620,15 @@ export function AnalyticsView({
           </CardContent>
         </Card>
 
-        {/* Leads by Source */}
+        {/* Leads by Channel (first-touch attribution) */}
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Users className="h-4 w-4 text-accent-foreground" />
-              Leads by Source
+              Leads by Channel
             </CardTitle>
             <CardDescription>
-              Distribution of lead acquisition channels
+              Where leads first came from (first-touch attribution)
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -640,7 +641,7 @@ export function AnalyticsView({
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={sources.map((s) => ({
-                      name: prettify(s.source),
+                      name: leadSourceLabel(s.source),
                       count: s.count,
                       key: s.source,
                     }))}

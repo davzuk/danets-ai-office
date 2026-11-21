@@ -8,6 +8,21 @@ import {
   formatLimitExceededMessage,
 } from "@/lib/plan-quota";
 import { logger, serializeError, withRequestContext } from "@/lib/logger";
+import {
+  AppError,
+  AiQuotaExceededError,
+  CsrfError,
+  ForbiddenError,
+  isAppError,
+  MaintenanceError,
+  QuotaExceededError,
+  ReauthRequiredError,
+  SubscriptionInactiveError,
+  SubscriptionReadOnlyError,
+  SuspendedError,
+  UnauthorizedError,
+} from "@/lib/app-error";
+import { withQuotaCache } from "@/lib/quota-cache";
 
 async function readRequestContextHeaders(): Promise<{ requestId: string | undefined; route: string | undefined }> {
   // next/headers is available inside API route handlers but not inside the
@@ -31,6 +46,10 @@ export async function apiHandler<T>(
   const { requestId, route } = await readRequestContextHeaders();
   const start = Date.now();
   return withRequestContext({ requestId, route }, async () => {
+    // Wrap the handler in the per-request quota cache so repeated
+    // `getQuotaUsage` / `getEffectiveLimits` calls inside one request
+    // (handler + middleware + shell bootstrap) only hit the DB once.
+    return withQuotaCache(async () => {
     try {
       const result = await fn();
       const latencyMs = Date.now() - start;
@@ -38,22 +57,29 @@ export async function apiHandler<T>(
       return NextResponse.json(result);
     } catch (e: any) {
       const latencyMs = Date.now() - start;
-      if (e?.message === "UNAUTHORIZED") {
+
+      // 1. Typed AppError subclasses win first — they carry their own
+      //    status / code / details. Most of the prior string-matching
+      //    branches are obsolete now.
+      if (e instanceof UnauthorizedError || e?.message === "UNAUTHORIZED") {
         logger.info("api.unauthorized", { latencyMs });
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }
-      if (e?.message === "FORBIDDEN") {
+      if (e instanceof ForbiddenError || e?.message === "FORBIDDEN") {
         logger.info("api.forbidden", { latencyMs });
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
-      if (e?.message === "SUSPENDED") {
+      if (e instanceof SuspendedError || e?.message === "SUSPENDED") {
         logger.info("api.suspended", { latencyMs });
         return NextResponse.json(
           { error: "Your account is suspended. Please contact support." },
           { status: 403 }
         );
       }
-      if (e?.message === "SUBSCRIPTION_INACTIVE") {
+      if (
+        e instanceof SubscriptionInactiveError ||
+        e?.message === "SUBSCRIPTION_INACTIVE"
+      ) {
         logger.info("api.subscription_inactive", { latencyMs });
         return NextResponse.json(
           {
@@ -64,7 +90,10 @@ export async function apiHandler<T>(
           { status: 403 }
         );
       }
-      if (e?.message === "SUBSCRIPTION_READ_ONLY") {
+      if (
+        e instanceof SubscriptionReadOnlyError ||
+        e?.message === "SUBSCRIPTION_READ_ONLY"
+      ) {
         logger.info("api.subscription_read_only", { latencyMs });
         return NextResponse.json(
           {
@@ -75,19 +104,38 @@ export async function apiHandler<T>(
           { status: 403 }
         );
       }
-      if (e?.message === "QUOTA_EXCEEDED") {
+      if (e instanceof MaintenanceError || e?.message === "MAINTENANCE") {
+        logger.info("api.maintenance", { latencyMs });
+        return NextResponse.json(
+          { error: e?.message || "Platform is in maintenance mode" },
+          { status: 503 }
+        );
+      }
+      if (
+        e instanceof QuotaExceededError ||
+        e instanceof AiQuotaExceededError ||
+        e?.message === "QUOTA_EXCEEDED"
+      ) {
         logger.info("api.quota_exceeded", { latencyMs });
         return NextResponse.json(
-          { error: "Your monthly AI request quota has been reached. Please upgrade your plan to continue." },
+          {
+            error:
+              e?.message ||
+              "Your monthly AI request quota has been reached. Please upgrade your plan to continue.",
+          },
           { status: 429 }
         );
       }
-      if (e?.message === "CSRF_INVALID") {
+      if (e instanceof CsrfError || e?.message === "CSRF_INVALID") {
         logger.warn("api.csrf_invalid", { latencyMs });
         return NextResponse.json(
           { error: "Invalid or missing CSRF token. Please reload the page and try again." },
           { status: 403 }
         );
+      }
+      if (e instanceof ReauthRequiredError) {
+        logger.info("api.reauth_required", { latencyMs });
+        return NextResponse.json(e.toResponseBody(), { status: e.status });
       }
       if (e instanceof ModuleAccessError) {
         logger.info("api.module_access_denied", { latencyMs, module: e.module, requiredPlan: e.requiredPlan });
@@ -115,12 +163,26 @@ export async function apiHandler<T>(
           { status: 429 }
         );
       }
+
+      // 2. Catch-all for any other AppError subclass (future-proof).
+      if (isAppError(e)) {
+        const body = (e as AppError).toResponseBody();
+        logger.info("api.app_error", {
+          latencyMs,
+          code: (e as AppError).code,
+          status: (e as AppError).status,
+        });
+        return NextResponse.json(body, { status: (e as AppError).status });
+      }
+
+      // 3. Genuine 500 — log full details, return a sanitised message.
       logger.error("api.error", { latencyMs, ...serializeError(e) });
       return NextResponse.json(
         { error: e?.message || "Internal server error" },
         { status: 500 }
       );
     }
+    });
   });
 }
 

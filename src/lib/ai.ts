@@ -43,6 +43,9 @@ export async function aiChat(
   return { content, promptTokens, completionTokens, totalTokens };
 }
 
+/** Zero token counts, for logging a failed AI call that never returned usage. */
+export const EMPTY_USAGE = { promptTokens: 0, completionTokens: 0, totalTokens: 0 } as const;
+
 // Log usage + cost (rough estimate: $0.002 / 1K tokens)
 export async function logUsage(
   businessId: string,

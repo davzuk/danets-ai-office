@@ -2,7 +2,7 @@
   "name": "Danets AI Automation",
   "short_name": "Danets AI",
   "description": "AI-powered website chat, lead capture, and proposal generation for businesses.",
-  "start_url": "/",
+  "start_url": "/app",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#1d4ed8",
@@ -13,8 +13,8 @@
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
   ],
   "shortcuts": [
-    { "name": "Dashboard", "url": "/?view=overview" },
-    { "name": "Leads", "url": "/?view=leads" },
-    { "name": "Tickets", "url": "/?view=tickets" }
+    { "name": "Dashboard", "url": "/app" },
+    { "name": "Leads", "url": "/app?view=leads" },
+    { "name": "Tickets", "url": "/app?view=tickets" }
   ]
 }

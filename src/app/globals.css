@@ -185,3 +185,39 @@
 .animate-fade-up {
   animation: fade-up 0.3s ease-out;
 }
+/* Page-level fade-in for auth screens. Replaces the framer-motion
+   initial/animate opacity tween that the login + signup pages used. */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out;
+}
+/* Dashboard view-transition fade. The view container key={view} remounts
+   on navigation so the animation re-runs every time the user switches tabs. */
+@keyframes view-fade {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-view-fade {
+  animation: view-fade 0.2s ease-out;
+}
+/* Respect reduced-motion preferences — fades + decorative animations
+   become instant for users who've opted out at the OS level (WCAG 2.3.3). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-fade-in,
+  .animate-view-fade,
+  .animate-fade-up,
+  .animate-shimmer {
+    animation: none;
+  }
+}

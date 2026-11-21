@@ -23,8 +23,25 @@ interface AuthUser {
 
 type AuthMode = "login" | "register";
 
-export function AuthScreen({ onAuthed }: { onAuthed: (u: AuthUser) => void }) {
-  const [mode, setMode] = useState<AuthMode>("login");
+/**
+ * Demo credentials are gated to non-production builds so the live site never
+ * pre-fills or advertises them in the rendered HTML.
+ */
+function isDemoMode(): boolean {
+  return (
+    process.env.NODE_ENV !== "production" &&
+    process.env.NEXT_PUBLIC_DEMO_MODE !== "false"
+  );
+}
+
+export function AuthScreen({
+  onAuthed,
+  initialMode = "login",
+}: {
+  onAuthed: (u: AuthUser) => void;
+  initialMode?: AuthMode;
+}) {
+  const [mode, setMode] = useState<AuthMode>(initialMode);
   const [loading, setLoading] = useState(false);
   const [needsTotp, setNeedsTotp] = useState(false);
   const [needsTotpSetup, setNeedsTotpSetup] = useState<{
@@ -47,8 +64,8 @@ export function AuthScreen({ onAuthed }: { onAuthed: (u: AuthUser) => void }) {
   }, []);
 
   const [form, setForm] = useState({
-    email: "admin@danetstecpro.com",
-    password: "danets123",
+    email: "",
+    password: "",
     name: "",
     businessName: "",
     industry: "",
@@ -259,6 +276,16 @@ export function AuthScreen({ onAuthed }: { onAuthed: (u: AuthUser) => void }) {
               placeholder="••••••••"
               required
             />
+            {mode === "login" && (
+              <div className="text-right -mt-2">
+                <Link
+                  href="/forgot-password"
+                  className="text-xs text-primary hover:underline"
+                >
+                  Forgot password?
+                </Link>
+              </div>
+            )}
             {mode === "login" && needsTotp && (
               <Field
                 icon={<KeyRound size={16} />}
@@ -314,7 +341,7 @@ export function AuthScreen({ onAuthed }: { onAuthed: (u: AuthUser) => void }) {
             )}
           </div>
 
-          {mode === "login" && (
+          {mode === "login" && isDemoMode() && (
             <div className="rounded-lg border border-dashed bg-muted/40 p-3 text-xs text-muted-foreground text-center space-y-2">
               <div>
                 <span className="font-medium text-foreground">Demo account:</span>{" "}
