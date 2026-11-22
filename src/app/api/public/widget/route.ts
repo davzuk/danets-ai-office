@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { blockedOrigin, publicPreflight, withPublicCors } from "@/lib/public-cors";
 
-export async function GET(req: NextRequest) {
+export const OPTIONS = publicPreflight;
+
+export const GET = withPublicCors(async (req: NextRequest) => {
   const pk = req.nextUrl.searchParams.get("pk");
   if (!pk) {
     return NextResponse.json({ error: "Missing pk" }, { status: 400 });
@@ -9,11 +12,13 @@ export async function GET(req: NextRequest) {
 
   const business = await db.business.findUnique({
     where: { publicKey: pk, status: "active" },
-    select: { id: true, name: true, publicKey: true },
+    select: { id: true, name: true, publicKey: true, widgetAllowedOrigins: true },
   });
   if (!business) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  const blocked = blockedOrigin(req, business.widgetAllowedOrigins);
+  if (blocked) return blocked;
 
   const agent = await db.aiAgent.findFirst({
     where: { businessId: business.id, status: "active" },
@@ -54,4 +59,4 @@ export async function GET(req: NextRequest) {
       },
     }
   );
-}
+});

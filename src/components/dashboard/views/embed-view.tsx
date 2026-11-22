@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Check, Copy, Code2, ExternalLink, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
+import { WidgetOriginsCard } from "./widget-origins-card";
 
 export function EmbedView({ user }: { user: any }) {
   const [pk, setPk] = useState<string>("");
@@ -21,7 +22,7 @@ export function EmbedView({ user }: { user: any }) {
 
   const origin = typeof window !== "undefined" ? window.location.origin : "https://ai.danetstecpro.com";
   const embedScript = `<script src="${origin}/widget.js?pk=${pk}" async></script>`;
-  const iframeSnippet = `<iframe src="${origin}/widget-demo?pk=${pk}" width="380" height="560" frameborder="0"></iframe>`;
+  const cspLines = `script-src ${origin};\nconnect-src ${origin};`;
 
   async function copy(text: string, label: string) {
     try {
@@ -87,7 +88,7 @@ export function EmbedView({ user }: { user: any }) {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <div className="text-sm font-medium mb-1.5">Option 1 — Script tag (recommended)</div>
+                <div className="text-sm font-medium mb-1.5">Script tag</div>
                 <p className="text-xs text-muted-foreground mb-2">
                   Lightweight floating button that opens a chat window. Works on any site (HTML, WordPress, Shopify, Webflow, etc.).
                 </p>
@@ -105,17 +106,26 @@ export function EmbedView({ user }: { user: any }) {
               </div>
 
               <div>
-                <div className="text-sm font-medium mb-1.5">Option 2 — Iframe demo</div>
+                <div className="text-sm font-medium mb-1.5">Waiting for cookie consent</div>
                 <p className="text-xs text-muted-foreground mb-2">
-                  Embed the chat as a fixed-size panel inside a page (e.g. a contact section).
+                  If your site asks visitors for consent before tracking, add <code className="font-mono">data-consent=&quot;required&quot;</code> to the tag and call{" "}
+                  <code className="font-mono">window.Danets.consent(true)</code> once they accept. The chat still works before that; only traffic-source tracking waits.
+                </p>
+              </div>
+
+              <div>
+                <div className="text-sm font-medium mb-1.5">If your site has a Content Security Policy</div>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Most sites don&apos;t. If yours sends a <code className="font-mono">Content-Security-Policy</code> header, add this address to these two directives, or the widget is blocked:
                 </p>
                 <div className="relative rounded-lg bg-zinc-950 text-zinc-50 p-3 text-xs font-mono">
-                  <pre className="whitespace-pre-wrap break-all">{iframeSnippet}</pre>
+                  <pre className="whitespace-pre-wrap break-all">{cspLines}</pre>
                   <Button
                     size="icon"
                     variant="ghost"
+                    aria-label="Copy CSP lines"
                     className="absolute top-1.5 right-1.5 text-zinc-400 hover:text-white hover:bg-white/10 h-7 w-7"
-                    onClick={() => copy(iframeSnippet, "Iframe snippet")}
+                    onClick={() => copy(cspLines, "CSP lines")}
                   >
                     <Copy size={12} />
                   </Button>
@@ -123,6 +133,8 @@ export function EmbedView({ user }: { user: any }) {
               </div>
             </CardContent>
           </Card>
+
+          <WidgetOriginsCard />
 
           <Card>
             <CardHeader>

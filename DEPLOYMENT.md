@@ -209,6 +209,15 @@ Tenants connect LinkedIn under Integrations; every Page the member administers b
 - **Publishing:** text, a link card, up to 20 images, or one video. Images and video are uploaded to LinkedIn directly, so local storage works.
 - **Lead Gen Forms:** with *Lead Ads* on, the `linkedin.leadgen-poll` job runs every 15 minutes (worker or cron required) and backfills 90 days the first time. Leads go through the same import as Meta lead ads: `externalRef = linkedin:<response id>`, an `ad_lead` touchpoint (`social_paid`, `li_fat_id` when the form passes it as a hidden field), merged by email, counted against the lead quota. Forms appear under Leads → Lead forms with the same field mapping. If LinkedIn refuses lead access, sync is switched off for that Page and the tenant is told why.
 
+## Chat widget on tenant websites
+
+Tenants paste `<script src="{NEXT_PUBLIC_APP_URL}/widget.js?pk=<publicKey>" async></script>` into their own site. The script sends its API calls to the origin it was loaded from (with `NEXT_PUBLIC_APP_URL` as the fallback), so `NEXT_PUBLIC_APP_URL` must be the public HTTPS address of the app.
+
+- **CORS:** `/api/public/chat`, `/lead`, `/track` and `/widget` answer preflight and allow the calling origin, with no credentials (the widget uses no cookies). `/api/public/contact` is the Danets site's own form and stays same-origin.
+- **Allowed websites:** Widget Embed → *Allowed websites* locks a tenant's public key to its own hosts (`example.com` also covers `www.`; `*.example.com` covers every subdomain). Calls from other websites get 403 `ORIGIN_NOT_ALLOWED` and the widget hides itself. Chats and leads are refused at once; a browser that loaded the widget config in the last minute keeps showing the button until its cached copy (`private, max-age=60`) expires. The app's own origin is always allowed so the dashboard preview and `/widget-demo` keep working. Calls without an `Origin` header aren't blocked, since only browsers send it. Super admins can see and clear the list on the tenant page.
+- **Tenant CSP:** a site that sends a `Content-Security-Policy` header must allow the app's origin in `script-src` and `connect-src`. Widget Embed shows the lines.
+- **Page context:** each chat message carries the page URL (origin + path, query stripped) and title. The AI uses them as context only, and Conversations shows the page a chat started on.
+
 ## Contacts and lead attribution
 
 Every widget chat, lead and ticket is linked to a unified **Contact** (matched by email, phone or the widget's visitor id), and the widget records where the visitor came from as **touchpoints**: UTM tags, ad click ids (`gclid`, `msclkid`, `fbclid`, `li_fat_id`, …) and the referrer. A lead's **Source** is the channel of its first touch (`organic_search`, `paid_search`, `social_organic`, `social_paid`, `email`, `referral`, `direct`, `whatsapp`); leads from clients that send no attribution keep `chatbot`. Lead detail → **Journey** shows the timeline; Analytics → **Leads by Channel** charts it.

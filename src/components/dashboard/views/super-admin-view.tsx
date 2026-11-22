@@ -107,6 +107,7 @@ import { TenantLimitOverrides } from "@/components/dashboard/views/tenant-limit-
 import { SuperAdminHealthPanel } from "@/components/dashboard/views/super-admin-health-panel";
 import { TenantWhiteLabelEditor } from "@/components/dashboard/views/tenant-white-label-editor";
 import { TenantTwoFactorPolicy } from "@/components/dashboard/views/tenant-two-factor-policy";
+import { TenantWidgetOrigins } from "@/components/dashboard/views/tenant-widget-origins";
 import type { PlatformTabId } from "@/lib/platform-nav";
 import { SuperAdminUsersPanel } from "@/components/dashboard/views/super-admin-users-panel";
 import { SuperAdminAuditPanel } from "@/components/dashboard/views/super-admin-audit-panel";
@@ -211,6 +212,7 @@ interface BusinessDetail {
   plan: string;
   status: string;
   enforce2fa?: boolean;
+  widgetAllowedOrigins?: string[] | null;
   createdAt: string;
   updatedAt: string;
   users: {
@@ -1152,6 +1154,18 @@ function SuperAdminInner({
               <TenantTwoFactorPolicy
                 businessId={detail.id}
                 enforce2fa={!!detail.enforce2fa}
+                onChanged={() => {
+                  fetch(`/api/super-admin/businesses/${detail.id}`, { cache: "no-store" })
+                    .then((r) => r.json())
+                    .then((json) => setDetail(json.business as BusinessDetail))
+                    .catch(() => {});
+                }}
+              />
+
+              <TenantWidgetOrigins
+                key={`${detail.id}:${JSON.stringify(detail.widgetAllowedOrigins ?? [])}`}
+                businessId={detail.id}
+                origins={Array.isArray(detail.widgetAllowedOrigins) ? detail.widgetAllowedOrigins : []}
                 onChanged={() => {
                   fetch(`/api/super-admin/businesses/${detail.id}`, { cache: "no-store" })
                     .then((r) => r.json())

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { parseAttribution, recordVisits } from "@/lib/attribution";
 import { logger, serializeError } from "@/lib/logger";
+import { blockedOrigin, publicPreflight, withPublicCors } from "@/lib/public-cors";
 
 const trackSchema = z.object({
   pk: z.string().min(1).max(191),
@@ -19,7 +20,9 @@ const MAX_BODY_BYTES = 8 * 1024;
  * source once per browser session. Records at most one "visit" touchpoint
  * per (visitor, browser session), so repeat calls are cheap no-ops.
  */
-export async function POST(req: NextRequest) {
+export const OPTIONS = publicPreflight;
+
+export const POST = withPublicCors(async (req: NextRequest) => {
   const ip = getClientIp(req);
   const rl = await rateLimit(`track:${ip}`, 60, 10 * 60 * 1000);
   if (!rl.success) return NextResponse.json({ error: "Too many requests" }, { status: 429 });
@@ -38,9 +41,11 @@ export async function POST(req: NextRequest) {
 
   const business = await db.business.findUnique({
     where: { publicKey: parsed.data.pk, status: "active" },
-    select: { id: true },
+    select: { id: true, widgetAllowedOrigins: true },
   });
   if (!business) return NextResponse.json({ error: "Business not found" }, { status: 404 });
+  const blocked = blockedOrigin(req, business.widgetAllowedOrigins);
+  if (blocked) return blocked;
 
   try {
     const known = await db.contactIdentity.findUnique({
@@ -59,4 +64,4 @@ export async function POST(req: NextRequest) {
     logger.warn("Visit tracking failed", { businessId: business.id, ...serializeError(e) });
     return NextResponse.json({ ok: false }, { status: 500 });
   }
-}
+});

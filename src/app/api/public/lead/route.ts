@@ -7,6 +7,7 @@ import { fireTrigger } from "@/lib/automation";
 import { requireQuota, LimitExceededError } from "@/lib/plan-quota";
 import { captureInbound } from "@/lib/inbound-attribution";
 import { leadSourceFromChannel } from "@/lib/attribution";
+import { blockedOrigin, publicPreflight, withPublicCors } from "@/lib/public-cors";
 
 const leadSchema = z.object({
   pk: z.string().min(1),
@@ -21,7 +22,9 @@ const leadSchema = z.object({
   attribution: z.unknown().optional(),
 });
 
-export async function POST(req: NextRequest) {
+export const OPTIONS = publicPreflight;
+
+export const POST = withPublicCors(async (req: NextRequest) => {
   const ip = getClientIp(req);
   const rl = await rateLimit(`lead:${ip}`, 10, 10 * 60 * 1000);
   if (!rl.success) {
@@ -45,6 +48,8 @@ export async function POST(req: NextRequest) {
   if (!business) {
     return NextResponse.json({ error: "Business not found" }, { status: 404 });
   }
+  const blocked = blockedOrigin(req, business.widgetAllowedOrigins);
+  if (blocked) return blocked;
 
   // Basic quality heuristic
   let quality: "low" | "medium" | "high" = "medium";
@@ -217,4 +222,4 @@ export async function POST(req: NextRequest) {
     .catch(() => {});
 
   return NextResponse.json({ leadId: lead.id, quality: lead.quality });
-}
+});

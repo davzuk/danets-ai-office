@@ -1,17 +1,23 @@
 import { NextRequest } from "next/server";
+import { appOrigin } from "@/lib/public-cors";
 
 // Serves an embeddable, self-contained JavaScript widget.
 // Usage: <script src="/widget.js?pk=BUSINESS_PUBLIC_KEY" async></script>
 export async function GET(req: NextRequest) {
   const pk = req.nextUrl.searchParams.get("pk") || "";
-  const apiBase = ""; // relative — same origin via gateway
+  // The API lives wherever this script was served from, not on the page that
+  // embeds it. The script works that out from its own src; the app URL is the
+  // fallback for loaders that hide document.currentScript.
+  const apiBase = appOrigin();
 
   const script = `(() => {
   if (window.__danetsWidget) return;
   window.__danetsWidget = true;
 
   const PK = ${JSON.stringify(pk)};
-  const API = ${JSON.stringify(apiBase)};
+  const API = (() => { try { const s = document.currentScript; if (s && s.src) return new URL(s.src).origin; } catch(_) {} return ${JSON.stringify(apiBase)}; })();
+  // Origin + path only: query strings can carry personal data.
+  const pageContext = () => ({ url: location.origin + location.pathname, title: document.title || null });
   const VISITOR_ID = (() => {
     try {
       let v = localStorage.getItem('danets_vid');
@@ -238,7 +244,7 @@ export async function GET(req: NextRequest) {
     showTyping();
     typing = true;
     try{
-      const r = await fetch(API + '/api/public/chat', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ pk: PK, sessionId: session.id, visitorId: VISITOR_ID, attribution: session.id ? undefined : attribution, message: text }) });
+      const r = await fetch(API + '/api/public/chat', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ pk: PK, sessionId: session.id, visitorId: VISITOR_ID, attribution: session.id ? undefined : attribution, page: pageContext(), message: text }) });
       const d = await r.json();
       if(!r.ok) throw new Error(d.error||'Failed');
       hideTyping();

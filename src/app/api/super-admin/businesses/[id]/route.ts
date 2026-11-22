@@ -6,6 +6,7 @@ import { requireSuperAdmin } from "@/lib/super-admin";
 import { logActivity } from "@/lib/activity";
 import { getTenantUsage } from "@/lib/tenant-usage";
 import { applyPlanTransition, validatePlanTransition } from "@/lib/plan-transitions";
+import { MAX_ALLOWED_ORIGINS, normalizeOriginList } from "@/lib/public-cors";
 
 const patchSchema = z.object({
   status: z.enum(["active", "suspended"]).optional(),
@@ -15,6 +16,9 @@ const patchSchema = z.object({
   // required to use TOTP on sign-in. Mirrors the tenant-side toggle at
   // /api/business (admin-only) but is privileged to platform operators.
   enforce2fa: z.boolean().optional(),
+  // Websites allowed to run the tenant's chat widget ([] = any website).
+  // Lets support unlock a tenant who locked the widget to the wrong domain.
+  widgetAllowedOrigins: z.array(z.string().max(253)).max(MAX_ALLOWED_ORIGINS * 2).optional(),
 });
 
 type RouteCtx = { params: Promise<{ id: string }> };
@@ -95,6 +99,13 @@ export async function PATCH(req: NextRequest, { params }: RouteCtx) {
   if (parsed.data.plan) data.plan = parsed.data.plan;
   if (parsed.data.name) data.name = parsed.data.name.trim();
   if (parsed.data.enforce2fa !== undefined) data.enforce2fa = parsed.data.enforce2fa;
+  if (parsed.data.widgetAllowedOrigins !== undefined) {
+    const { origins, invalid } = normalizeOriginList(parsed.data.widgetAllowedOrigins);
+    if (invalid.length > 0) {
+      return NextResponse.json({ error: `Not a website address: ${invalid.slice(0, 3).join(", ")}` }, { status: 400 });
+    }
+    data.widgetAllowedOrigins = origins;
+  }
 
   // When a plan change is requested, validate the transition first — the
   // same rules apply to super-admin actions as to tenant self-service.
@@ -137,7 +148,7 @@ export async function PATCH(req: NextRequest, { params }: RouteCtx) {
     userName: `${user.name} (Super Admin)`,
     action: "business_settings_changed",
     module: "business",
-    description: `Super admin updated business: ${Object.entries(data).map(([k, v]) => `${k}=${v}`).join(", ")}`,
+    description: `Super admin updated business: ${Object.entries(data).map(([k, v]) => `${k}=${Array.isArray(v) ? (v.length ? v.join(" ") : "any website") : v}`).join(", ")}`,
   });
 
   return NextResponse.json({ business: updated });

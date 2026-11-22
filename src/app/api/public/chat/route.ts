@@ -9,6 +9,7 @@ import { checkQuota } from "@/lib/plan-quota";
 import { captureInbound } from "@/lib/inbound-attribution";
 import { resolveContact } from "@/lib/contacts";
 import { logger, serializeError } from "@/lib/logger";
+import { blockedOrigin, publicPreflight, readPageContext, withPublicCors } from "@/lib/public-cors";
 
 const chatSchema = z.object({
   pk: z.string().min(1),
@@ -20,9 +21,13 @@ const chatSchema = z.object({
   message: z.string().min(1).max(2000),
   // Widget first/last-touch data; validated by captureInbound.
   attribution: z.unknown().optional(),
+  // { url, title } of the page the visitor is on; cleaned by readPageContext.
+  page: z.unknown().optional(),
 });
 
-export async function POST(req: NextRequest) {
+export const OPTIONS = publicPreflight;
+
+export const POST = withPublicCors(async (req: NextRequest) => {
   const ip = getClientIp(req);
   // Rate limit: 30 messages / 10 min per IP (generous for real visitors)
   const rl = await rateLimit(`chat:${ip}`, 30, 10 * 60 * 1000);
@@ -51,6 +56,9 @@ export async function POST(req: NextRequest) {
   if (!business) {
     return NextResponse.json({ error: "Business not found" }, { status: 404 });
   }
+  const blocked = blockedOrigin(req, business.widgetAllowedOrigins);
+  if (blocked) return blocked;
+  const page = readPageContext(parsed.data.page);
 
   // Enforce the tenant's plan limits: a per-hour chat rate limit keyed by
   // business + visitor IP, and a monthly AI request quota. Suspended or
@@ -131,6 +139,8 @@ export async function POST(req: NextRequest) {
         visitorEmail: parsed.data.visitorEmail,
         visitorPhone: parsed.data.visitorPhone,
         status: "active",
+        // The page the chat started on, shown in Conversations.
+        ...(page ? { threadMeta: { page } } : {}),
       },
     });
   } else if (
@@ -164,7 +174,7 @@ export async function POST(req: NextRequest) {
   });
 
   // KB-grounded reply (shared with the social inbox).
-  const reply = await generateAgentReply({ business, agent, sessionId: session.id, message, channel: "widget" });
+  const reply = await generateAgentReply({ business, agent, sessionId: session.id, message, channel: "widget", page });
   const aiContent = reply.content;
   const tokens: UsageInput = reply.usage;
   const kbItems = reply.kbIds;
@@ -209,4 +219,4 @@ export async function POST(req: NextRequest) {
       message: agent.handoverMessage,
     },
   });
-}
+});

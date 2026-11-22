@@ -20,6 +20,7 @@ import {
   AlertCircle,
   Tag,
   Download,
+  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -128,6 +129,21 @@ interface ChatSessionDetail {
   channel?: string;
   autoReplyPaused?: boolean;
   socialAccount?: { id: string; name: string; platform: string; autoReply: string; status: string } | null;
+  /** Widget chats: { page: { url, title } } of the page the chat started on. */
+  threadMeta?: { page?: { url?: string; title?: string | null } } | null;
+}
+
+/** "example.com/pricing" for the page a widget chat started on. */
+function startPageLabel(meta: ChatSessionDetail["threadMeta"]): { label: string; full: string } | null {
+  const url = meta?.page?.url;
+  if (typeof url !== "string") return null;
+  try {
+    const u = new URL(url);
+    const label = `${u.host.replace(/^www\./, "")}${u.pathname === "/" ? "" : u.pathname}`;
+    return { label: label.length > 48 ? `${label.slice(0, 47)}…` : label, full: meta?.page?.title ? `${meta.page.title} (${url})` : url };
+  } catch {
+    return null;
+  }
 }
 
 interface SocialDetail {
@@ -536,6 +552,14 @@ export function ConversationsView({ user }: { user: UserProp }) {
                       <Clock size={11} /> {timeAgo(detail.updatedAt)}
                     </span>
                     {detail.socialAccount && <span>on {detail.socialAccount.name}</span>}
+                    {(() => {
+                      const start = detail.channel === "widget" || !detail.channel ? startPageLabel(detail.threadMeta) : null;
+                      return start ? (
+                        <span className="inline-flex items-center gap-1 min-w-0" title={`Started on ${start.full}`}>
+                          <FileText size={11} /> <span className="truncate">Started on {start.label}</span>
+                        </span>
+                      ) : null;
+                    })()}
                     {detail.lead && (
                       <span className="inline-flex items-center gap-1">
                         <Tag size={11} /> {detail.lead.service || "lead captured"}
