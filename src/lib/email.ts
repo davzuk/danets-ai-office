@@ -159,13 +159,13 @@ const EMAIL_TEMPLATES: Record<
     ),
     buildText: (d) => `Payment of ${d.currency || "USD"} ${d.amount || "0.00"} for ${d.planName || ""} plan. Invoice: ${d.invoiceNumber || "N/A"}.`,
   },
-  // Phase 1 M: the Monday "what worked / what next" note. The text is AI-written, so escape it.
+  // Phase 1 M: the Monday "what worked / what next" note.
   content_insight: {
     subject: "Your weekly content insight is ready",
     buildHtml: (d) => emailTemplate(
       "This week in your content",
-      escapeHtml(d.headline || "Your weekly content insight is ready."),
-      (Array.isArray(d.ideas) ? d.ideas : []).slice(0, 3).map((t: unknown, i: number) => ({ label: `Idea ${i + 1}`, value: escapeHtml(String(t)) })),
+      d.headline || "Your weekly content insight is ready.",
+      (Array.isArray(d.ideas) ? d.ideas : []).slice(0, 3).map((t: unknown, i: number) => ({ label: `Idea ${i + 1}`, value: String(t) })),
       "Open Content Studio",
       "/app"
     ),
@@ -181,21 +181,50 @@ const EMAIL_TEMPLATES: Record<
   },
 };
 
-function escapeHtml(s: string): string {
+/** Escape text for HTML element content and attribute values. */
+export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
-function emailTemplate(
-  title: string,
-  message: string,
+/**
+ * Fill a subject's {placeholders}. Values are user-supplied (a lead's name, a
+ * ticket subject), so line breaks are removed (no header injection) and a
+ * function replacer is used (a "$&" in a name stays literal).
+ */
+export function emailSubject(template: string, data: Record<string, any>): string {
+  const values: Record<string, unknown> = {
+    leadName: data.leadName,
+    ticketSubject: data.ticketSubject,
+    clientName: data.clientName || data.proposalClientName,
+    planName: data.planName,
+  };
+  return template
+    .replace(/\{(leadName|ticketSubject|clientName|planName)\}/g, (_m, key: string) => String(values[key] ?? ""))
+    .replace(/[\r\n]+/g, " ")
+    .trim()
+    .slice(0, 200);
+}
+
+/**
+ * The shared notification email layout. Every argument is plain text and is
+ * escaped here: values come from leads, tickets and AI output, so they must
+ * never be able to inject markup into the email.
+ */
+export function emailTemplate(
+  rawTitle: string,
+  rawMessage: string,
   details: { label: string; value: string }[],
-  ctaLabel: string,
-  ctaHref: string
+  rawCtaLabel: string,
+  rawCtaHref: string
 ): string {
+  const title = escapeHtml(String(rawTitle));
+  const message = escapeHtml(String(rawMessage));
+  const ctaLabel = escapeHtml(String(rawCtaLabel));
+  const ctaHref = escapeHtml(String(rawCtaHref));
   const rows = details
     .map(
       (d) =>
-        `<tr><td style="padding:6px 0;color:#6b7280;font-size:14px;">${d.label}:</td><td style="padding:6px 0;font-weight:600;font-size:14px;">${d.value}</td></tr>`
+        `<tr><td style="padding:6px 0;color:#6b7280;font-size:14px;">${escapeHtml(String(d.label))}:</td><td style="padding:6px 0;font-weight:600;font-size:14px;">${escapeHtml(String(d.value))}</td></tr>`
     )
     .join("");
 
@@ -220,6 +249,13 @@ function emailTemplate(
     </div>
   </div>
 </body></html>`;
+}
+
+/** Subject, HTML and text for a notification type, or null when it has no email. */
+export function renderNotificationEmail(type: string, data: Record<string, any>) {
+  const template = EMAIL_TEMPLATES[type];
+  if (!template) return null;
+  return { subject: emailSubject(template.subject, data), html: template.buildHtml(data), text: template.buildText(data) };
 }
 
 /**
@@ -257,11 +293,7 @@ export async function sendEmailNotification(
       return;
     }
 
-    const subject = template.subject
-      .replace("{leadName}", data.leadName || "")
-      .replace("{ticketSubject}", data.ticketSubject || "")
-      .replace("{clientName}", data.clientName || data.proposalClientName || "")
-      .replace("{planName}", data.planName || "");
+    const subject = emailSubject(template.subject, data);
 
     const html = template.buildHtml(data);
     const text = template.buildText(data);
