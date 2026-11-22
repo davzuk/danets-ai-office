@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { BookingType } from "@prisma/client";
 import { db } from "@/lib/db";
-import { blockedOrigin } from "@/lib/public-cors";
+import { blockedOriginFor } from "@/lib/public-cors";
 import { isModuleEnabled } from "@/lib/module-access";
 import { LOCATION_LABEL, readQuestions } from "./slots";
 
@@ -21,7 +21,7 @@ export async function publicBookingBusiness(req: NextRequest, pk: string | null)
     select: { id: true, name: true, timezone: true, status: true, plan: true, widgetAllowedOrigins: true },
   });
   if (!business || business.status !== "active") return NextResponse.json({ error: "Business not found" }, { status: 404 });
-  const blocked = blockedOrigin(req, business.widgetAllowedOrigins);
+  const blocked = await blockedOriginFor(req, business);
   if (blocked) return blocked;
   if (!(await isModuleEnabled(business.id, "leads", business.plan))) {
     return NextResponse.json({ error: "Online booking isn't available for this business." }, { status: 403, headers: { "X-Error-Code": "MODULE_DISABLED" } });

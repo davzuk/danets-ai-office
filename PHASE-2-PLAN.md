@@ -285,6 +285,27 @@ model LandingPageVersion {         // a snapshot on every publish, for rollback
 
   The platform console gets the same overrides as other limits.
 
+### As built (part 1: sites, pages, publishing)
+- Schema as above, minus a stored `conversions` count (leads per page are computed on read from `Lead.firstTouchId` → `Touchpoint.landingUrl`). Migration `20261210100000_tenant_sites` adds the three tables, `pageLimit` (3 / 25 / 25 / unlimited) and the `sites_builder` flag.
+- One site per tenant. `SITES_DOMAIN` from env; development falls back to `<sub>.localhost:<port>`.
+- The app moved under a `(main)` route group so tenant pages get their own root layout (`(sites)`), with nothing from the app shell, its scripts or its cookies. Hosts are resolved in the middleware (`src/lib/sites/host.ts`, edge-safe) and rewritten to `/site-render/<sub>/<slug>` with a tenant CSP.
+- 12 blocks (hero, features, testimonials, FAQ, call to action, text, figures, logos, contact details, gallery, video, booking) with zod schemas and editor field descriptors in `src/lib/sites/blocks.ts`. Drafts are checked for structure only; publishing needs every block valid and returns the problems per block.
+- Editor (dashboard → Website): blocks reorder by drag or buttons, forms are generated from the descriptors, images come from the media library, and the preview is a same-origin iframe (`/site-preview`) fed by `postMessage`, at desktop or phone width.
+- Per-page SEO (title, description, sharing image, noindex, hide from menu), site SEO defaults, `LocalBusiness` JSON-LD, canonical URLs, `robots.txt` and `sitemap.xml` per site.
+- The booking block links to the app-hosted booking page; moving booking under the tenant host is left for later.
+- Platform → Tenant sites lists sites and suspends or restores them.
+- Analytics tags (the `analyticsTag` column) are not wired yet. The lead-form and lead-magnet blocks come with S and T.
+
+### As built (part 2: custom domains)
+- Schema: `domainRequestedAt`, `domainCheckedAt`, `domainVerifiedAt`, `domainError` and `domainFailures` on `TenantSite`. Migration `20261212100000_site_domains`.
+- Plan gating: internal module `sites_domain` (Pro, behind the same `sites_builder` flag). A tenant that drops below Pro keeps the domain on record, but it stops being served and pages go back to the subdomain.
+- Verification is the TXT record `_danets.<domain>` = `danets-verify=<token>` (a new token each time a domain is added). The CNAME to `sites.<SITES_DOMAIN>` (or matching A records for a bare domain) is checked but only warns. `site.verify-domains` runs every 10 minutes: pending domains for 72 hours, verified ones daily; three daily misses in a row disconnect a domain. DNS timeouts leave the status alone.
+- Routing: the middleware sends any hostname that isn't the app's (`NEXT_PUBLIC_APP_URL`, `APP_HOSTS`, loopback) or under `SITES_DOMAIN` to `/site-render/<hostname>`; the renderer serves it only for a verified domain on an allowed plan. With a verified domain, subdomain pages 308 to it and it becomes the canonical origin. The bare sites domain and `sites.<domain>` serve nothing.
+- `GET /api/public/domains/check?domain=` is the TLS proxy's `ask` hook (Caddy `on_demand_tls`): 200 only for servable tenant subdomains and verified custom domains.
+- The widget's origin check also accepts the tenant's verified domain. Leads-per-page counts both addresses.
+- Dashboard: Website → *Your own domain* (records to copy, *Check now*, status and problems, remove). Platform → Tenant sites shows each domain and can disconnect it.
+- Not done: several domains per site, and the `www` / bare-domain pair redirecting to each other (connect one of them).
+
 ### Done when
 - A page published at `acme.danets.site/roofing` renders with the tenant's theme and widget. The same path on the app host is a 404, and `/app` on the tenant host is a 404.
 - A test custom domain (pointed through `/etc/hosts` locally) goes pending → verified, and the `ask` endpoint refuses an unverified one.

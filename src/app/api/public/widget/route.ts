@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { blockedOrigin, publicPreflight, withPublicCors } from "@/lib/public-cors";
+import { blockedOriginFor, publicPreflight, withPublicCors } from "@/lib/public-cors";
 import { isModuleEnabled } from "@/lib/module-access";
 import { readPreChatForm, toPublicRules } from "@/lib/widget-rules";
 import { readQuestions } from "@/lib/booking/slots";
@@ -20,7 +20,7 @@ export const GET = withPublicCors(async (req: NextRequest) => {
   if (!business) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  const blocked = blockedOrigin(req, business.widgetAllowedOrigins);
+  const blocked = await blockedOriginFor(req, business);
   if (blocked) return blocked;
 
   const agent = await db.aiAgent.findFirst({

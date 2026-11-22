@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { getClientIp, rateLimit } from "@/lib/rate-limit";
-import { blockedOrigin, publicPreflight, readPageContext, withPublicCors } from "@/lib/public-cors";
+import { blockedOriginFor, publicPreflight, readPageContext, withPublicCors } from "@/lib/public-cors";
 import { readPreChatForm } from "@/lib/widget-rules";
 import { startWidgetSession } from "@/lib/widget-session";
 
@@ -43,7 +43,7 @@ export const POST = withPublicCors(async (req: NextRequest) => {
     select: { id: true, widgetAllowedOrigins: true },
   });
   if (!business) return NextResponse.json({ error: "Business not found" }, { status: 404 });
-  const blocked = blockedOrigin(req, business.widgetAllowedOrigins);
+  const blocked = await blockedOriginFor(req, business);
   if (blocked) return blocked;
 
   const agent = await db.aiAgent.findFirst({ where: { businessId: business.id, status: "active" }, select: { id: true, preChatForm: true } });

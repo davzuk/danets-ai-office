@@ -5,6 +5,7 @@ import path from "path";
 export default defineConfig({
   test: {
     environment: "node",
+    pool: "vmThreads",
     include: ["tests/integration/**/*.test.ts"],
     fileParallelism: false,
   },

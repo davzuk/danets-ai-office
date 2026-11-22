@@ -220,6 +220,45 @@ Tenants paste `<script src="{NEXT_PUBLIC_APP_URL}/widget.js?pk=<publicKey>" asyn
 - **Proactive messages (Starter+):** AI Agent → *Proactive messages* holds up to 20 rules (pages, trigger on load / time / scroll / exit intent, new or returning visitors, device, how often). The widget shows the highest-priority match as a bubble, or opens the chat on computers. "Shown" comes from `/api/public/widget/event` (counted once per visitor per rule every 30 minutes); chats and leads are counted server-side from the session's `widgetRuleId`. Frequency caps live in the visitor's browser storage, so in `data-consent="required"` mode rules wait for `consent(true)`.
 - **Pre-chat form:** AI Agent → *Pre-chat form* asks for name plus email / phone / company before the first message. The widget starts the session with `/api/public/session` and creates the lead at once; an optional consent checkbox saves the agreed wording on the lead's timeline (type `consent`). Each new lead is AI-scored, so it uses the tenant's AI quota as other leads do.
 
+## Tenant websites
+
+Website (the `sites` module, Starter+ behind the `sites_builder` feature flag) lets each tenant build pages from blocks and publish them at `https://<subdomain>.SITES_DOMAIN/<page>`. Published pages are a plan limit (`pageLimit`: Starter 3, Pro and Premium 25, Enterprise unlimited), editable per plan and per tenant in the platform console.
+
+- **Domain:** set `SITES_DOMAIN` to a registrable domain that is **not** the app's own (e.g. `danets.site` next to `app.danets.com`), so app cookies never reach tenant pages. Point a wildcard record (`*.danets.site`) at the app and serve a wildcard TLS certificate for it. Unset in production means websites are off (the dashboard says so). In development it falls back to `<subdomain>.localhost:<port>`, which browsers resolve to 127.0.0.1 without any hosts-file change.
+- **Routing:** the middleware sends tenant hosts to the internal `/site-render/<subdomain>/<page>` route with their own CSP (nonce scripts, `frame-ancestors 'none'`, the app origin allowed for images, the widget and booking links). Only page paths, `/robots.txt`, `/sitemap.xml`, `/api/public/*` and static files are served there; `/app`, `/login` and the rest of the app are 404 on tenant hosts, and `/site-render` is 404 on the app host.
+- **Publishing:** pages are drafts until published. Each publish keeps a version; restoring one puts it live again and is logged. Blocks are validated against their schemas on publish, and links, images and video embeds only accept safe URLs (YouTube via `youtube-nocookie.com`, Vimeo with `dnt=1`).
+- **Widget:** with *Chat widget on every page* on, pages load `{NEXT_PUBLIC_APP_URL}/widget.js`. A tenant's own site host always passes its *Allowed websites* list.
+- **Stats:** page views are counted server-side (bots skipped, one per visitor per page per day, kept in process memory, so several app instances may count a visitor once each). Leads per page come from the widget's first-touch landing URL.
+- **Suspending:** Platform → *Tenant sites* lists every site and can take one offline (visitors get a 404; the tenant keeps the drafts and sees the reason in the activity log). A site also goes offline when the business is suspended or the module is switched off.
+- **Not yet:** analytics tags.
+
+### Custom domains (Pro, the `sites_domain` module)
+
+Website → **Your own domain** lets a tenant serve its site on a domain it owns.
+
+- **Records:** the tenant adds a CNAME from their domain to `sites.<SITES_DOMAIN>` (ALIAS/ANAME or flattening for a bare domain) and a TXT record `_danets.<domain>` with the value shown. The TXT record proves ownership and is what verifies the domain; the CNAME is checked only to warn, since proxies such as Cloudflare hide it. Point `sites.<SITES_DOMAIN>` at the server (an A record).
+- **Checking:** the `site.verify-domains` job runs every 10 minutes (worker or `/api/cron/jobs` required). It checks pending domains for 72 hours, then marks them failed; *Check again* restarts the window. Verified domains are re-checked daily, and one whose TXT record is missing three days running is disconnected. `SITES_DNS_SERVERS` picks the resolvers (default: the system's).
+- **Routing:** any hostname that isn't the app's (`NEXT_PUBLIC_APP_URL`, `APP_HOSTS`, loopback) or under `SITES_DOMAIN` goes to the site renderer, which serves it only when it is a verified domain on a plan with custom domains (404 otherwise). **List every hostname that serves the app in `APP_HOSTS`** (for example the marketing domain), or those requests get the tenant 404. Once a domain is verified, pages on the tenant's subdomain redirect (308) to it, and canonical URLs, the sitemap and JSON-LD use it. The bare `SITES_DOMAIN` and `sites.<SITES_DOMAIN>` serve nothing.
+- **TLS:** issue certificates on demand, asking the app first. With Caddy:
+
+  ```
+  {
+    on_demand_tls {
+      ask http://127.0.0.1:3000/api/public/domains/check
+    }
+  }
+  https:// {
+    tls {
+      on_demand
+    }
+    reverse_proxy 127.0.0.1:3000
+  }
+  ```
+
+  `/api/public/domains/check?domain=<host>` answers 200 only for an existing tenant subdomain or a verified custom domain, so nobody can make the server request certificates for names it doesn't serve. Keep the app's own hostnames in their own site blocks with normal certificates.
+- **Platform:** *Tenant sites* shows each site's domain and status and can disconnect it.
+- **Local testing:** in development, names like `www.acme.localhost` (two labels before `localhost`) are treated as custom domains and resolve to 127.0.0.1 in browsers. DNS checks still need real records, so mark a test domain verified in the database.
+
 ## Booking
 
 Leads → **Bookings** holds booking types (length, gap between meetings, minimum notice, how far ahead, weekly hours, location, up to 5 extra questions, who takes it), the upcoming and past lists, and a month calendar. It needs the `leads` module (Starter+); the number of booking types is a plan limit (`bookingTypeLimit`: Starter 3, Pro and Premium 10, Enterprise unlimited), editable per plan and per tenant in the platform console.

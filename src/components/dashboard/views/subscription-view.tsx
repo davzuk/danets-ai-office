@@ -92,6 +92,7 @@ interface PlanInfo {
   proposalTemplateLimit: number;
   quoteLimit: number;
   bookingTypeLimit?: number;
+  pageLimit?: number;
   features: string[];
 }
 
@@ -122,6 +123,7 @@ interface UsageStats {
   proposalTemplates: number;
   quotes: number;
   bookingTypes?: number;
+  pages?: number;
 }
 
 interface SubscriptionData {
@@ -822,6 +824,7 @@ function UsageThisMonth({
   const proposalTemplateLimit = plan?.proposalTemplateLimit ?? 0;
   const quoteLimit = plan?.quoteLimit ?? 0;
   const bookingTypeLimit = plan?.bookingTypeLimit ?? 0;
+  const pageLimit = plan?.pageLimit ?? 0;
 
   const bars: UsageBarSpec[] = [
     {
@@ -914,6 +917,13 @@ function UsageThisMonth({
       used: usage.bookingTypes ?? 0,
       limit: bookingTypeLimit,
       description: "Meeting types visitors can book",
+    },
+    {
+      key: "pages",
+      label: "Website pages",
+      used: usage.pages ?? 0,
+      limit: pageLimit,
+      description: "Published pages on your website",
     },
   ];
 

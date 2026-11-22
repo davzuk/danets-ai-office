@@ -9,7 +9,7 @@ import { checkChatRateLimit, checkMonthlyAiQuota } from "@/lib/plan-limits";
 import { startWidgetSession } from "@/lib/widget-session";
 import { resolveContact } from "@/lib/contacts";
 import { logger, serializeError } from "@/lib/logger";
-import { blockedOrigin, publicPreflight, readPageContext, withPublicCors } from "@/lib/public-cors";
+import { blockedOriginFor, publicPreflight, readPageContext, withPublicCors } from "@/lib/public-cors";
 
 const chatSchema = z.object({
   pk: z.string().min(1),
@@ -58,7 +58,7 @@ export const POST = withPublicCors(async (req: NextRequest) => {
   if (!business) {
     return NextResponse.json({ error: "Business not found" }, { status: 404 });
   }
-  const blocked = blockedOrigin(req, business.widgetAllowedOrigins);
+  const blocked = await blockedOriginFor(req, business);
   if (blocked) return blocked;
   const page = readPageContext(parsed.data.page);
 

@@ -74,6 +74,8 @@ model Business {
   widgetRules          WidgetRule[]
   bookingTypes         BookingType[]
   bookings             Booking[]
+  site                 TenantSite?
+  landingPages         LandingPage[]
 
   @@index([purgeScheduledAt])
 }
@@ -605,6 +607,7 @@ model SubscriptionPlan {
   integrationLimit      Int      @default(3)
   proposalTemplateLimit Int      @default(10)
   bookingTypeLimit      Int      @default(3) // booking types (0 = unlimited)
+  pageLimit             Int      @default(3) // published website pages (0 = unlimited)
   quoteLimit            Int      @default(50)
   mediaStorageMbLimit   Int      @default(1024) // media library, in MB (0 = unlimited)
   auditRetentionDays    Int      @default(30)
@@ -631,6 +634,7 @@ model BusinessLimitOverride {
   integrationLimit      Int?
   proposalTemplateLimit Int?
   bookingTypeLimit      Int?
+  pageLimit             Int?
   quoteLimit            Int?
   mediaStorageMbLimit   Int?
   notes                 String?
@@ -1813,4 +1817,76 @@ model Booking {
   @@index([businessId, status, startsAt])
   @@index([leadId])
   @@index([contactId])
+}
+
+// ─── Tenant websites (Phase 2 Q) ─────────────────────────────────────
+// One site per tenant, served on <subdomain>.SITES_DOMAIN (and, in part 2,
+// a verified custom domain). Separate from the platform CMS (CmsSite /
+// CmsPage), which is Danets' own marketing site. Pages hold structured
+// blocks only (src/lib/sites/blocks.ts): no raw HTML or scripts.
+
+model TenantSite {
+  id                String    @id @default(cuid())
+  businessId        String    @unique // one site per tenant to start
+  subdomain         String    @unique @db.VarChar(63)
+  customDomain      String?   @unique @db.VarChar(191)
+  domainStatus      String    @default("none") // none | pending | verified | failed
+  domainToken       String?   @db.VarChar(64) // TXT record value for verification
+  domainRequestedAt DateTime? // when the current domain was added (72-hour verify window)
+  domainCheckedAt   DateTime? // last DNS check
+  domainVerifiedAt  DateTime?
+  domainError       String?   @db.VarChar(300) // what the last check found missing
+  domainFailures    Int       @default(0) // daily re-checks in a row that lost the TXT record
+  theme             Json? // { primaryColor, accentColor, font, logoUrl, faviconUrl }
+  seoDefaults       Json? // { titleSuffix, description, ogImageUrl }
+  widgetEnabled     Boolean   @default(true) // add the chat widget to every page
+  analyticsTag      Json? // { ga4Id, metaPixelId } (no free-form script)
+  status            String    @default("active") // active | suspended (by a platform admin)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  business Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  pages    LandingPage[]
+
+  @@index([domainStatus, domainCheckedAt])
+}
+
+model LandingPage {
+  id              String    @id @default(cuid())
+  businessId      String
+  siteId          String
+  slug            String    @db.VarChar(120) // "" = home page; "a" or "a/b"
+  title           String    @db.VarChar(200)
+  blocks          Json // draft: [{ id, blockKey, props }]
+  publishedBlocks Json? // what visitors see
+  seo             Json? // { title, description, ogImageUrl, noindex }
+  status          String    @default("draft") // draft | published
+  publishedAt     DateTime?
+  views           Int       @default(0)
+  generatedFrom   String?   @db.Text // the AI prompt, if workstream R built it
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  business Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  site     TenantSite           @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  versions LandingPageVersion[]
+
+  @@unique([siteId, slug])
+  @@index([businessId, status])
+}
+
+// A snapshot on every publish (and restore), for rollback.
+model LandingPageVersion {
+  id           String   @id @default(cuid())
+  pageId       String
+  blocks       Json
+  seo          Json?
+  title        String   @db.VarChar(200)
+  publishedBy  String? // user name
+  restoredFrom String? // the version id this one was restored from
+  createdAt    DateTime @default(now())
+
+  page LandingPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([pageId, createdAt])
 }

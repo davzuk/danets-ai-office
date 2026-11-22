@@ -19,6 +19,7 @@ export const LIMIT_FIELDS = [
   { key: "proposalTemplateLimit", label: "Proposal templates", unit: "total", fallback: 10 },
   { key: "quoteLimit", label: "Quotes", unit: "/mo", fallback: 50 },
   { key: "bookingTypeLimit", label: "Booking types", unit: "total", fallback: 3 },
+  { key: "pageLimit", label: "Published website pages", unit: "total", fallback: 3 },
   { key: "mediaStorageMbLimit", label: "Media storage", unit: "MB", fallback: 1024, hint: "Media library storage in MB (1024 = 1 GB)." },
 ] as const satisfies readonly { key: string; label: string; unit: string; fallback: number; hint?: string }[];
 

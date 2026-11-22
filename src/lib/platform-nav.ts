@@ -15,6 +15,7 @@ import {
   Link as LinkIcon,
   Boxes,
   ImageIcon,
+  Globe,
 } from "lucide-react";
 
 export type PlatformTabId =
@@ -23,6 +24,7 @@ export type PlatformTabId =
   | "health"
   | "usage"
   | "users"
+  | "sites"
   | "audit"
   | "platform"
   | "subscriptions"
@@ -52,6 +54,7 @@ export const PLATFORM_NAV: PlatformNavItem[] = [
   { id: "health", label: "Tenant Health", icon: HeartPulse, group: "main", desc: "Risk & alerts" },
   { id: "usage", label: "Usage", icon: Gauge, group: "main", desc: "Quota consumption" },
   { id: "users", label: "Users", icon: Users, group: "main", desc: "Cross-tenant users" },
+  { id: "sites", label: "Tenant sites", icon: Globe, group: "main", desc: "Tenant websites" },
   { id: "subscriptions", label: "Subscriptions", icon: Crown, group: "billing", desc: "Plans & trials" },
   { id: "payments", label: "Payments", icon: CreditCard, group: "billing", desc: "Transactions" },
   { id: "invoices", label: "Invoices", icon: Receipt, group: "billing", desc: "Billing records" },

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { PAGE_SLUG_RE, RESERVED_PAGE_SLUGS, customDomainFromHost, isSitesOnlyHost, siteSubdomainFromHost } from "@/lib/sites/host";
 
 // Edge runtime doesn't have Node `crypto`, so we use the Web Crypto
 // `randomUUID` available globally on the Edge platform.
@@ -48,12 +49,94 @@ const CSP_BASE = [
   "font-src 'self' data:",
   "connect-src 'self' https://api.paystack.co https://api.flutterwave.com wss:",
   // calendly.com: booking types that embed a Calendly scheduling page.
-  "frame-src https://js.paystack.co https://checkout.flutterwave.com https://calendly.com",
+  // 'self': the website editor's live preview (/site-preview).
+  "frame-src 'self' https://js.paystack.co https://checkout.flutterwave.com https://calendly.com",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",
 ];
+
+const appOrigin = (): string => {
+  try {
+    return new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").origin;
+  } catch {
+    return "http://localhost:3000";
+  }
+};
+
+/**
+ * CSP for tenant website pages: nonce-only scripts (Next's own and the chat
+ * widget, which the layout tags with the nonce), images from anywhere over
+ * https plus the app's media, and video embeds from YouTube and Vimeo only.
+ */
+function tenantCsp(nonce: string): string {
+  const app = appOrigin();
+  return [
+    "default-src 'self'",
+    // React's development build needs eval for its debugging tools; production never does.
+    `script-src 'nonce-${nonce}' 'strict-dynamic'${process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'"}`,
+    "style-src 'self' 'unsafe-inline'",
+    `img-src 'self' data: https: ${app}`,
+    `media-src 'self' https: ${app}`,
+    "font-src 'self' data:",
+    `connect-src 'self' ${app}`,
+    "frame-src https://www.youtube-nocookie.com https://player.vimeo.com https://calendly.com",
+    "object-src 'none'",
+    "base-uri 'none'",
+    `form-action 'self' ${app}`,
+    "frame-ancestors 'none'",
+  ].join("; ");
+}
+
+const notFound = (requestId: string) => {
+  const res = new NextResponse("Not found", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+  res.headers.set("x-request-id", requestId);
+  return res;
+};
+
+/**
+ * A request to a tenant website host. Pages and the site's robots.txt and
+ * sitemap.xml are rewritten to the internal /site-render route; the public
+ * widget API passes through; everything else (the dashboard, /platform,
+ * the private API) is a 404 on tenant hosts. `siteKey` is the subdomain, or
+ * the whole hostname for a custom domain (subdomains never contain a dot);
+ * the renderer only serves a custom domain once it is verified.
+ */
+function tenantSite(request: NextRequest, siteKey: string, requestId: string, nonce: string): NextResponse {
+  const { pathname } = request.nextUrl;
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-request-id", requestId);
+
+  if (pathname.startsWith("/api/public/")) {
+    const res = NextResponse.next({ request: { headers: requestHeaders } });
+    res.headers.set("x-request-id", requestId);
+    return res;
+  }
+
+  let target: string | null = null;
+  if (pathname === "/robots.txt" || pathname === "/sitemap.xml") {
+    target = `/site-render/${siteKey}${pathname}`;
+  } else {
+    const slug = pathname.replace(/^\/+|\/+$/g, "");
+    if (slug === "") target = `/site-render/${siteKey}`;
+    else if (PAGE_SLUG_RE.test(slug) && !RESERVED_PAGE_SLUGS.has(slug.split("/")[0])) target = `/site-render/${siteKey}/${slug}`;
+  }
+  if (!target) return notFound(requestId);
+
+  const csp = tenantCsp(nonce);
+  // Next reads the nonce from the request's CSP header and adds it to its
+  // own scripts; the site layout reads x-csp-nonce for the widget tag.
+  requestHeaders.set("content-security-policy", csp);
+  requestHeaders.set("x-csp-nonce", nonce);
+  requestHeaders.set("x-site-key", siteKey);
+  const url = request.nextUrl.clone();
+  url.pathname = target;
+  const res = NextResponse.rewrite(url, { request: { headers: requestHeaders } });
+  res.headers.set("x-request-id", requestId);
+  res.headers.set("Content-Security-Policy", csp);
+  return res;
+}
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -70,6 +153,17 @@ export function middleware(request: NextRequest) {
   // <script> tag into the rendered HTML, it can't execute without the
   // matching nonce — and the nonce is unguessable.
   const nonce = mintNonce();
+
+  const host = request.headers.get("host");
+  const siteSubdomain = siteSubdomainFromHost(host);
+  if (siteSubdomain) return tenantSite(request, siteSubdomain, requestId, nonce);
+  // The bare sites domain, sites.<domain> (the CNAME target) and reserved
+  // names under it serve nothing; the app never runs there.
+  if (host && isSitesOnlyHost(host) && !pathname.startsWith("/api/public/")) return notFound(requestId);
+  const customDomain = customDomainFromHost(host);
+  if (customDomain) return tenantSite(request, customDomain, requestId, nonce);
+  // The internal site renderer is only reachable through a tenant host.
+  if (pathname === "/site-render" || pathname.startsWith("/site-render/")) return notFound(requestId);
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-danets-method", request.method);
@@ -104,12 +198,15 @@ export function middleware(request: NextRequest) {
     ...CSP_BASE.slice(2),
   ].join("; ");
 
+  // The editor's preview page is framed by the dashboard (same origin).
+  const pageCsp = pathname === "/site-preview" ? cspValue.replace("frame-ancestors 'none'", "frame-ancestors 'self'") : cspValue;
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("x-request-id", requestId);
-  response.headers.set("Content-Security-Policy", cspValue);
+  response.headers.set("Content-Security-Policy", pageCsp);
   return response;
 }
 
 export const config = {
-  matcher: ["/((?!_next|.*\\..*).*)", "/api/:path*"],
+  // robots.txt and sitemap.xml: tenant hosts serve their own.
+  matcher: ["/((?!_next|.*\\..*).*)", "/api/:path*", "/robots.txt", "/sitemap.xml"],
 };

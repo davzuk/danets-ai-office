@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { parseAttribution, recordVisits } from "@/lib/attribution";
 import { logger, serializeError } from "@/lib/logger";
-import { blockedOrigin, publicPreflight, withPublicCors } from "@/lib/public-cors";
+import { blockedOriginFor, publicPreflight, withPublicCors } from "@/lib/public-cors";
 
 const trackSchema = z.object({
   pk: z.string().min(1).max(191),
@@ -44,7 +44,7 @@ export const POST = withPublicCors(async (req: NextRequest) => {
     select: { id: true, widgetAllowedOrigins: true },
   });
   if (!business) return NextResponse.json({ error: "Business not found" }, { status: 404 });
-  const blocked = blockedOrigin(req, business.widgetAllowedOrigins);
+  const blocked = await blockedOriginFor(req, business);
   if (blocked) return blocked;
 
   try {

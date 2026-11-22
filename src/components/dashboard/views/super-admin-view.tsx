@@ -111,6 +111,7 @@ import { TenantWidgetOrigins } from "@/components/dashboard/views/tenant-widget-
 import type { PlatformTabId } from "@/lib/platform-nav";
 import { SuperAdminUsersPanel } from "@/components/dashboard/views/super-admin-users-panel";
 import { SuperAdminAuditPanel } from "@/components/dashboard/views/super-admin-audit-panel";
+import { SuperAdminSitesPanel } from "@/components/dashboard/views/super-admin-sites-panel";
 import {
   SuperAdminPlatformPanel,
   exportTenantsCsv,
@@ -975,6 +976,8 @@ function SuperAdminInner({
       )}
 
       {mainTab === "usage" && <SuperAdminUsagePanel />}
+
+      {mainTab === "sites" && <SuperAdminSitesPanel />}
 
       {mainTab === "users" && (
         <SuperAdminUsersPanel

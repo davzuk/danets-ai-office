@@ -10,6 +10,7 @@ import { metaCommentJob, metaMessageJob } from "./handlers/meta-events";
 import { metaLeadgenJob, metaLeadgenPollJob } from "./handlers/meta-leadgen";
 import { metaWebhookJob } from "./handlers/meta-webhook";
 import { purgeJobsJob } from "./handlers/purge-jobs";
+import { siteVerifyDomainsJob } from "./handlers/site-domains";
 import { socialInsightsBusinessJob, socialInsightsWeeklyJob } from "./handlers/social-insights";
 import { socialMetricsAccountJob, socialMetricsPostJob } from "./handlers/social-metrics";
 import { socialPublishJob } from "./handlers/social-publish";
@@ -35,6 +36,7 @@ const definitions: JobDefinition[] = [
   socialInsightsBusinessJob,
   bookingRemindJob,
   bookingSyncJob,
+  siteVerifyDomainsJob,
 ];
 
 const byType = new Map<string, JobDefinition>();

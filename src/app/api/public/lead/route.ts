@@ -7,7 +7,7 @@ import { fireTrigger } from "@/lib/automation";
 import { requireQuota, LimitExceededError } from "@/lib/plan-quota";
 import { captureInbound } from "@/lib/inbound-attribution";
 import { leadSourceFromChannel } from "@/lib/attribution";
-import { blockedOrigin, publicPreflight, withPublicCors } from "@/lib/public-cors";
+import { blockedOriginFor, publicPreflight, withPublicCors } from "@/lib/public-cors";
 import { creditRuleLead } from "@/lib/widget-session";
 
 const leadSchema = z.object({
@@ -52,7 +52,7 @@ export const POST = withPublicCors(async (req: NextRequest) => {
   if (!business) {
     return NextResponse.json({ error: "Business not found" }, { status: 404 });
   }
-  const blocked = blockedOrigin(req, business.widgetAllowedOrigins);
+  const blocked = await blockedOriginFor(req, business);
   if (blocked) return blocked;
 
   // Basic quality heuristic

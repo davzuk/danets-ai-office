@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { getClientIp, rateLimit } from "@/lib/rate-limit";
-import { blockedOrigin, publicPreflight, withPublicCors } from "@/lib/public-cors";
+import { blockedOriginFor, publicPreflight, withPublicCors } from "@/lib/public-cors";
 
 // POST /api/public/widget/event: the widget reports that it showed a
 // proactive message. Counted at most once per visitor per rule every 30
@@ -29,7 +29,7 @@ export const POST = withPublicCors(async (req: NextRequest) => {
 
   const business = await db.business.findUnique({ where: { publicKey: pk, status: "active" }, select: { id: true, widgetAllowedOrigins: true } });
   if (!business) return NextResponse.json({ error: "Business not found" }, { status: 404 });
-  const blocked = blockedOrigin(req, business.widgetAllowedOrigins);
+  const blocked = await blockedOriginFor(req, business);
   if (blocked) return blocked;
 
   const once = await rateLimit(`wevent:${ruleId}:${visitorId}`, 1, 30 * 60 * 1000);

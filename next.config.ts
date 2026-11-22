@@ -17,6 +17,9 @@ const isProduction = process.env.NODE_ENV === "production";
 const nextConfig: NextConfig = {
   output: "standalone",
   serverExternalPackages: ["pdf-parse", "@napi-rs/canvas", "mammoth"],
+  // Development only: Next allows *.localhost by default; deeper names like
+  // www.acme.localhost stand in for tenants' custom domains (workstream Q).
+  allowedDevOrigins: ["**.localhost"],
   // lucide-react ships every icon in one file (~1.5MB ESM); without
   // this directive every dashboard view pulls the whole tree. The
   // radix packages similarly have lots of files we don't all use.
