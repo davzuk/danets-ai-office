@@ -15,6 +15,8 @@ import { appOrigin } from "@/lib/public-cors";
 import { logger, serializeError } from "@/lib/logger";
 import { sendBookingEmails, type BookingEmailData, type BookingEmailKind } from "./emails";
 import { computeSlots, isBookableSlot, readAvailability, readQuestions, type Busy, type SlotRules } from "./slots";
+import { externalBusy, pushBookingEvent } from "./calendar-sync";
+import type { CalendlyInvitee } from "./calendly";
 
 export type BookingErrorCode = "SLOT_TAKEN" | "NOT_FOUND" | "CLOSED" | "INVALID";
 
@@ -63,9 +65,14 @@ export async function busyFor(tx: Tx, businessId: string, from: Date, to: Date, 
 }
 
 export async function slotsFor(type: BookingType, timezone: string, range: { from: Date; to: Date }, now = new Date()): Promise<Date[]> {
-  const busy = await busyFor(db, type.businessId, range.from, range.to);
-  return computeSlots(slotRulesFor(type, timezone), busy, range, now);
+  const [busy, external] = await Promise.all([busyFor(db, type.businessId, range.from, range.to), externalBusy(type, range.from, range.to)]);
+  return computeSlots(slotRulesFor(type, timezone), [...busy, ...external], range, now);
 }
+
+/** Calendar busy times around one slot, fetched before the booking transaction (no HTTP while the row is locked). */
+const PAD_MS = 6 * 3_600_000;
+const externalAround = (type: BookingType, start: Date, end: Date, own?: { start: Date; end: Date }) =>
+  externalBusy(type, new Date(start.getTime() - PAD_MS), new Date(end.getTime() + PAD_MS), own);
 
 const newToken = () => randomBytes(24).toString("base64url");
 
@@ -86,7 +93,7 @@ export interface CreateBookingArgs {
   notes?: string | null;
   answers?: Record<string, string>;
   visitorTimezone?: string | null;
-  source: "page" | "widget" | "dashboard";
+  source: "page" | "widget" | "dashboard" | "calendly";
   sessionId?: string | null;
   visitorId?: string | null;
   attribution?: unknown;
@@ -104,9 +111,10 @@ export async function createBooking(args: CreateBookingArgs, now = new Date()): 
     ? (await db.chatSession.findFirst({ where: { id: args.sessionId, businessId: business.id }, select: { id: true } }))?.id ?? null
     : null;
 
+  const external = await externalAround(type, args.start, endsAt);
   const booking = await db.$transaction(async (tx) => {
     await lockBusiness(tx, business.id);
-    const busy = await busyFor(tx, business.id, args.start, endsAt);
+    const busy = [...(await busyFor(tx, business.id, args.start, endsAt)), ...external];
     if (!isBookableSlot(rules, busy, args.start, now)) {
       throw new BookingError("SLOT_TAKEN", "Sorry, that time was just taken. Please pick another.");
     }
@@ -143,7 +151,7 @@ export async function createBooking(args: CreateBookingArgs, now = new Date()): 
       profile: { name: booking.name, email, phone: booking.phone },
     });
     contactId = inbound?.contactId ?? null;
-    leadId = await upsertLeadForBooking(booking, type, contactId, inbound ? { source: inbound.attributed ? leadSourceFromChannel(inbound.channel) : "website_form", firstTouchId: inbound.firstTouch.id, lastTouchId: inbound.touch.id } : null);
+    leadId = await upsertLeadForBooking(booking, type.name, contactId, inbound ? { source: inbound.attributed ? leadSourceFromChannel(inbound.channel) : "website_form", firstTouchId: inbound.firstTouch.id, lastTouchId: inbound.touch.id } : null);
     if (leadId || contactId) {
       await db.booking.update({ where: { id: booking.id }, data: { leadId, contactId } });
     }
@@ -164,7 +172,7 @@ export async function createBooking(args: CreateBookingArgs, now = new Date()): 
 
 async function upsertLeadForBooking(
   booking: Booking,
-  type: BookingType,
+  typeName: string,
   contactId: string | null,
   attribution: { source: string; firstTouchId: string; lastTouchId: string } | null
 ): Promise<string | null> {
@@ -188,7 +196,7 @@ async function upsertLeadForBooking(
         leadId: existing.id,
         businessId: booking.businessId,
         type: "booking",
-        description: `Booked a ${type.name}${promote ? " (moved to Qualified)" : ""}`,
+        description: `Booked a ${typeName}${promote ? " (moved to Qualified)" : ""}`,
         metadata: JSON.stringify({ bookingId: booking.id, startsAt: when }),
       },
     });
@@ -207,7 +215,7 @@ async function upsertLeadForBooking(
         name: booking.name,
         email: booking.email,
         phone: booking.phone,
-        service: type.name,
+        service: typeName,
         message: booking.notes,
         quality: "high",
         status: "qualified",
@@ -222,7 +230,7 @@ async function upsertLeadForBooking(
         leadId: lead.id,
         businessId: booking.businessId,
         type: "booking",
-        description: `Booked a ${type.name}`,
+        description: `Booked a ${typeName}`,
         metadata: JSON.stringify({ bookingId: booking.id, startsAt: when }),
       },
     });
@@ -257,6 +265,9 @@ async function afterChange(
   opts: { by?: "visitor" | "business" } = {}
 ) {
   const typeName = type?.name ?? "Booking";
+  // Calendly sends its own emails and reminders; Danets only records the booking.
+  const viaCalendly = booking.externalProvider === "calendly";
+  if (!viaCalendly) booking = await pushBookingEvent(kind, booking, type, business.name);
   try {
     if (kind === "confirmed" || opts.by !== "business") {
       await createNotification({
@@ -281,6 +292,8 @@ async function afterChange(
   } catch (e) {
     logger.error("booking notification/trigger failed", { bookingId: booking.id, ...serializeError(e) });
   }
+
+  if (viaCalendly) return;
 
   try {
     const data = await emailDataFor(booking.id);
@@ -337,6 +350,7 @@ export async function emailDataFor(bookingId: string): Promise<BookingEmailData 
     typeName: b.bookingType?.name ?? "Booking",
     location: b.bookingType?.location ?? "custom",
     locationDetail: b.bookingType?.locationDetail ?? null,
+    meetingUrl: b.meetingUrl,
     startsAt: b.startsAt,
     endsAt: b.endsAt,
     businessTimezone: b.business.timezone,
@@ -347,7 +361,7 @@ export async function emailDataFor(bookingId: string): Promise<BookingEmailData 
     notes: b.notes,
     answers: questions.filter((q) => typeof answers[q.key] === "string" && answers[q.key]).map((q) => ({ label: q.label, value: String(answers[q.key]) })),
     manageUrl: `${origin}/book/manage/${b.cancelToken}`,
-    dashboardUrl: `${origin}/app?view=leads`,
+    dashboardUrl: `${origin}/app?view=leads&tab=bookings`,
   };
 }
 
@@ -399,9 +413,10 @@ export async function rescheduleBooking(where: Prisma.BookingWhereUniqueInput, s
   const rules = slotRulesFor(type, b.business.timezone);
   const endsAt = new Date(start.getTime() + type.durationMin * 60_000);
 
+  const external = await externalAround(type, start, endsAt, { start: b.startsAt, end: b.endsAt });
   const updated = await db.$transaction(async (tx) => {
     await lockBusiness(tx, b.businessId);
-    const busy = await busyFor(tx, b.businessId, start, endsAt, b.id);
+    const busy = [...(await busyFor(tx, b.businessId, start, endsAt, b.id)), ...external];
     if (!isBookableSlot(rules, busy, start, now)) {
       throw new BookingError("SLOT_TAKEN", "Sorry, that time isn't available. Please pick another.");
     }
@@ -426,4 +441,90 @@ export async function rescheduleBooking(where: Prisma.BookingWhereUniqueInput, s
   }
   await afterChange("rescheduled", updated, type, b.business, { by: "visitor" });
   return updated;
+}
+
+// ─── Calendly ─────────────────────────────────────────────────────────
+
+/**
+ * Record a Calendly webhook (invitee.created / invitee.canceled) as a
+ * Danets booking. Idempotent: Calendly retries, and a repeat is ignored.
+ * Calendly emails the invitee itself, so Danets sends no emails or
+ * reminders for these; the team still gets the notification and the
+ * automations run.
+ */
+export async function recordCalendlyBooking(businessId: string, invitee: CalendlyInvitee): Promise<{ bookingId: string; created: boolean } | null> {
+  const existing = await db.booking.findUnique({ where: { businessId_externalId: { businessId, externalId: invitee.inviteeUri } } });
+
+  if (invitee.event === "invitee.canceled") {
+    if (!existing || existing.status !== "confirmed") return existing ? { bookingId: existing.id, created: false } : null;
+    await cancelBooking({ id: existing.id }, invitee.canceledByInvitee ? "visitor" : "business", invitee.cancelReason ? `${invitee.cancelReason} (in Calendly)` : "Cancelled in Calendly");
+    return { bookingId: existing.id, created: false };
+  }
+  if (existing) return { bookingId: existing.id, created: false };
+
+  const business = await db.business.findUnique({ where: { id: businessId }, select: { id: true, name: true, timezone: true } });
+  if (!business) return null;
+  const type = invitee.eventTypeUri
+    ? await db.bookingType.findFirst({ where: { businessId, provider: "calendly", calendlyEventTypeUri: invitee.eventTypeUri } })
+    : null;
+  const typeName = type?.name ?? invitee.eventName ?? "Calendly meeting";
+  // Calendly's questions aren't ours, so their answers go into the notes with
+  // Calendly's wording (shown once in the dashboard, and as the lead's message).
+  const notes = invitee.answers.length ? invitee.answers.map((qa) => `${qa.question}: ${qa.answer}`).join("\n") : null;
+
+  let booking: Booking;
+  try {
+    booking = await db.booking.create({
+      data: {
+        businessId,
+        bookingTypeId: type?.id ?? null,
+        name: invitee.name,
+        email: invitee.email,
+        phone: invitee.phone,
+        notes,
+        startsAt: invitee.startsAt,
+        endsAt: invitee.endsAt,
+        bufferMin: 0,
+        visitorTimezone: invitee.timezone,
+        source: "calendly",
+        cancelToken: newToken(),
+        externalId: invitee.inviteeUri,
+        externalProvider: "calendly",
+        externalData: { cancelUrl: invitee.cancelUrl, rescheduleUrl: invitee.rescheduleUrl, eventUri: invitee.eventUri } as Prisma.InputJsonValue,
+        meetingUrl: invitee.joinUrl,
+      },
+    });
+  } catch (e: any) {
+    if (e?.code === "P2002") {
+      const again = await db.booking.findUnique({ where: { businessId_externalId: { businessId, externalId: invitee.inviteeUri } } });
+      return again ? { bookingId: again.id, created: false } : null;
+    }
+    throw e;
+  }
+
+  let leadId: string | null = null;
+  let contactId: string | null = null;
+  try {
+    const utm = invitee.utm;
+    const touch = Object.keys(utm).length ? { ...utm, landingUrl: null, referrer: null, at: new Date().toISOString() } : null;
+    const inbound = await captureInbound({
+      businessId,
+      kind: "booking",
+      attribution: touch ? { first: touch, last: touch } : undefined,
+      profile: { name: booking.name, email: booking.email, phone: booking.phone },
+    });
+    contactId = inbound?.contactId ?? null;
+    leadId = await upsertLeadForBooking(
+      booking,
+      typeName,
+      contactId,
+      inbound ? { source: inbound.attributed ? leadSourceFromChannel(inbound.channel) : "website_form", firstTouchId: inbound.firstTouch.id, lastTouchId: inbound.touch.id } : null
+    );
+    if (leadId || contactId) await db.booking.update({ where: { id: booking.id }, data: { leadId, contactId } });
+  } catch (e) {
+    logger.error("calendly booking follow-up (lead/contact) failed", { bookingId: booking.id, ...serializeError(e) });
+  }
+
+  await afterChange("confirmed", { ...booking, leadId, contactId }, type, business);
+  return { bookingId: booking.id, created: true };
 }

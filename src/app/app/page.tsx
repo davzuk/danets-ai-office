@@ -145,9 +145,11 @@ export default function AppHome() {
           setUser(data.user);
           setSubscription(data.subscription ?? null);
           setModuleAccess(data.modules ?? null);
-          // Deep link back from the OAuth connect flow (/api/connections/*/callback).
-          if (new URLSearchParams(window.location.search).get("view") === "integrations") {
-            setView("integrations");
+          // Deep links: back from the OAuth connect flow (/api/connections/*/callback)
+          // and from booking emails (/app?view=leads&tab=bookings).
+          const linked = new URLSearchParams(window.location.search).get("view");
+          if (linked === "integrations" || linked === "leads") {
+            setView(linked);
           }
         }
       })

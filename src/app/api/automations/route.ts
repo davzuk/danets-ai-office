@@ -13,6 +13,7 @@ const TRIGGERS = [
 const ACTIONS = [
   "create_task", "send_notification", "generate_ai_followup",
   "add_lead_note", "change_lead_status", "create_ticket", "create_proposal_reminder",
+  "send_booking_link",
 ];
 
 // GET /api/automations — list workflows

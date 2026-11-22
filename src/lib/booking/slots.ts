@@ -82,6 +82,11 @@ export const bookingTypeInputSchema = z.object({
   questions: z.array(questionSchema).max(5).default([]),
   assignedUserId: z.string().max(191).optional().nullable(),
   active: z.boolean().default(true),
+  // Where times come from: Danets only, plus a Google calendar, or Calendly.
+  provider: z.enum(["native", "google", "calendly"]).default("native"),
+  calendarConnectionId: z.string().max(191).optional().nullable(),
+  calendarId: z.string().max(255).optional().nullable(),
+  calendlyUrl: z.string().trim().max(500).optional().nullable(),
 });
 
 export type BookingTypeInput = z.output<typeof bookingTypeInputSchema>;

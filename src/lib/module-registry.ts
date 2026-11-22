@@ -27,6 +27,8 @@ export const MODULE_KEYS = [
   "white_label",
   // Widget proactive messages (Phase 2 O). Internal: lives in the AI Agent view.
   "proactive_messages",
+  // Google Calendar and Calendly sync for bookings (Phase 2 P). Internal: lives in Leads -> Bookings.
+  "booking_sync",
   // Phase 1+ marketing hub. Reserved now so plans can gate them; each is
   // behind a feature flag that doesn't exist yet, so they stay off (and out
   // of every tenant's enabled modules) until a platform admin enables it.
@@ -83,6 +85,7 @@ export const MODULE_REGISTRY: Record<ModuleKey, ModuleDef> = {
   integrations: { label: "Integrations", minPlan: "pro" },
   white_label: { label: "White Label", minPlan: "enterprise" },
   proactive_messages: { label: "Proactive messages", minPlan: "starter" },
+  booking_sync: { label: "Calendar sync for bookings", minPlan: "pro" },
   social: { label: "Social Media", minPlan: "starter", flagKey: "social_hub" },
   seo: { label: "SEO & Search Visibility", minPlan: "pro", flagKey: "seo_hub" },
   campaigns: { label: "Campaigns", minPlan: "pro", flagKey: "campaigns_hub" },
@@ -107,6 +110,7 @@ const API_MODULE_ROUTES: [string, ModuleKey][] = [
   ["/api/leads", "leads"],
   ["/api/lead-forms", "leads"],
   ["/api/bookings", "leads"],
+  ["/api/booking-sync", "booking_sync"],
   ["/api/booking-types", "leads"],
   ["/api/content-posts", "social"],
   ["/api/scheduled-posts", "social"],

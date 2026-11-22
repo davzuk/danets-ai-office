@@ -189,7 +189,7 @@ export const POST = withPublicCors(async (req: NextRequest) => {
   const booking =
     detectBookingIntent(parsed.data.message) &&
     (await isModuleEnabled(business.id, "leads", business.plan)) &&
-    (await db.bookingType.count({ where: { businessId: business.id, active: true, provider: "native" } })) > 0;
+    (await db.bookingType.count({ where: { businessId: business.id, active: true } })) > 0;
 
   return NextResponse.json({
     sessionId: session.id,

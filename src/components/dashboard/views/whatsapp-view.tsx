@@ -95,6 +95,7 @@ type TemplateType =
   | "quotation_followup"
   | "payment_reminder"
   | "appointment_confirmation"
+  | "booking_reminder"
   | "ticket_update"
   | "custom";
 
@@ -172,6 +173,13 @@ const TEMPLATE_TYPE_CONFIG: Record<
       "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/20",
     dotClass: "bg-emerald-500",
   },
+  booking_reminder: {
+    label: "Booking Reminder",
+    short: "Booking",
+    badgeClass:
+      "bg-sky-500/15 text-sky-700 dark:text-sky-400 border-sky-500/20",
+    dotClass: "bg-sky-500",
+  },
   ticket_update: {
     label: "Ticket Update",
     short: "Ticket Update",
@@ -193,6 +201,7 @@ const TEMPLATE_TYPES: TemplateType[] = [
   "quotation_followup",
   "payment_reminder",
   "appointment_confirmation",
+  "booking_reminder",
   "ticket_update",
   "custom",
 ];
@@ -1021,10 +1030,18 @@ function TemplateDialog({
               className="resize-y"
             />
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>{`{name} {service} {company}`}</span>
+              <span>{type === "booking_reminder" ? `{name} {service} {company} {time} {link}` : `{name} {service} {company}`}</span>
               <span>{content.length}/2000</span>
             </div>
           </div>
+
+          {type === "booking_reminder" && (
+            <p className="rounded-lg border bg-muted/40 p-3 text-xs text-muted-foreground">
+              Sent automatically 24 hours and 1 hour before a booking, when the visitor gave a phone number and WhatsApp is connected through Meta or Twilio.{" "}
+              <code className="rounded bg-muted px-1">{`{time}`}</code> is the booking time and{" "}
+              <code className="rounded bg-muted px-1">{`{link}`}</code> lets them reschedule or cancel. Meta only delivers free-form messages to people who messaged you in the last 24 hours, so some reminders may not arrive; the email reminder always goes.
+            </p>
+          )}
 
           <div className="flex items-center justify-between rounded-lg border p-3">
             <div className="space-y-0.5">

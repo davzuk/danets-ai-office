@@ -5,6 +5,7 @@ import { withSession } from "@/lib/api";
 import { AppError } from "@/lib/app-error";
 import { logActivity } from "@/lib/activity";
 import { bookingTypeInputSchema } from "@/lib/booking/slots";
+import { resolveSource } from "@/lib/booking/type-source";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -35,7 +36,8 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       const member = await db.businessUser.findFirst({ where: { id: data.assignedUserId, businessId: user.businessId }, select: { id: true } });
       if (!member) throw new AppError("That team member isn't on your account.", { status: 400, code: "INVALID_INPUT" });
     }
-    const type = await db.bookingType.update({ where: { id: before.id }, data });
+    const source = "slug" in data ? await resolveSource(user.businessId, data, before) : {};
+    const type = await db.bookingType.update({ where: { id: before.id }, data: { ...data, ...source } });
     const onlyToggle = Object.keys(data).length === 1 && "active" in data;
     await logActivity({
       businessId: user.businessId,

@@ -47,7 +47,8 @@ const CSP_BASE = [
   "media-src 'self' blob: https:",
   "font-src 'self' data:",
   "connect-src 'self' https://api.paystack.co https://api.flutterwave.com wss:",
-  "frame-src https://js.paystack.co https://checkout.flutterwave.com",
+  // calendly.com: booking types that embed a Calendly scheduling page.
+  "frame-src https://js.paystack.co https://checkout.flutterwave.com https://calendly.com",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",

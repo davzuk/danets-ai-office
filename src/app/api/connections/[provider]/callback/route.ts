@@ -9,6 +9,7 @@ import { OAuthGrantError } from "@/lib/connections/types";
 import { enqueue } from "@/lib/jobs";
 import { socialSubscribeJob } from "@/lib/jobs/handlers/social-subscribe";
 import { syncSocialAccounts } from "@/lib/social/accounts";
+import { hasCalendarScopes } from "@/lib/booking/google-calendar";
 
 type RouteCtx = { params: Promise<{ provider: string }> };
 
@@ -17,10 +18,11 @@ function backToApp(
   provider: string,
   status: "connected" | "error",
   reason?: string,
-  extra: Record<string, string> = {}
+  extra: Record<string, string> = {},
+  view: "integrations" | "leads" = "integrations"
 ) {
   const url = new URL("/app", req.nextUrl.origin);
-  url.searchParams.set("view", "integrations");
+  url.searchParams.set("view", view);
   url.searchParams.set("connection", provider);
   url.searchParams.set("status", status);
   if (reason) url.searchParams.set("reason", reason);
@@ -104,9 +106,15 @@ export async function GET(req: NextRequest, { params }: RouteCtx) {
       description: `Connected ${provider.label} account ${account.name ?? account.externalAccountId}`,
       metadata: { connectionId: conn.id, provider: provider.id, scopes: tokens.scopes, assets: account.assets?.length ?? 0, conflicts },
     });
+    // Connected from Leads -> Bookings for calendar sync: go back there.
+    if (check.payload.purpose === "calendar") {
+      const granted = hasCalendarScopes(tokens.scopes);
+      return backToApp(req, provider.id, granted ? "connected" : "error", granted ? undefined : "calendar_scopes", { purpose: "calendar" }, "leads");
+    }
     return backToApp(req, provider.id, "connected", undefined, conflicts ? { conflicts: String(conflicts) } : {});
   } catch (e) {
     logger.error("OAuth connect failed", { provider: provider.id, ...serializeError(e) });
-    return backToApp(req, provider.id, "error", e instanceof OAuthGrantError ? "rejected" : "provider");
+    const back = check.payload.purpose === "calendar" ? { extra: { purpose: "calendar" }, view: "leads" as const } : { extra: {} as Record<string, string>, view: "integrations" as const };
+    return backToApp(req, provider.id, "error", e instanceof OAuthGrantError ? "rejected" : "provider", back.extra, back.view);
   }
 }

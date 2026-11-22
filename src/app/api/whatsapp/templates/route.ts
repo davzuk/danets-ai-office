@@ -34,7 +34,7 @@ export function GET(req: NextRequest) {
 
 const TEMPLATE_TYPES = [
   "new_lead_followup", "missed_chat", "quotation_followup",
-  "payment_reminder", "appointment_confirmation", "ticket_update", "custom",
+  "payment_reminder", "appointment_confirmation", "booking_reminder", "ticket_update", "custom",
 ];
 
 const createSchema = z.object({

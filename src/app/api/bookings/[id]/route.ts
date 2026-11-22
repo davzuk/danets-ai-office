@@ -27,6 +27,10 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     const typeName = booking.bookingType?.name ?? "booking";
 
     if (d.action === "cancel") {
+      // Calendly owns these: cancelling only in Danets would leave the Calendly booking in place.
+      if (booking.externalProvider === "calendly") {
+        throw new AppError("This booking was made in Calendly. Cancel it there; Danets updates when Calendly tells us.", { status: 409, code: "EXTERNAL" });
+      }
       try {
         const updated = await cancelBooking({ id: booking.id }, "business", d.reason, { id: user.userId, name: user.name });
         await logActivity({

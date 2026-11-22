@@ -37,7 +37,7 @@ export const GET = withPublicCors(async (req: NextRequest) => {
         endsAt: b.endsAt.toISOString(),
         status: b.status,
         visitorTimezone: b.visitorTimezone,
-        canChange: b.status === "confirmed" && b.startsAt.getTime() > Date.now() && !!b.bookingType?.active,
+        canChange: b.status === "confirmed" && b.startsAt.getTime() > Date.now() && !!b.bookingType?.active && b.externalProvider !== "calendly",
       },
       type: b.bookingType
         ? {
@@ -65,8 +65,11 @@ export const POST = withPublicCors(async (req: NextRequest) => {
   const parsed = actionSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   const d = parsed.data;
-  const existing = await db.booking.findUnique({ where: { cancelToken: d.token }, select: { startsAt: true } });
+  const existing = await db.booking.findUnique({ where: { cancelToken: d.token }, select: { startsAt: true, externalProvider: true } });
   if (!existing) return NextResponse.json({ error: "Booking not found." }, { status: 404 });
+  if (existing.externalProvider === "calendly") {
+    return NextResponse.json({ error: "This booking is managed in Calendly. Use the link in your Calendly email." }, { status: 409 });
+  }
   if (existing.startsAt.getTime() <= Date.now()) {
     return NextResponse.json({ error: "This booking has already started, so it can't be changed online." }, { status: 400 });
   }

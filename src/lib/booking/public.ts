@@ -40,6 +40,9 @@ export function publicType(t: BookingType) {
     locationLabel: LOCATION_LABEL[t.location] ?? t.location,
     // Video links and addresses go out in the confirmation, not to every visitor.
     questions: readQuestions(t.questions),
+    // Calendly types embed the tenant's public Calendly link instead of our times.
+    provider: t.provider === "calendly" ? ("calendly" as const) : ("native" as const),
+    calendlyUrl: t.provider === "calendly" ? t.calendlyUrl : null,
   };
 }
 

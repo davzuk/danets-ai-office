@@ -419,6 +419,14 @@ export async function GET(req: NextRequest) {
   async function loadTimes(card, t){
     card.innerHTML = '<h4></h4><p class="dn-intro">Loading times...</p>';
     card.querySelector('h4').textContent = 'Book a ' + t.name;
+    if (t.calendlyUrl) {
+      // Booked on the business's Calendly, embedded in their booking page.
+      const p = card.querySelector('.dn-intro');
+      p.textContent = 'Pick a time that suits you on our scheduling page. ';
+      p.appendChild(bookingLink(t, 'Choose a time'));
+      body.scrollTop = body.scrollHeight;
+      return;
+    }
     const tz = visitorTz();
     const from = new Date(), to = new Date(from.getTime() + 14 * 86400000);
     try {

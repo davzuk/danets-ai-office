@@ -6,6 +6,7 @@ import { logActivity } from "@/lib/activity";
 import { checkQuota, requireQuota } from "@/lib/plan-quota";
 import { appOrigin } from "@/lib/public-cors";
 import { bookingTypeInputSchema } from "@/lib/booking/slots";
+import { resolveSource } from "@/lib/booking/type-source";
 
 // GET/POST /api/booking-types: what visitors can book (Leads → Bookings).
 
@@ -44,7 +45,8 @@ export async function POST(req: NextRequest) {
     const taken = await db.bookingType.findUnique({ where: { businessId_slug: { businessId: user.businessId, slug: d.slug } }, select: { id: true } });
     if (taken) throw new AppError("Another booking type already uses that link.", { status: 409, code: "SLUG_TAKEN" });
 
-    const type = await db.bookingType.create({ data: { ...d, businessId: user.businessId } });
+    const source = await resolveSource(user.businessId, d);
+    const type = await db.bookingType.create({ data: { ...d, ...source, businessId: user.businessId } });
     await logActivity({
       businessId: user.businessId,
       userId: user.userId,

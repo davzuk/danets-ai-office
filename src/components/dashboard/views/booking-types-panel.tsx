@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { COMMON_TIMEZONES } from "@/lib/content/timezone";
 import { DEFAULT_AVAILABILITY, LOCATION_LABEL, type Availability, type Weekday } from "@/lib/booking/slots";
+import { CalendarConnections, SourcePicker, loadSync, type Provider, type SyncState } from "./booking-sync";
 
 interface Question {
   key: string;
@@ -40,7 +41,13 @@ interface BookingType {
   questions: Question[] | null;
   assignedUserId: string | null;
   active: boolean;
+  provider: Provider;
+  calendarConnectionId: string | null;
+  calendarId: string | null;
+  calendlyUrl: string | null;
 }
+
+const PROVIDER_LABEL: Record<Provider, string | null> = { native: null, google: "Google Calendar", calendly: "Calendly" };
 
 interface TypesData {
   types: BookingType[];
@@ -99,6 +106,10 @@ function emptyDraft(): Draft {
     questions: [],
     assignedUserId: null,
     active: true,
+    provider: "native",
+    calendarConnectionId: null,
+    calendarId: null,
+    calendlyUrl: null,
   };
 }
 
@@ -107,6 +118,7 @@ export function BookingTypesPanel() {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [deleting, setDeleting] = useState<BookingType | null>(null);
+  const [sync, setSync] = useState<SyncState>(null);
 
   const load = useCallback(async () => {
     try {
@@ -119,10 +131,14 @@ export function BookingTypesPanel() {
       setError(e.message);
     }
   }, []);
+  const loadConnections = useCallback(async () => setSync(await loadSync()), []);
   useEffect(() => {
-    const t = setTimeout(load, 0);
+    const t = setTimeout(() => {
+      load();
+      loadConnections();
+    }, 0);
     return () => clearTimeout(t);
-  }, [load]);
+  }, [load, loadConnections]);
 
   async function toggleActive(t: BookingType, active: boolean) {
     const r = await fetch(`/api/booking-types/${t.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ active }) });
@@ -155,6 +171,7 @@ export function BookingTypesPanel() {
   return (
     <div className="space-y-4">
       <TimezoneSetting timezone={data.timezone} canEdit={data.canEdit} onSaved={load} />
+      <CalendarConnections sync={sync} onChanged={loadConnections} />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
@@ -187,9 +204,10 @@ export function BookingTypesPanel() {
                       Hidden
                     </Badge>
                   )}
+                  {PROVIDER_LABEL[t.provider] && <Badge variant="secondary">{PROVIDER_LABEL[t.provider]}</Badge>}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {t.durationMin} min · {LOCATION_LABEL[t.location] ?? t.location}
+                  {t.provider === "calendly" ? "Times from Calendly" : `${t.durationMin} min · ${LOCATION_LABEL[t.location] ?? t.location}`}
                   {t.assignedUserId ? ` · ${data.users.find((u) => u.id === t.assignedUserId)?.name ?? "Team member"}` : ""}
                 </p>
                 <p className="text-xs text-muted-foreground truncate">{link(t)}</p>
@@ -211,7 +229,7 @@ export function BookingTypesPanel() {
                 {data.canEdit && (
                   <>
                     <Switch checked={t.active} onCheckedChange={(v) => toggleActive(t, v)} aria-label={`${t.name} can be booked`} />
-                    <Button variant="ghost" size="icon" aria-label={`Edit ${t.name}`} onClick={() => setDraft({ ...t, description: t.description ?? "", locationDetail: t.locationDetail ?? "", questions: t.questions ?? [] })}>
+                    <Button variant="ghost" size="icon" aria-label={`Edit ${t.name}`} onClick={() => setDraft({ ...t, description: t.description ?? "", locationDetail: t.locationDetail ?? "", questions: t.questions ?? [], provider: t.provider ?? "native" })}>
                       <Pencil className="h-4 w-4" />
                     </Button>
                     <Button variant="ghost" size="icon" aria-label={`Delete ${t.name}`} onClick={() => setDeleting(t)}>
@@ -229,6 +247,7 @@ export function BookingTypesPanel() {
         <TypeEditor
           draft={draft}
           users={data.users}
+          sync={sync}
           timezone={data.timezone}
           baseUrl={data.bookingBaseUrl}
           onClose={() => setDraft(null)}
@@ -313,6 +332,7 @@ function NumberField({ id, label, value, onChange, min, max, suffix }: { id: str
 function TypeEditor({
   draft: initial,
   users,
+  sync,
   timezone,
   baseUrl,
   onClose,
@@ -320,6 +340,7 @@ function TypeEditor({
 }: {
   draft: Draft;
   users: TypesData["users"];
+  sync: SyncState;
   timezone: string;
   baseUrl: string;
   onClose: () => void;
@@ -350,6 +371,10 @@ function TypeEditor({
         questions: uniqueKeys(d.questions.filter((q) => q.label.trim())),
         assignedUserId: d.assignedUserId,
         active: d.active,
+        provider: d.provider,
+        calendarConnectionId: d.provider === "google" ? d.calendarConnectionId : null,
+        calendarId: d.provider === "google" ? d.calendarId : null,
+        calendlyUrl: d.provider === "calendly" ? d.calendlyUrl?.trim() || null : null,
       };
       const r = await fetch(d.id ? `/api/booking-types/${d.id}` : "/api/booking-types", {
         method: d.id ? "PATCH" : "POST",
@@ -367,6 +392,8 @@ function TypeEditor({
     }
   }
 
+  const viaCalendly = d.provider === "calendly";
+  const sourceIncomplete = (d.provider === "google" && (!d.calendarConnectionId || !d.calendarId)) || (viaCalendly && !d.calendlyUrl?.trim());
   const openDays = DAY_ORDER.filter((day) => d.availability[day].length > 0).length;
 
   return (
@@ -413,6 +440,14 @@ function TypeEditor({
             </div>
           </section>
 
+          <SourcePicker
+            value={{ provider: d.provider, calendarConnectionId: d.calendarConnectionId, calendarId: d.calendarId, calendlyUrl: d.calendlyUrl }}
+            onChange={(v) => setD((p) => ({ ...p, ...v }))}
+            sync={sync}
+          />
+
+          {!viaCalendly && (
+            <>
           <section className="grid gap-3 grid-cols-2 sm:grid-cols-3">
             <NumberField id="bt-dur" label="Length" value={d.durationMin} onChange={(n) => set("durationMin", n)} min={5} max={480} suffix="min" />
             <NumberField id="bt-step" label="Start times every" value={d.slotStepMin} onChange={(n) => set("slotStepMin", n)} min={5} max={240} suffix="min" />
@@ -557,6 +592,8 @@ function TypeEditor({
               </Button>
             )}
           </section>
+            </>
+          )}
 
           <label className="flex items-center gap-2 text-sm">
             <Switch checked={d.active} onCheckedChange={(v) => set("active", v)} />
@@ -568,7 +605,7 @@ function TypeEditor({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={save} disabled={saving || !d.name.trim() || !d.slug}>
+          <Button onClick={save} disabled={saving || !d.name.trim() || !d.slug || sourceIncomplete}>
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
             {d.id ? "Save" : "Create"}
           </Button>

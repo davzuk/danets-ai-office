@@ -16,6 +16,8 @@ export interface BookingEmailData {
   typeName: string;
   location: string;
   locationDetail: string | null;
+  /** Google Meet link added by calendar sync. */
+  meetingUrl?: string | null;
   startsAt: Date;
   endsAt: Date;
   businessTimezone: string;
@@ -37,7 +39,7 @@ function when(d: BookingEmailData, tz: string) {
   return `${day}, ${time(d.startsAt)}–${time(d.endsAt)} (${tz})`;
 }
 
-function layout(heading: string, intro: string, rows: { label: string; value: string }[], cta: { label: string; href: string } | null, footer: string) {
+export function layout(heading: string, intro: string, rows: { label: string; value: string }[], cta: { label: string; href: string } | null, footer: string) {
   const body = rows
     .filter((r) => r.value)
     .map((r) => `<tr><td style="padding:6px 12px 6px 0;color:#6b7280;font-size:14px;vertical-align:top;">${escapeHtml(r.label)}</td><td style="padding:6px 0;font-size:14px;font-weight:600;">${escapeHtml(r.value).replace(/\n/g, "<br>")}</td></tr>`)
@@ -53,14 +55,15 @@ ${cta ? `<a href="${escapeHtml(cta.href)}" style="display:inline-block;backgroun
 </div></div></body></html>`;
 }
 
-const text = (heading: string, intro: string, rows: { label: string; value: string }[], link?: string) =>
+export const text = (heading: string, intro: string, rows: { label: string; value: string }[], link?: string) =>
   [heading, "", intro, "", ...rows.filter((r) => r.value).map((r) => `${r.label}: ${r.value}`), ...(link ? ["", link] : [])].join("\n");
 
-const subjectSafe = (s: string) => s.replace(/[\r\n]+/g, " ").trim().slice(0, 200);
+export const subjectSafe = (s: string) => s.replace(/[\r\n]+/g, " ").trim().slice(0, 200);
 
 function where(d: BookingEmailData) {
   const label = LOCATION_LABEL[d.location] ?? d.location;
-  return d.locationDetail ? `${label}: ${d.locationDetail}` : label;
+  const detail = d.locationDetail || d.meetingUrl;
+  return detail ? `${label}: ${detail}` : label;
 }
 
 /** The visitor's email for a booking event. */

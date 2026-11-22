@@ -46,12 +46,12 @@ export const googleProvider: ProviderDefinition = {
 
   isConfigured: (env) => !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
 
-  authorizeUrl({ state, redirectUri, codeChallenge, env }) {
+  authorizeUrl({ state, redirectUri, codeChallenge, env, extraScopes }) {
     const params = form({
       client_id: env.GOOGLE_CLIENT_ID,
       redirect_uri: redirectUri,
       response_type: "code",
-      scope: scopes(env).join(" "),
+      scope: [...new Set([...scopes(env), ...(extraScopes ?? [])])].join(" "),
       access_type: "offline",
       prompt: "consent", // guarantees a refresh_token on reconnect
       include_granted_scopes: "true",

@@ -2,6 +2,7 @@
 
 import type { JobDefinition } from "./define";
 import { bookingRemindJob } from "./handlers/booking-remind";
+import { bookingSyncJob } from "./handlers/booking-sync";
 import { brandGenerateJob } from "./handlers/brand-generate";
 import { connectionExpiringJob, connectionRefreshJob } from "./handlers/connection-refresh";
 import { linkedinLeadgenJob, linkedinLeadgenPollJob } from "./handlers/linkedin-leadgen";
@@ -33,6 +34,7 @@ const definitions: JobDefinition[] = [
   socialInsightsWeeklyJob,
   socialInsightsBusinessJob,
   bookingRemindJob,
+  bookingSyncJob,
 ];
 
 const byType = new Map<string, JobDefinition>();

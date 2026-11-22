@@ -49,7 +49,8 @@ export interface ProviderDefinition {
   description: string;
   usesPkce: boolean;
   isConfigured(env: Env): boolean;
-  authorizeUrl(args: { state: string; redirectUri: string; codeChallenge?: string; env: Env }): string;
+  /** extraScopes: asked for on top of the defaults (incremental consent, e.g. Google Calendar for bookings). */
+  authorizeUrl(args: { state: string; redirectUri: string; codeChallenge?: string; env: Env; extraScopes?: string[] }): string;
   exchangeCode(args: { code: string; redirectUri: string; codeVerifier?: string; env: Env }): Promise<TokenSet>;
   /** Absent when the provider has no refresh-token grant (Meta). */
   refresh?(args: { refreshToken: string; env: Env }): Promise<TokenSet>;

@@ -2,13 +2,15 @@ import "server-only";
 import { db } from "@/lib/db";
 import { createNotification } from "@/lib/activity";
 import { logger, serializeError } from "@/lib/logger";
+import { sendBookingLinkEmail } from "@/lib/booking/link-email";
 
 /**
  * Automation Execution Engine
  *
  * Checks for active workflows matching a trigger type and executes their actions.
- * Actions are internal-only (tasks, notifications, notes, status changes) —
- * no external messages (WhatsApp/Email) are sent automatically.
+ * Actions are internal (tasks, notifications, notes, status changes), with
+ * one exception: "send_booking_link" emails the lead a link to book a time.
+ * Nothing else sends external messages automatically.
  *
  * Usage: call `fireTrigger("new_lead", { businessId, leadId, lead }) from
  * any route where a trigger event occurs.
@@ -238,6 +240,16 @@ async function executeAction(
         });
       }
       return { action: "create_proposal_reminder", proposalId: ctx.proposalId };
+    }
+
+    case "send_booking_link": {
+      if (!ctx.leadId) return { action: "send_booking_link", skipped: "no lead" };
+      const result = await sendBookingLinkEmail(businessId, ctx.leadId, {
+        bookingTypeSlug: typeof config.bookingTypeSlug === "string" ? config.bookingTypeSlug : undefined,
+        message: typeof config.message === "string" ? config.message : undefined,
+      });
+      if (!result.sent) return { action: "send_booking_link", leadId: ctx.leadId, skipped: result.reason };
+      return { action: "send_booking_link", leadId: ctx.leadId, to: result.to, url: result.url };
     }
 
     default:

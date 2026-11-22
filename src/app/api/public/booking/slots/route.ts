@@ -25,8 +25,12 @@ export const GET = withPublicCors(async (req: NextRequest) => {
   const slug = q.get("type");
   const type = slug
     ? await db.bookingType.findUnique({ where: { businessId_slug: { businessId: business.id, slug } } })
-    : await db.bookingType.findFirst({ where: { businessId: business.id, active: true, provider: "native" }, orderBy: { createdAt: "asc" } });
+    : await db.bookingType.findFirst({ where: { businessId: business.id, active: true, provider: { not: "calendly" } }, orderBy: { createdAt: "asc" } });
   if (!type || !type.active) return NextResponse.json({ error: "This booking page isn't available." }, { status: 404 });
+  // Calendly types are booked on Calendly.
+  if (type.provider === "calendly") {
+    return NextResponse.json({ error: "This meeting is booked through Calendly.", code: "EXTERNAL", calendlyUrl: type.calendlyUrl }, { status: 409 });
+  }
 
   const now = new Date();
   const from = q.get("from") ? new Date(q.get("from")!) : now;

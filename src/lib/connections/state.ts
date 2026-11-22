@@ -19,8 +19,12 @@ export interface OAuthStatePayload {
   businessId: string;
   userId: string;
   codeVerifier?: string;
+  /** What the connect was for (e.g. "calendar"), so the callback returns to the right screen. */
+  purpose?: ConnectPurpose;
   createdAt: number;
 }
+
+export type ConnectPurpose = "calendar";
 
 function base64url(buf: Buffer): string {
   return buf.toString("base64url");
@@ -37,6 +41,7 @@ export function createOAuthState(args: {
   businessId: string;
   userId: string;
   pkce: boolean;
+  purpose?: ConnectPurpose;
   now?: number;
 }): { state: string; codeChallenge?: string; cookieValue: string } {
   const nonce = base64url(randomBytes(24));
@@ -47,6 +52,7 @@ export function createOAuthState(args: {
     businessId: args.businessId,
     userId: args.userId,
     codeVerifier: pair?.verifier,
+    ...(args.purpose ? { purpose: args.purpose } : {}),
     createdAt: args.now ?? Date.now(),
   };
   const cookieValue = Buffer.from(JSON.stringify(encryptApiKey(JSON.stringify(payload)))).toString("base64url");

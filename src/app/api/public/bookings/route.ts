@@ -50,6 +50,7 @@ export const POST = withPublicCors(async (req: NextRequest) => {
 
   const type = await db.bookingType.findUnique({ where: { businessId_slug: { businessId: business.id, slug: d.type } } });
   if (!type || !type.active) return NextResponse.json({ error: "This booking page isn't available." }, { status: 404 });
+  if (type.provider === "calendly") return NextResponse.json({ error: "This meeting is booked through Calendly.", code: "EXTERNAL" }, { status: 409 });
 
   // Keep only answers to this type's questions, and require the required ones.
   const answers: Record<string, string> = {};

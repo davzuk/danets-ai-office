@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { BookingFlow, BookingSummary } from "@/components/booking/booking-flow";
+import { CalendlyEmbed } from "@/components/booking/calendly-embed";
 import { loadBookingBusiness } from "@/lib/booking/page-data";
 
 type Props = {
@@ -35,7 +36,11 @@ export default async function BookingTypePage({ params, searchParams }: Props) {
         )}
       </div>
       <div className="p-6 sm:p-8">
-        <BookingFlow pk={pk} businessName={data.name} type={type} prefill={{ name: one(sp.name), email: one(sp.email) }} />
+        {type.provider === "calendly" && type.calendlyUrl ? (
+          <CalendlyEmbed url={type.calendlyUrl} title={type.name} prefill={{ name: one(sp.name), email: one(sp.email) }} />
+        ) : (
+          <BookingFlow pk={pk} businessName={data.name} type={type} prefill={{ name: one(sp.name), email: one(sp.email) }} />
+        )}
       </div>
     </div>
   );

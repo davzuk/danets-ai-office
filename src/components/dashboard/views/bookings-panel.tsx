@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { CalendarDays, ChevronLeft, ChevronRight, Clock, ExternalLink, List, Loader2, Mail, Phone, Settings2, UserRound } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Clock, ExternalLink, List, Loader2, Mail, Phone, Settings2, UserRound, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -31,6 +31,9 @@ export interface BookingRow {
   answers: Record<string, string> | null;
   cancelReason: string | null;
   cancelledBy: string | null;
+  /** "google" (event added by calendar sync) or "calendly" (booked there). */
+  externalProvider: string | null;
+  meetingUrl: string | null;
   bookingType: { id: string; name: string; durationMin: number; location: string; questions: { key: string; label: string }[] | null } | null;
   lead: { id: string; name: string; status: string } | null;
 }
@@ -42,7 +45,7 @@ const STATUS: Record<BookingRow["status"], { label: string; className: string }>
   no_show: { label: "No-show", className: "bg-orange-500/15 text-orange-700 dark:text-orange-400 border-transparent" },
 };
 
-const SOURCE_LABEL: Record<string, string> = { page: "Booking page", widget: "Chat widget", dashboard: "Dashboard" };
+const SOURCE_LABEL: Record<string, string> = { page: "Booking page", widget: "Chat widget", dashboard: "Dashboard", calendly: "Calendly" };
 
 const fmt = (iso: string, tz: string, o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(undefined, { timeZone: tz, ...o }).format(new Date(iso));
 const timeRange = (b: BookingRow, tz: string) => `${fmt(b.startsAt, tz, { hour: "numeric", minute: "2-digit" })}–${fmt(b.endsAt, tz, { hour: "numeric", minute: "2-digit" })}`;
@@ -72,8 +75,8 @@ function useBookings(query: string) {
   return { data, error, reload: load };
 }
 
-export function BookingsPanel({ onOpenLead }: { onOpenLead: (lead: { id: string; name: string }) => void }) {
-  const [tab, setTab] = useState("upcoming");
+export function BookingsPanel({ onOpenLead, initialTab }: { onOpenLead: (lead: { id: string; name: string }) => void; initialTab?: string }) {
+  const [tab, setTab] = useState(initialTab ?? "upcoming");
   const [selected, setSelected] = useState<{ booking: BookingRow; tz: string } | null>(null);
   const [version, setVersion] = useState(0);
   const changed = () => setVersion((v) => v + 1);
@@ -369,6 +372,14 @@ function BookingDialog({
                   <Phone className="h-4 w-4 text-muted-foreground" /> {b.phone}
                 </div>
               )}
+              {b.meetingUrl && /^https:\/\//.test(b.meetingUrl) && (
+                <div className="flex items-center gap-2">
+                  <Video className="h-4 w-4 text-muted-foreground" />
+                  <a className="text-primary hover:underline truncate" href={b.meetingUrl} target="_blank" rel="noreferrer">
+                    Join the video call
+                  </a>
+                </div>
+              )}
               {b.answers &&
                 Object.entries(b.answers).map(([k, v]) => (
                   <div key={k}>
@@ -409,7 +420,10 @@ function BookingDialog({
                     </Button>
                   </>
                 )}
-                {b.status === "confirmed" && !started && (
+                {b.status === "confirmed" && !started && b.externalProvider === "calendly" && (
+                  <p className="text-xs text-muted-foreground self-center">Booked in Calendly. Cancel or move it there and the change shows here.</p>
+                )}
+                {b.status === "confirmed" && !started && b.externalProvider !== "calendly" && (
                   cancelling ? (
                     <Button variant="destructive" size="sm" disabled={busy} onClick={() => act("cancel")}>
                       {busy && <Loader2 className="h-4 w-4 animate-spin" />}

@@ -2,7 +2,9 @@ import { cookies } from "next/headers";
 import { withSession } from "@/lib/api";
 import { AppError } from "@/lib/app-error";
 import { callbackUrl, getConnectionProvider } from "@/lib/connections/registry";
-import { createOAuthState, OAUTH_STATE_COOKIE, OAUTH_STATE_TTL_MS } from "@/lib/connections/state";
+import { createOAuthState, OAUTH_STATE_COOKIE, OAUTH_STATE_TTL_MS, type ConnectPurpose } from "@/lib/connections/state";
+import { GOOGLE_CALENDAR_SCOPES } from "@/lib/booking/google-calendar";
+import { isModuleEnabled } from "@/lib/module-access";
 
 type RouteCtx = { params: Promise<{ provider: string }> };
 
@@ -11,7 +13,7 @@ type RouteCtx = { params: Promise<{ provider: string }> };
  * Returns the provider's consent URL; the client navigates to it.
  * POST (not GET) so the session's CSRF check applies.
  */
-export function POST(_req: Request, { params }: RouteCtx) {
+export function POST(req: Request, { params }: RouteCtx) {
   return withSession(async (user) => {
     if (user.role !== "admin") throw new Error("FORBIDDEN");
 
@@ -25,11 +27,26 @@ export function POST(_req: Request, { params }: RouteCtx) {
       });
     }
 
+    // { purpose: "calendar" } adds the Calendar scopes (Google only), so
+    // tenants are asked for calendar access only when they turn sync on.
+    const body = (await req.json().catch(() => null)) as { purpose?: unknown } | null;
+    let purpose: ConnectPurpose | undefined;
+    if (body?.purpose !== undefined) {
+      if (body.purpose !== "calendar" || provider.id !== "google") {
+        throw new AppError("Unknown connect purpose.", { status: 400, code: "INVALID_INPUT" });
+      }
+      if (!(await isModuleEnabled(user.businessId, "booking_sync"))) {
+        throw new AppError("Calendar sync for bookings needs the Pro plan.", { status: 403, code: "MODULE_DISABLED" });
+      }
+      purpose = "calendar";
+    }
+
     const { state, codeChallenge, cookieValue } = createOAuthState({
       provider: provider.id,
       businessId: user.businessId,
       userId: user.userId,
       pkce: provider.usesPkce,
+      purpose,
     });
 
     const cookieStore = await cookies();
@@ -47,6 +64,7 @@ export function POST(_req: Request, { params }: RouteCtx) {
       redirectUri: callbackUrl(provider.id),
       codeChallenge,
       env: process.env,
+      extraScopes: purpose === "calendar" ? GOOGLE_CALENDAR_SCOPES : undefined,
     });
     return { url };
   });

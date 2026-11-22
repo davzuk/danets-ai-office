@@ -57,9 +57,9 @@ export const GET = withPublicCors(async (req: NextRequest) => {
   // active booking types; null hides it.
   const bookingTypes = (await isModuleEnabled(business.id, "leads", business.plan))
     ? await db.bookingType.findMany({
-        where: { businessId: business.id, active: true, provider: "native" },
+        where: { businessId: business.id, active: true },
         orderBy: { createdAt: "asc" },
-        select: { slug: true, name: true, durationMin: true, questions: true },
+        select: { slug: true, name: true, durationMin: true, questions: true, provider: true, calendlyUrl: true },
       })
     : [];
   // The widget asks only the required questions; optional ones stay on the booking page.
@@ -69,6 +69,8 @@ export const GET = withPublicCors(async (req: NextRequest) => {
           slug: t.slug,
           name: t.name,
           durationMin: t.durationMin,
+          // Calendly types: the widget links to Calendly instead of listing times.
+          ...(t.provider === "calendly" && t.calendlyUrl ? { calendlyUrl: t.calendlyUrl } : {}),
           questions: readQuestions(t.questions)
             .filter((q) => q.required)
             .map((q) => ({ key: q.key, label: q.label })),

@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { isModuleEnabled } from "@/lib/module-access";
 import { publicType } from "./public";
 
-/** The business and its active native booking types, or null when booking is off. */
+/** The business and its active booking types, or null when booking is off. */
 export const loadBookingBusiness = cache(async (pk: string) => {
   if (!pk || pk.length > 191) return null;
   const business = await db.business.findUnique({
@@ -15,7 +15,7 @@ export const loadBookingBusiness = cache(async (pk: string) => {
   if (!business || business.status !== "active") return null;
   if (!(await isModuleEnabled(business.id, "leads", business.plan))) return null;
   const types = await db.bookingType.findMany({
-    where: { businessId: business.id, active: true, provider: "native" },
+    where: { businessId: business.id, active: true },
     orderBy: { createdAt: "asc" },
   });
   return { name: business.name, types: types.map(publicType) };

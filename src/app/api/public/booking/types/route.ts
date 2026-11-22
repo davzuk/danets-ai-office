@@ -12,7 +12,7 @@ export const GET = withPublicCors(async (req: NextRequest) => {
   const business = await publicBookingBusiness(req, req.nextUrl.searchParams.get("pk"));
   if (business instanceof NextResponse) return business;
   const types = await db.bookingType.findMany({
-    where: { businessId: business.id, active: true, provider: "native" },
+    where: { businessId: business.id, active: true },
     orderBy: [{ createdAt: "asc" }],
   });
   return NextResponse.json(

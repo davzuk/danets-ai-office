@@ -1719,7 +1719,30 @@ export function LeadsView({ user }: { user: UserProp }) {
   const [scoring, setScoring] = React.useState(false);
 
   const [deleteTarget, setDeleteTarget] = React.useState<Lead | null>(null);
-  const [viewMode, setViewMode] = React.useState<"list" | "pipeline" | "forms" | "bookings">("list");
+  // Deep links open Bookings: booking emails (?tab=bookings) and the return
+  // from connecting Google Calendar (?purpose=calendar).
+  const [linked] = React.useState(() => {
+    if (typeof window === "undefined") return null;
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("purpose") === "calendar") return { tab: "types", status: q.get("status"), reason: q.get("reason") };
+    if (q.get("tab") === "bookings") return { tab: "upcoming", status: null, reason: null };
+    return null;
+  });
+  const [viewMode, setViewMode] = React.useState<"list" | "pipeline" | "forms" | "bookings">(linked ? "bookings" : "list");
+  React.useEffect(() => {
+    if (!linked) return;
+    if (linked.status === "connected") toast.success("Google Calendar connected. Choose a calendar for each booking type.");
+    else if (linked.status === "error") {
+      toast.error(
+        linked.reason === "calendar_scopes"
+          ? "Google didn't grant calendar access. Connect again and tick the calendar permissions."
+          : linked.reason === "denied"
+            ? "Google Calendar wasn't connected."
+            : "Couldn't connect Google Calendar. Please try again."
+      );
+    }
+    window.history.replaceState(null, "", window.location.pathname);
+  }, [linked]);
 
   // ─── Debounce search input ─────────────────────────────────────
   const debouncedSearch = useDebouncedValue(searchInput.trim(), 350);
@@ -2414,7 +2437,7 @@ export function LeadsView({ user }: { user: UserProp }) {
 
       {/* Pipeline board */}
       {viewMode === "bookings" ? (
-        <BookingsPanel onOpenLead={(l) => openDetail({ ...l } as unknown as Lead)} />
+        <BookingsPanel initialTab={linked?.tab} onOpenLead={(l) => openDetail({ ...l } as unknown as Lead)} />
       ) : viewMode === "forms" ? (
         <LeadFormsPanel onOpenIntegrations={() => window.location.assign("/app?view=integrations")} />
       ) : viewMode === "pipeline" ? (

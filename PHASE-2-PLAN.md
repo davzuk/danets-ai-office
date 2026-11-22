@@ -171,17 +171,21 @@ model Booking {
 
 ### As built (part 1: native booking)
 - Schema as above, plus `description`, `slotStepMin`, `bufferMin`, `notes`, `visitorTimezone`, `source` (page | widget), `consentText`, cancellation fields and a `sequence` for `.ics` updates. A `bookingTypeLimit` plan limit (3 / 10 / unlimited) and a `booking` touchpoint kind.
-- Slots: `computeSlots` in `src/lib/booking/slots.ts` (pure, DST-tested). Existing bookings block their own buffer as well as the new type's. Google free/busy waits for part 2.
+- Slots: `computeSlots` in `src/lib/booking/slots.ts` (pure, DST-tested). Existing bookings block their own buffer as well as the new type's. Google free/busy came in part 2.
 - Booking: `src/lib/booking/service.ts`. The transaction locks the business row (`SELECT … FOR UPDATE`) and re-checks the slot, so the second of two simultaneous bookings gets 409 `SLOT_TAKEN`. A booking doesn't trigger AI lead scoring.
 - Hosted pages live on the app domain for now (`/book/<publicKey>/<slug>`, `noindex`) and move under tenant sites in Q. Visitors manage a booking at `/book/manage/<token>`.
 - Widget: booking intent comes from the chat reply (`booking` in the `/api/public/chat` response) or a rule with the `booking` action. It shows 3 days × 6 times inline plus a link to the full page.
 - Dashboard: Leads → Bookings (upcoming, calendar, past, booking types, business time zone). Members can cancel, or mark completed or no-show once the start has passed.
 - Notifications `booking_created` / `booking_cancelled` and the automation triggers of the same names.
 
-### Part 2 (next)
-- Google Calendar: incremental Calendar scopes on the Google connection, free/busy in `computeSlots`, events with a Meet link, and a `booking.sync` job (plus push notifications) that cancels bookings whose events were deleted.
-- Calendly: link and embed with UTM and prefill; a personal-access-token connection and an `invitee.created` / `invitee.canceled` webhook.
-- A `send_booking_link` automation action, and WhatsApp reminders through the WhatsApp module's templates.
+### As built (part 2: calendar sync, Calendly, automation and WhatsApp)
+- Schema: `BookingType.calendarConnectionId`, `calendarId`, `calendarSyncedAt`, `calendlyEventTypeUri`; `Booking.externalProvider` (google | calendly), `externalData` and `meetingUrl`. Migration `20261205100000_booking_sync`.
+- Plan gating: a new internal module `booking_sync` (Pro). It covers Google Calendar on a booking type and recording Calendly bookings. A Calendly link on a booking type works on every plan.
+- Google Calendar: "Connect Google Calendar" asks for `calendarlist.readonly`, `calendar.freebusy` and `calendar.events` on top of the existing Google scopes (`include_granted_scopes`). Free/busy runs before the booking lock and fails open (a Google outage shows the weekly hours). Each booking adds an event (`sendUpdates=none`, since Danets sends the invites) with a Meet link for video bookings without a fixed link. Moves patch the event and cancellations delete it. The booking's own event doesn't block nearby times while rescheduling.
+- `booking.sync` runs every 15 minutes (`updatedMin` with `showDeleted`, at most 20 days back) and cancels upcoming bookings whose event was deleted in Google. Moving an event in Google doesn't move the booking. Push notifications (`events.watch`) were left out: they need a public HTTPS domain verified with Google, and the 15-minute poll covers the same case.
+- Calendly: a booking type can point at a Calendly link. The hosted page and the widget show Calendly's inline embed (or a "Choose a time" link) with prefill and UTM tags. Connecting a personal access token subscribes a user-scope webhook (`/api/webhooks/calendly/<integrationId>`, HMAC-signed with a per-connection key) for `invitee.created` and `invitee.canceled`. These create or cancel a Danets booking, lead, contact and touchpoint. Calendly sends its own emails and reminders, so Danets sends none for these bookings and can't cancel them; cancel in Calendly instead. Webhooks need a paid Calendly plan.
+- Automation action `send_booking_link`: emails the lead a prefilled link to a booking type (or the first active one), with an optional custom message. It is the only automation action that messages people outside the team. Leads without an email address are skipped.
+- WhatsApp reminders: a template of type `booking_reminder` (`{name} {service} {company} {time} {link}`) is sent with each reminder email. This needs the WhatsApp module, an active Meta or Twilio integration, and a phone number on the booking. Meta's free-form text only reaches people who messaged the business in the last 24 hours, so some reminders won't arrive. Approved Meta template messages are not supported yet.
 
 ### Done when
 - Two simultaneous bookings for one slot: exactly one succeeds.

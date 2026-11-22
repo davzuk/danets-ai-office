@@ -28,6 +28,7 @@ import {
   ShieldCheck,
   Clock,
   History,
+  CalendarPlus,
   type LucideIcon,
 } from "lucide-react";
 
@@ -95,7 +96,8 @@ type ActionType =
   | "add_lead_note"
   | "change_lead_status"
   | "create_ticket"
-  | "create_proposal_reminder";
+  | "create_proposal_reminder"
+  | "send_booking_link";
 
 interface Workflow {
   id: string;
@@ -236,6 +238,12 @@ const ACTION_CONFIG: Record<ActionType, NodeConfig> = {
     iconBg: "bg-orange-500/10",
     iconText: "text-orange-600 dark:text-orange-400",
   },
+  send_booking_link: {
+    icon: CalendarPlus,
+    label: "Email Booking Link",
+    iconBg: "bg-sky-500/10",
+    iconText: "text-sky-600 dark:text-sky-400",
+  },
 };
 
 const TRIGGER_OPTIONS = Object.keys(TRIGGER_CONFIG) as TriggerType[];
@@ -317,6 +325,10 @@ function actionConfigSummary(a: ActionType, cfg: Record<string, unknown> | null)
   if (a === "change_lead_status") {
     const s = cfg?.leadStatus;
     return typeof s === "string" ? formatTitleCase(s) : "";
+  }
+  if (a === "send_booking_link") {
+    const s = cfg?.bookingTypeSlug;
+    return typeof s === "string" && s ? `/${s}` : "";
   }
   if (a === "send_notification") {
     const s = cfg?.notificationType;
@@ -542,6 +554,8 @@ interface FormState {
   actionNoteContent: string;
   actionLeadStatus: string;
   actionNotificationType: string;
+  actionBookingTypeSlug: string;
+  actionBookingMessage: string;
   isActive: boolean;
 }
 
@@ -556,6 +570,8 @@ const EMPTY_FORM: FormState = {
   actionNoteContent: "",
   actionLeadStatus: "contacted",
   actionNotificationType: "",
+  actionBookingTypeSlug: "",
+  actionBookingMessage: "",
   isActive: true,
 };
 
@@ -572,6 +588,22 @@ function WorkflowDialog({
 }) {
   const [form, setForm] = React.useState<FormState>(EMPTY_FORM);
   const [submitting, setSubmitting] = React.useState(false);
+  const [bookingTypes, setBookingTypes] = React.useState<{ slug: string; name: string; active: boolean }[] | null>(null);
+
+  // Booking types for the "Email Booking Link" action, loaded when picked.
+  React.useEffect(() => {
+    if (!open || form.actionType !== "send_booking_link" || bookingTypes) return;
+    let cancelled = false;
+    fetch("/api/booking-types")
+      .then((r) => (r.ok ? r.json() : { types: [] }))
+      .then((d) => {
+        if (!cancelled) setBookingTypes(Array.isArray(d?.types) ? d.types : []);
+      })
+      .catch(() => !cancelled && setBookingTypes([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [open, form.actionType, bookingTypes]);
 
   // Sync form when dialog opens (new vs edit).
   React.useEffect(() => {
@@ -596,6 +628,10 @@ function WorkflowDialog({
           typeof ac?.leadStatus === "string" ? ac.leadStatus : "contacted",
         actionNotificationType:
           typeof ac?.notificationType === "string" ? ac.notificationType : "",
+        actionBookingTypeSlug:
+          typeof ac?.bookingTypeSlug === "string" ? ac.bookingTypeSlug : "",
+        actionBookingMessage:
+          typeof ac?.message === "string" ? ac.message : "",
         isActive: editing.isActive,
       });
     } else {
@@ -633,6 +669,12 @@ function WorkflowDialog({
         return form.actionNotificationType.trim()
           ? { notificationType: form.actionNotificationType.trim() }
           : undefined;
+      case "send_booking_link": {
+        const cfg: Record<string, string> = {};
+        if (form.actionBookingTypeSlug) cfg.bookingTypeSlug = form.actionBookingTypeSlug;
+        if (form.actionBookingMessage.trim()) cfg.message = form.actionBookingMessage.trim();
+        return Object.keys(cfg).length ? cfg : undefined;
+      }
       default:
         return undefined;
     }
@@ -972,6 +1014,52 @@ function WorkflowDialog({
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+            {form.actionType === "send_booking_link" && (
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label>Booking type</Label>
+                  <Select
+                    value={form.actionBookingTypeSlug || "__default"}
+                    onValueChange={(v) =>
+                      setForm((f) => ({ ...f, actionBookingTypeSlug: v === "__default" ? "" : v }))
+                    }
+                  >
+                    <SelectTrigger aria-label="Booking type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__default">First active booking type</SelectItem>
+                      {(bookingTypes ?? [])
+                        .filter((t) => t.active || t.slug === form.actionBookingTypeSlug)
+                        .map((t) => (
+                          <SelectItem key={t.slug} value={t.slug}>
+                            {t.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  {bookingTypes && bookingTypes.length === 0 && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      You have no booking types yet. Add one under Leads, then Bookings.
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="wf-booking-msg">Message</Label>
+                  <Textarea
+                    id="wf-booking-msg"
+                    rows={3}
+                    maxLength={1000}
+                    placeholder="Hi, thanks for getting in touch. Pick a time that suits you and we'll take it from there."
+                    value={form.actionBookingMessage}
+                    onChange={(e) => setForm((f) => ({ ...f, actionBookingMessage: e.target.value }))}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Emails the lead a link to your booking page, with their name and email filled in. Leads without an email address are skipped.
+                  </p>
+                </div>
               </div>
             )}
             {form.actionType === "send_notification" && (

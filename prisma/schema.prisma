@@ -753,7 +753,7 @@ model WhatsAppTemplate {
   id         String   @id @default(cuid())
   businessId String
   name       String
-  type       String // new_lead_followup | missed_chat | quotation_followup | payment_reminder | appointment_confirmation | ticket_update | custom
+  type       String // new_lead_followup | missed_chat | quotation_followup | payment_reminder | appointment_confirmation | booking_reminder | ticket_update | custom
   content    String // template text with {name}, {service}, {company} placeholders
   isActive   Boolean  @default(true)
   createdAt  DateTime @default(now())
@@ -771,7 +771,7 @@ model WhatsAppIntegration {
   provider      String    @default("manual") // manual | meta_cloud_api | twilio | termii | other
   phoneNumber   String?
   phoneNumberId String? // Meta Cloud API phone number ID
-  apiKey        String? // stored server-side only, never exposed to frontend
+  apiKey        String?   @db.Text // encrypted envelope, server-side only, never exposed to frontend
   webhookUrl    String?
   status        String    @default("inactive") // active | inactive | testing
   lastTestedAt  DateTime?
@@ -864,7 +864,7 @@ model Integration {
   provider     String // e.g. openai, zai, meta, twilio, sendgrid, paystack, flutterwave, manual
   name         String // display name
   status       String    @default("inactive") // active | inactive | testing | error
-  config       String? // JSON: provider-specific config (apiKey masked in frontend)
+  config       String?   @db.Text // JSON: provider-specific config (encrypted keys; apiKey masked in frontend)
   lastTestedAt DateTime?
   notes        String?
   createdAt    DateTime  @default(now())
@@ -1748,9 +1748,15 @@ model BookingType {
   locationDetail String?  @db.Text // address, video link or instructions
   // [{ key, label, required }] extra questions asked when booking
   questions      Json?
-  provider       String   @default("native") // native | google | calendly (sync arrives in P part 2)
-  calendarId     String?
+  // native: Danets only | google: Danets plus a Google calendar (busy times
+  // and events) | calendly: the page embeds Calendly, bookings arrive by webhook
+  provider       String   @default("native")
+  calendarConnectionId String? // OAuthConnection (google) used for the calendar
+  calendarId     String?  @db.VarChar(255)
+  // Cursor for the booking.sync job (events updated since then are checked)
+  calendarSyncedAt DateTime?
   calendlyUrl    String?  @db.Text
+  calendlyEventTypeUri String? @db.VarChar(255) // matched from the Calendly connection
   assignedUserId String? // BusinessUser who takes the meeting (gets the emails)
   active         Boolean  @default(true)
   createdAt      DateTime @default(now())
@@ -1761,6 +1767,7 @@ model BookingType {
 
   @@unique([businessId, slug])
   @@index([businessId, active])
+  @@index([provider, active])
 }
 
 model Booking {
@@ -1788,6 +1795,10 @@ model Booking {
   cancelReason    String?   @db.Text
   sequence        Int       @default(0) // calendar invite revision (bumped on reschedule / cancel)
   externalId      String?   @db.VarChar(191) // Google event id / Calendly invitee uri
+  externalProvider String?  @db.VarChar(20) // google | calendly
+  // google: { connectionId, calendarId }; calendly: { cancelUrl, rescheduleUrl, eventUri }
+  externalData    Json?
+  meetingUrl      String?   @db.Text // Google Meet / Calendly join link
   cancelToken     String    @unique @db.VarChar(64) // the visitor's manage link
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt

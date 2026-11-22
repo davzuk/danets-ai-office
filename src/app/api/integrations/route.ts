@@ -18,7 +18,8 @@ const CATEGORIES = ["ai_provider", "whatsapp", "email", "sms", "payment", "crm",
 export function GET(_req: NextRequest) {
   return withSession(async (user) => {
     const integrations = await db.integration.findMany({
-      where: { businessId: user.businessId },
+      // Booking connections (Calendly) are managed in Leads -> Bookings.
+      where: { businessId: user.businessId, category: { not: "booking" } },
       orderBy: { category: "asc" },
     });
 
