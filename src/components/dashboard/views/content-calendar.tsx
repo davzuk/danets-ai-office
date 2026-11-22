@@ -606,13 +606,13 @@ export function ContentCalendar({ viewer, onOpenPost }: { viewer: Viewer; onOpen
     }
     const first = `${anchor.slice(0, 7)}-01`;
     const start = mondayOf(first);
+    const month = first.slice(0, 7);
     const out: string[] = [];
-    for (let i = 0; i < 42; i++) {
-      const k = addDays(start, i);
-      if (i >= 35 && k.slice(0, 7) !== first.slice(0, 7)) break;
-      out.push(k);
+    // Whole weeks: the one holding the 1st, then every week that starts inside the month.
+    for (let week = start; week === start || week.slice(0, 7) === month; week = addDays(week, 7)) {
+      for (let i = 0; i < 7; i++) out.push(addDays(week, i));
     }
-    return { days: out, monthKey: first.slice(0, 7) };
+    return { days: out, monthKey: month };
   }, [anchor, mode]);
 
   const range = useMemo(() => ({ from: keyToUtc(days[0], tz), to: keyToUtc(addDays(days[days.length - 1], 1), tz) }), [days, tz]);
