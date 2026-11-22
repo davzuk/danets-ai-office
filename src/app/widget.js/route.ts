@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { appOrigin } from "@/lib/public-cors";
+import { RULE_MATCHER_JS } from "@/lib/widget-rules";
 
 // Serves an embeddable, self-contained JavaScript widget.
 // Usage: <script src="/widget.js?pk=BUSINESS_PUBLIC_KEY" async></script>
@@ -66,7 +67,7 @@ export async function GET(req: NextRequest) {
   window.Danets = window.Danets || {};
   window.Danets.consent = function(granted){
     consented = granted !== false;
-    if (consented) { initAttribution(); }
+    if (consented) { initAttribution(); startRules(); }
     else { attribution = null; try { localStorage.removeItem('danets_ft'); localStorage.removeItem('danets_lt'); } catch(_) {} }
   };
   initAttribution();
@@ -79,6 +80,8 @@ export async function GET(req: NextRequest) {
 
   const el = (tag, cls) => { const e = document.createElement(tag); if (cls) e.className = cls; return e; };
   const esc = (s) => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  // Proactive message matcher (shared with the server tests; src/lib/widget-rules.ts).
+  ${RULE_MATCHER_JS}
 
   // Inject styles
   const style = document.createElement('style');
@@ -124,7 +127,16 @@ export async function GET(req: NextRequest) {
   .dn-quick button:hover{background:#1d4ed8;color:#fff;border-color:#1d4ed8;transform:translateY(-1px);}
   .dn-powered{text-align:center;padding:6px 0 2px;font-size:10px;color:#9aa0a6;}
   .dn-powered a{color:#1d4ed8;text-decoration:none;font-weight:600;}
+  .dn-teaser{position:fixed;bottom:92px;right:20px;z-index:99998;max-width:280px;background:#fff;color:#222;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:12px 34px 12px 14px;font-size:14px;line-height:1.45;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;animation:dnPop .2s ease;}
+  .dn-teaser-x{position:absolute;top:6px;right:6px;width:22px;height:22px;border:none;background:none;color:#6b7280;cursor:pointer;border-radius:6px;font-size:16px;line-height:1;}
+  .dn-teaser-x:hover{background:#f3f4f6;color:#111;}
+  .dn-form label.dn-consent{display:flex;gap:8px;align-items:flex-start;font-size:12px;color:#444;line-height:1.4;}
+  .dn-form label.dn-consent input{margin-top:2px;}
+  .dn-form p.dn-intro{margin:0;font-size:13px;color:#555;}
+  .dn-form p.dn-err{margin:0;font-size:12px;color:#b91c1c;}
+  .dn-input textarea:disabled{background:#f3f4f6;}
   @media (max-width:520px){
+    .dn-teaser{bottom:84px;right:16px;max-width:calc(100vw - 32px);}
     .dn-win{width:100vw;height:100vh;max-height:100vh;border-radius:0;bottom:0;right:0;}
     .dn-btn{bottom:16px;right:16px;}
   }
@@ -165,7 +177,17 @@ export async function GET(req: NextRequest) {
 
   btn.onclick = () => toggle(true);
   closeBtn.onclick = () => toggle(false);
-  function toggle(o){ open = o; win.classList.toggle('open', o); btn.style.display = o ? 'none' : 'flex'; if(o && messages.length===0 && cfg){ addBot(cfg.agent.welcomeMessage); showQuickReplies(); } if(o) ta.focus(); }
+  function toggle(o){
+    open = o; win.classList.toggle('open', o); btn.style.display = o ? 'none' : 'flex';
+    if(o){ hideTeaser(); const b = btn.querySelector('.dn-badge'); b.style.display='none'; }
+    if(o && messages.length===0 && cfg){
+      // A proactive message the visitor saw replaces the welcome message.
+      addBot(shownRule ? shownRule.message : cfg.agent.welcomeMessage);
+      const replies = shownRule ? shownRule.quickReplies : agentQuickReplies();
+      if(needsPreChat()) showPreChat(replies); else showQuickReplies(replies);
+    }
+    if(o && !preChatOpen) ta.focus();
+  }
 
   ta.addEventListener('input', () => {
     ta.style.height = 'auto';
@@ -176,10 +198,11 @@ export async function GET(req: NextRequest) {
 
   function addBot(text){ addMsg(text, 'bot'); }
   function addUser(text){ addMsg(text, 'user'); }
-  function showQuickReplies(){
-    if(!cfg || !cfg.agent.quickReplies) return;
-    let replies = [];
-    try { replies = JSON.parse(cfg.agent.quickReplies || '[]'); } catch(_) { return; }
+  function agentQuickReplies(){
+    if(!cfg || !cfg.agent.quickReplies) return [];
+    try { const r = JSON.parse(cfg.agent.quickReplies || '[]'); return Array.isArray(r) ? r : []; } catch(_) { return []; }
+  }
+  function showQuickReplies(replies){
     if(!Array.isArray(replies) || replies.length === 0) return;
     const existing = document.getElementById('dn-quick');
     if(existing) existing.remove();
@@ -215,6 +238,140 @@ export async function GET(req: NextRequest) {
     body.scrollTop = body.scrollHeight;
   }
 
+  // ── Storage helpers (functional only: frequency caps and "already asked") ──
+  // Nothing is stored while the site still waits for the visitor's consent.
+  const store = {
+    get: (s, k) => { if (!consented) return null; try { return s.getItem(k); } catch(_) { return null; } },
+    set: (s, k, v) => { if (!consented) return; try { s.setItem(k, v); } catch(_) {} },
+  };
+  const LS = (() => { try { return window.localStorage; } catch(_) { return null; } })();
+  const SS = (() => { try { return window.sessionStorage; } catch(_) { return null; } })();
+
+  // ── Pre-chat form ──────────────────────────────────────────────
+  let preChatOpen = false;
+  const PRECHAT_KEY = 'dn_pc_' + PK;
+  function needsPreChat(){ return !!(cfg && cfg.preChatForm && !session.id && !(LS && store.get(LS, PRECHAT_KEY))); }
+  function setInputEnabled(on){ ta.disabled = !on; sendBtn.disabled = !on; ta.placeholder = on ? 'Type a message...' : 'Fill in the form above to start'; }
+  function showPreChat(replies){
+    const pc = cfg.preChatForm;
+    preChatOpen = true;
+    setInputEnabled(false);
+    const f = el('div','dn-form dn-prechat');
+    const fieldHtml = (name, type, label, mode) => mode === 'off' ? '' : '<input name="'+name+'" type="'+type+'" autocomplete="'+(name==='company'?'organization':name==='phone'?'tel':name)+'" aria-label="'+esc(label)+'" placeholder="'+esc(label + (mode==='required' ? ' *' : ''))+'" />';
+    f.innerHTML = '<h4>'+esc(pc.intro || 'Before we start')+'</h4>'
+      + '<input name="name" autocomplete="name" aria-label="Your name" placeholder="Your name *" />'
+      + fieldHtml('email','email','Email', pc.fields.email)
+      + fieldHtml('phone','tel','Phone', pc.fields.phone)
+      + fieldHtml('company','text','Company', pc.fields.company)
+      + (pc.consentText ? '<label class="dn-consent"><input type="checkbox" name="consent" /><span>'+esc(pc.consentText)+'</span></label>' : '')
+      + '<p class="dn-err" role="alert" style="display:none"></p><button type="button">Start chat</button>';
+    body.appendChild(f); body.scrollTop = body.scrollHeight;
+    const val = (n) => { const i = f.querySelector('[name='+n+']'); return i ? i.value.trim() : ''; };
+    const err = f.querySelector('.dn-err');
+    const fail = (msg, field) => { err.textContent = msg; err.style.display='block'; const i = field && f.querySelector('[name='+field+']'); if(i) i.focus(); };
+    const submit = f.querySelector('button');
+    setTimeout(() => { const n = f.querySelector('[name=name]'); if(n) n.focus(); }, 50);
+    submit.onclick = async () => {
+      const d = { name: val('name'), email: val('email'), phone: val('phone'), company: val('company') };
+      if (d.name.length < 2) return fail('Please enter your name.', 'name');
+      for (const k of ['email','phone','company']) { if (pc.fields[k] === 'required' && !d[k]) return fail('Please enter your ' + (k==='phone'?'phone number':k) + '.', k); }
+      if (d.email && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(d.email)) return fail('Please enter a valid email address.', 'email');
+      const consentBox = f.querySelector('[name=consent]');
+      if (consentBox && !consentBox.checked) return fail('Please tick the box to continue.', 'consent');
+      submit.disabled = true; err.style.display='none';
+      try {
+        const r = await fetch(API + '/api/public/session', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ pk: PK, visitorId: VISITOR_ID, attribution, page: pageContext(), ruleId: shownRule ? shownRule.id : null, name: d.name, email: d.email, phone: d.phone, company: d.company }) });
+        const res = await r.json();
+        if (!r.ok) { submit.disabled = false; return fail(res.error || 'Something went wrong. Please try again.', res.field); }
+        session.id = res.sessionId;
+        if (d.email || d.phone) {
+          // The lead exists before the AI replies, so a visitor who leaves still reached the team.
+          fetch(API + '/api/public/lead', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ pk: PK, sessionId: session.id, visitorId: VISITOR_ID, attribution, name: d.name, email: d.email, phone: d.phone, company: d.company, consentText: consentBox ? pc.consentText : undefined }) })
+            .then((lr) => { if (lr.ok) session.leadCaptured = true; }).catch(() => {});
+        }
+        if (LS) store.set(LS, PRECHAT_KEY, '1');
+        f.remove(); preChatOpen = false; setInputEnabled(true); ta.focus();
+        showQuickReplies(replies);
+      } catch(_) { submit.disabled = false; fail('Sorry, we could not connect. Please try again.'); }
+    };
+  }
+
+  // ── Proactive messages ─────────────────────────────────────────
+  let shownRule = null;
+  let teaser = null;
+  let rulesStarted = false;
+  const isMobile = () => { try { return window.innerWidth <= 768 || (window.matchMedia('(pointer: coarse)').matches && window.innerWidth < 1024); } catch(_) { return window.innerWidth <= 768; } };
+  const capKey = (r) => 'dn_r_' + r.id;
+  function ruleCapped(r){
+    if (r.frequency === 'session') return !!(SS && store.get(SS, capKey(r)));
+    const at = Number(LS && store.get(LS, capKey(r)));
+    if (!at) return false;
+    return r.frequency === 'once' ? true : Date.now() - at < 24 * 60 * 60 * 1000;
+  }
+  function markShown(r){
+    if (r.frequency === 'session') { if (SS) store.set(SS, capKey(r), '1'); }
+    else if (LS) store.set(LS, capKey(r), String(Date.now()));
+  }
+  function hideTeaser(){ if (teaser) { teaser.remove(); teaser = null; } }
+  function showRule(r){
+    // Never interrupt a visitor who is already chatting.
+    if (open || messages.length > 0 || shownRule) return;
+    shownRule = r;
+    markShown(r);
+    fetch(API + '/api/public/widget/event', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ pk: PK, ruleId: r.id, visitorId: VISITOR_ID, event: 'show' }), keepalive: true }).catch(() => {});
+    if (r.action === 'open' && !isMobile()) { toggle(true); return; }
+    teaser = el('div','dn-teaser'); teaser.setAttribute('role','button'); teaser.tabIndex = 0;
+    teaser.innerHTML = '<span></span><button type="button" class="dn-teaser-x" aria-label="Dismiss">&times;</button>';
+    teaser.querySelector('span').textContent = r.message;
+    teaser.onclick = (e) => { if (e.target.closest('.dn-teaser-x')) { e.stopPropagation(); hideTeaser(); return; } toggle(true); };
+    teaser.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(true); } };
+    document.body.appendChild(teaser);
+    const b = btn.querySelector('.dn-badge'); b.textContent = '1'; b.style.display = 'block';
+  }
+  function armTrigger(r){
+    const c = r.conditions || {};
+    const fire = () => showRule(r);
+    if (c.trigger === 'load') { setTimeout(fire, 1500); return; }
+    if (c.trigger === 'time') { setTimeout(fire, Math.max(0, Number(c.seconds) || 0) * 1000); return; }
+    if (c.trigger === 'scroll') {
+      const pct = Number(c.scrollPercent) || 50;
+      const check = () => {
+        const h = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight) - window.innerHeight;
+        const seen = h <= 0 ? 100 : (window.scrollY / h) * 100;
+        if (seen >= pct) { window.removeEventListener('scroll', check); fire(); }
+      };
+      window.addEventListener('scroll', check, { passive: true });
+      setTimeout(check, 1000);
+      return;
+    }
+    if (c.trigger === 'exit') {
+      const startedAt = Date.now();
+      if (!isMobile()) {
+        // Desktop: the pointer leaves through the top of the window (towards the tabs or the back button).
+        const onOut = (e) => { if (!e.relatedTarget && e.clientY <= 0 && Date.now() - startedAt > 3000) { document.removeEventListener('mouseout', onOut); fire(); } };
+        document.addEventListener('mouseout', onOut);
+      } else {
+        // Phones: a fast scroll back up after 15 seconds on the page.
+        let lastY = window.scrollY, lastT = Date.now();
+        const onScroll = () => {
+          const y = window.scrollY, t = Date.now();
+          if (t - startedAt > 15000 && lastY - y > window.innerHeight * 0.3 && t - lastT < 400) { window.removeEventListener('scroll', onScroll); fire(); return; }
+          if (t - lastT > 400) { lastY = y; lastT = t; }
+        };
+        window.addEventListener('scroll', onScroll, { passive: true });
+      }
+    }
+  }
+  function startRules(){
+    if (rulesStarted || !consented || !cfg || !Array.isArray(cfg.rules) || cfg.rules.length === 0) return;
+    rulesStarted = true;
+    const seenKey = 'dn_seen_' + PK;
+    const firstSeen = Number(LS && store.get(LS, seenKey));
+    if (!firstSeen && LS) store.set(LS, seenKey, String(Date.now()));
+    const rule = __dnPickRule(cfg.rules, { path: location.pathname, returning: !!firstSeen && Date.now() - firstSeen > 30 * 60 * 1000, device: isMobile() ? 'mobile' : 'desktop', capped: ruleCapped });
+    if (rule) armTrigger(rule);
+  }
+
   function showLeadForm(){
     if(session.leadCaptured) return;
     const f = el('div','dn-form');
@@ -237,14 +394,14 @@ export async function GET(req: NextRequest) {
 
   async function send(){
     const text = ta.value.trim();
-    if(!text || typing) return;
+    if(!text || typing || preChatOpen) return;
     ta.value=''; ta.style.height='auto';
     addUser(text);
     sendBtn.disabled = true;
     showTyping();
     typing = true;
     try{
-      const r = await fetch(API + '/api/public/chat', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ pk: PK, sessionId: session.id, visitorId: VISITOR_ID, attribution: session.id ? undefined : attribution, page: pageContext(), message: text }) });
+      const r = await fetch(API + '/api/public/chat', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ pk: PK, sessionId: session.id, visitorId: VISITOR_ID, attribution: session.id ? undefined : attribution, page: pageContext(), ruleId: session.id ? undefined : (shownRule ? shownRule.id : undefined), message: text }) });
       const d = await r.json();
       if(!r.ok) throw new Error(d.error||'Failed');
       hideTyping();
@@ -273,6 +430,7 @@ export async function GET(req: NextRequest) {
       sendBtn.style.background = color;
       headName.textContent = a.botName || 'Assistant';
       avatar.textContent = (a.botName||'A').charAt(0).toUpperCase();
+      startRules();
     }catch(e){ console.warn('Danets widget init failed', e); }
   }
 

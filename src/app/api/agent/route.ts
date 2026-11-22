@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
 import { logActivity } from "@/lib/activity";
 import { requireQuota } from "@/lib/plan-quota";
+import { preChatFormSchema } from "@/lib/widget-rules";
 
 // GET — return the business's AI agent; create a default if none exists.
 export function GET() {
@@ -56,6 +57,8 @@ const updateSchema = z.object({
   quickReplies: z.array(z.string().min(1).max(120)).max(8).optional(),
   status: z.enum(["active", "inactive"]),
   leadCaptureEnabled: z.boolean(),
+  // Optional so older clients that don't send it leave it untouched.
+  preChatForm: preChatFormSchema.optional(),
 });
 
 // PUT — update the agent for the current business.
@@ -89,6 +92,7 @@ export function PUT(req: NextRequest) {
       quickReplies: JSON.stringify((data.quickReplies || []).filter((q) => q.trim()).slice(0, 8)),
       status: data.status,
       leadCaptureEnabled: data.leadCaptureEnabled,
+      ...(data.preChatForm ? { preChatForm: data.preChatForm } : {}),
     };
 
     const existing = await db.aiAgent.findFirst({

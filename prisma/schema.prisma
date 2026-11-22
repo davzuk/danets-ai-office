@@ -71,6 +71,7 @@ model Business {
   whiteLabel           WhiteLabelConfig?
   featureFlagOverrides BusinessFeatureFlag[]
   limitOverride        BusinessLimitOverride?
+  widgetRules          WidgetRule[]
 
   @@index([purgeScheduledAt])
 }
@@ -153,6 +154,9 @@ model AiAgent {
   quickReplies       String   @default("[]") // JSON array of suggested question strings
   status             String   @default("active") // active | inactive
   leadCaptureEnabled Boolean  @default(true)
+  // Pre-chat form (Phase 2 O): { enabled, fields: { email, phone, company: "off"|"optional"|"required" },
+  // intro?, consentText? }. Name is always asked. Null = off.
+  preChatForm        Json?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -217,6 +221,9 @@ model ChatSession {
   threadMeta       Json? // comment threads: { postId, mediaId, permalink, postText }
   lastInboundAt    DateTime? // drives Meta's 24-hour messaging window
   autoReplyPaused  Boolean   @default(false) // a human took over
+  // Widget chats started from a proactive message (Phase 2 O). No FK, so
+  // deleting a rule never touches conversations.
+  widgetRuleId     String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -1683,4 +1690,32 @@ model ContentInsight {
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId, createdAt])
+}
+
+// ─── Proactive widget messages (Phase 2, workstream O) ───────────────
+// A message the widget shows by itself when a visitor matches the rule's
+// pages, visitor type and device and its trigger fires.
+model WidgetRule {
+  id           String   @id @default(cuid())
+  businessId   String
+  name         String
+  enabled      Boolean  @default(true)
+  priority     Int      @default(0) // higher wins when several rules match
+  // { pages: [{ match: "contains"|"equals"|"prefix", value }] ([] = every page),
+  //   trigger: "load"|"time"|"scroll"|"exit", seconds?, scrollPercent?,
+  //   visitor: "any"|"new"|"returning", devices: ("desktop"|"mobile")[] }
+  conditions   Json
+  message      String   @db.Text
+  quickReplies Json? // string[] shown under the message
+  action       String   @default("bubble") // bubble (teaser next to the button) | open (opens the chat; phones get the bubble)
+  frequency    String   @default("session") // session | day | once
+  shows        Int      @default(0)
+  chats        Int      @default(0) // chats started after seeing it
+  leads        Int      @default(0) // leads from those chats
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, enabled])
 }

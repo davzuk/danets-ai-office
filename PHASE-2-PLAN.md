@@ -87,6 +87,13 @@ preChatForm  Json?   // { enabled, fields: [{ key: "name"|"email"|"phone"|"compa
 - **UI:** a new *Proactive messages* tab in AI Agent, with a list of rules, an editor with a live widget preview, and per-rule show → open → lead rates.
 - **Gating:** proactive rules need Starter+ (`embed` module, flag-free). The pre-chat form is available on all plans.
 
+### As built
+- `WidgetRule` counts `shows`, `chats` and `leads`. Only "show" uses the beacon. A chat counts when a session starts with the rule's id (`ChatSession.widgetRuleId`). A lead counts when that session produces one.
+- Actions: `bubble` (the default) or `open`. On phones, `open` falls back to the bubble. The `form` and `booking` actions wait for P and S.
+- Pages use `{ match, value }`. The matcher is plain JS, shared by `widget.js` and the tests (`RULE_MATCHER_JS`). Mobile exit intent uses the fast upward scroll only, with no tab blur.
+- The pre-chat form has fixed fields (name, which is always asked, plus email / phone / company, each off, optional or required). There are no custom fields until S. A browser that has completed the form is remembered, so it isn't asked again.
+- Gating uses its own `proactive_messages` module (Starter+, flag-free), so Free plans keep the embed.
+
 ### Done when
 - A "30 seconds on /pricing" rule opens on that page only, once per session, and its counters go up.
 - Exit intent fires on desktop and doesn't fire on a page that doesn't match.

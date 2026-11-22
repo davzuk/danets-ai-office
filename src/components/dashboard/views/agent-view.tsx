@@ -21,6 +21,8 @@ import {
   Plus,
   X,
   MessageCircle,
+  ClipboardList,
+  Megaphone,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -50,6 +52,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import { ProactiveMessagesPanel } from "@/components/dashboard/views/proactive-messages-panel";
 
 interface AgentUser {
   userId: string;
@@ -76,6 +79,7 @@ interface AiAgent {
   status: "active" | "inactive";
   leadCaptureEnabled: boolean;
   quickReplies: string; // JSON-encoded string[] from DB
+  preChatForm: unknown; // JSON, see preChatFormSchema in lib/widget-rules
 }
 
 type AgentForm = {
@@ -93,7 +97,40 @@ type AgentForm = {
   status: "active" | "inactive";
   leadCaptureEnabled: boolean;
   quickReplies: string[];
+  preChat: PreChatState;
 };
+
+type FieldMode = "off" | "optional" | "required";
+type PreChatState = {
+  enabled: boolean;
+  intro: string;
+  fields: { email: FieldMode; phone: FieldMode; company: FieldMode };
+  consentText: string;
+};
+
+const DEFAULT_PRECHAT: PreChatState = {
+  enabled: false,
+  intro: "",
+  fields: { email: "required", phone: "optional", company: "off" },
+  consentText: "",
+};
+
+// Stored JSON to the editor's state; anything missing falls back to defaults.
+function readPreChat(raw: unknown): PreChatState {
+  if (!raw || typeof raw !== "object") return DEFAULT_PRECHAT;
+  const r = raw as Record<string, any>;
+  const mode = (v: unknown, d: FieldMode): FieldMode => (v === "off" || v === "optional" || v === "required" ? v : d);
+  return {
+    enabled: r.enabled === true,
+    intro: typeof r.intro === "string" ? r.intro : "",
+    fields: {
+      email: mode(r.fields?.email, "required"),
+      phone: mode(r.fields?.phone, "optional"),
+      company: mode(r.fields?.company, "off"),
+    },
+    consentText: typeof r.consentText === "string" ? r.consentText : "",
+  };
+}
 
 const DEFAULT_AGENT: AgentForm = {
   botName: "Assistant",
@@ -112,6 +149,7 @@ const DEFAULT_AGENT: AgentForm = {
   status: "active",
   leadCaptureEnabled: true,
   quickReplies: [],
+  preChat: DEFAULT_PRECHAT,
 };
 
 // Parse the JSON-encoded quickReplies string from the DB into a clean string[].
@@ -199,6 +237,7 @@ export function AgentView({ user }: { user: AgentUser }) {
         whatsappNumber: a.whatsappNumber ?? "",
         email: a.email ?? "",
         quickReplies: parseQuickReplies(a.quickReplies),
+        preChat: readPreChat(a.preChatForm),
       };
       setForm(normalized);
       setOriginal(normalized);
@@ -231,6 +270,7 @@ export function AgentView({ user }: { user: AgentUser }) {
       "leadCaptureEnabled",
       "quickReplies",
     ];
+    if (JSON.stringify(form.preChat) !== JSON.stringify(original.preChat)) return true;
     return keys.some((k) => {
       const fv = form[k];
       const ov = original[k];
@@ -265,6 +305,8 @@ export function AgentView({ user }: { user: AgentUser }) {
     if (form.quickReplies.length > 8) e.quickReplies = "Maximum 8 quick replies.";
     if (form.quickReplies.some((q) => q.length > 120))
       e.quickReplies = "Each quick reply must be 120 characters or fewer.";
+    if (form.preChat.enabled && form.preChat.fields.email === "off" && form.preChat.fields.phone === "off")
+      e.preChat = "Ask for at least an email or a phone number.";
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -308,6 +350,12 @@ export function AgentView({ user }: { user: AgentUser }) {
         status: form.status,
         leadCaptureEnabled: form.leadCaptureEnabled,
         quickReplies: form.quickReplies.map((q) => q.trim()).filter(Boolean),
+        preChatForm: {
+          enabled: form.preChat.enabled,
+          intro: form.preChat.intro.trim() || undefined,
+          fields: form.preChat.fields,
+          consentText: form.preChat.consentText.trim() || undefined,
+        },
       };
       const res = await fetch("/api/agent", {
         method: "PUT",
@@ -326,6 +374,7 @@ export function AgentView({ user }: { user: AgentUser }) {
         whatsappNumber: a.whatsappNumber ?? "",
         email: a.email ?? "",
         quickReplies: parseQuickReplies(a.quickReplies),
+        preChat: readPreChat(a.preChatForm),
       };
       setForm(normalized);
       setOriginal(normalized);
@@ -538,6 +587,14 @@ export function AgentView({ user }: { user: AgentUser }) {
               <TabsTrigger value="contact">
                 <Phone className="h-4 w-4" />
                 Contact &amp; Status
+              </TabsTrigger>
+              <TabsTrigger value="prechat">
+                <ClipboardList className="h-4 w-4" />
+                Pre-chat form
+              </TabsTrigger>
+              <TabsTrigger value="proactive">
+                <Megaphone className="h-4 w-4" />
+                Proactive messages
               </TabsTrigger>
             </TabsList>
 
@@ -974,6 +1031,89 @@ export function AgentView({ user }: { user: AgentUser }) {
                   </div>
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            {/* Pre-chat form tab */}
+            <TabsContent value="prechat" className="mt-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Pre-chat form</CardTitle>
+                  <CardDescription>
+                    Ask website visitors for their details before the chat starts. They become a lead straight away, even if they leave without writing.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
+                    <div className="space-y-0.5">
+                      <div className="text-sm font-medium">Show the form on the website widget</div>
+                      <p className="text-xs text-muted-foreground">
+                        Visitors fill it in once per browser. The name is always asked.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={form.preChat.enabled}
+                      onCheckedChange={(v) => setField("preChat", { ...form.preChat, enabled: v })}
+                      aria-label="Show the pre-chat form"
+                    />
+                  </div>
+
+                  <Field label="Heading" hint="Shown above the fields. Leave empty for 'Before we start'.">
+                    <Input
+                      value={form.preChat.intro}
+                      maxLength={200}
+                      placeholder="Before we start"
+                      onChange={(e) => setField("preChat", { ...form.preChat, intro: e.target.value })}
+                    />
+                  </Field>
+
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {(["email", "phone", "company"] as const).map((key) => (
+                      <Field key={key} label={key === "email" ? "Email" : key === "phone" ? "Phone" : "Company"}>
+                        <Select
+                          value={form.preChat.fields[key]}
+                          onValueChange={(v) =>
+                            setField("preChat", {
+                              ...form.preChat,
+                              fields: { ...form.preChat.fields, [key]: v as FieldMode },
+                            })
+                          }
+                        >
+                          <SelectTrigger aria-label={`${key} field`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="required">Required</SelectItem>
+                            <SelectItem value="optional">Optional</SelectItem>
+                            <SelectItem value="off">Don&apos;t ask</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                    ))}
+                  </div>
+                  {errors.preChat && <p className="text-xs text-destructive">{errors.preChat}</p>}
+
+                  <Field
+                    label="Consent checkbox"
+                    hint="Optional. When set, visitors must tick it, and the wording they agreed to is saved on the lead's timeline."
+                  >
+                    <Textarea
+                      rows={2}
+                      maxLength={300}
+                      value={form.preChat.consentText}
+                      placeholder="I agree that my details are used to answer my question, as described in the privacy policy."
+                      onChange={(e) => setField("preChat", { ...form.preChat, consentText: e.target.value })}
+                    />
+                  </Field>
+                  <p className="text-xs text-muted-foreground">
+                    Applies to the website widget only. Save with the button at the bottom.
+                  </p>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Proactive messages tab (saves on its own) */}
+            <TabsContent value="proactive" className="mt-4">
+              <ProactiveMessagesPanel brandColor={form.brandColor} />
             </TabsContent>
           </Tabs>
 

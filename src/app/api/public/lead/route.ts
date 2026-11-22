@@ -8,6 +8,7 @@ import { requireQuota, LimitExceededError } from "@/lib/plan-quota";
 import { captureInbound } from "@/lib/inbound-attribution";
 import { leadSourceFromChannel } from "@/lib/attribution";
 import { blockedOrigin, publicPreflight, withPublicCors } from "@/lib/public-cors";
+import { creditRuleLead } from "@/lib/widget-session";
 
 const leadSchema = z.object({
   pk: z.string().min(1),
@@ -16,6 +17,9 @@ const leadSchema = z.object({
   email: z.string().email().optional().or(z.literal("")),
   phone: z.string().max(40).optional().or(z.literal("")),
   service: z.string().max(200).optional(),
+  company: z.string().max(120).optional().or(z.literal("")),
+  // The consent wording the visitor ticked (pre-chat form), kept on the lead's timeline.
+  consentText: z.string().max(300).optional(),
   message: z.string().max(2000).optional(),
   visitorId: z.string().max(191).nullable().optional(),
   // Validated (and size-capped) by captureInbound; bad attribution never rejects a lead.
@@ -40,7 +44,7 @@ export const POST = withPublicCors(async (req: NextRequest) => {
     );
   }
 
-  const { pk, sessionId, name, email, phone, service, message, attribution } = parsed.data;
+  const { pk, sessionId, name, email, phone, service, message, attribution, company, consentText } = parsed.data;
 
   const business = await db.business.findUnique({
     where: { publicKey: pk, status: "active" },
@@ -150,6 +154,7 @@ export const POST = withPublicCors(async (req: NextRequest) => {
         email: normalisedEmail,
         phone: phone || null,
         service: service || null,
+        company: company?.trim() || null,
         message: message || null,
         quality,
         status: "new",
@@ -198,6 +203,19 @@ export const POST = withPublicCors(async (req: NextRequest) => {
       },
     });
   }
+
+  if (consentText?.trim()) {
+    await db.leadActivity.create({
+      data: {
+        leadId: lead.id,
+        businessId: business.id,
+        type: "consent",
+        description: "Agreed to the chat consent notice",
+        metadata: JSON.stringify({ text: consentText.trim(), at: new Date().toISOString(), via: "pre_chat_form" }),
+      },
+    });
+  }
+  await creditRuleLead(validSessionId);
 
   // Create notification for the business
   const notifType = quality === "high" ? "high_quality_lead" : "new_lead";

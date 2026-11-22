@@ -5,8 +5,7 @@ import { logUsage, type UsageInput } from "@/lib/ai";
 import { generateAgentReply } from "@/lib/agent-reply";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { checkChatRateLimit, checkMonthlyAiQuota } from "@/lib/plan-limits";
-import { checkQuota } from "@/lib/plan-quota";
-import { captureInbound } from "@/lib/inbound-attribution";
+import { startWidgetSession } from "@/lib/widget-session";
 import { resolveContact } from "@/lib/contacts";
 import { logger, serializeError } from "@/lib/logger";
 import { blockedOrigin, publicPreflight, readPageContext, withPublicCors } from "@/lib/public-cors";
@@ -23,6 +22,8 @@ const chatSchema = z.object({
   attribution: z.unknown().optional(),
   // { url, title } of the page the visitor is on; cleaned by readPageContext.
   page: z.unknown().optional(),
+  // The proactive message the visitor saw before this chat started.
+  ruleId: z.string().max(191).nullable().optional(),
 });
 
 export const OPTIONS = publicPreflight;
@@ -103,22 +104,9 @@ export const POST = withPublicCors(async (req: NextRequest) => {
     : null;
 
   if (!session) {
-    const chatQuota = await checkQuota(business.id, "chats");
-    if (!chatQuota.allowed) {
-      return NextResponse.json(
-        {
-          error:
-            "This business has reached its monthly chat session limit. Please contact them directly.",
-        },
-        { status: 429 }
-      );
-    }
-
-    // Record the chat start as a touchpoint. Anonymous visitors don't get a
-    // Contact yet; it's created once they leave an email/phone (lead form).
-    const inbound = await captureInbound({
+    const started = await startWidgetSession({
       businessId: business.id,
-      kind: "chat_start",
+      agentId: agent.id,
       visitorId: parsed.data.visitorId,
       attribution: parsed.data.attribution,
       profile: {
@@ -126,23 +114,13 @@ export const POST = withPublicCors(async (req: NextRequest) => {
         email: parsed.data.visitorEmail,
         phone: parsed.data.visitorPhone,
       },
-      createContact: "identified",
+      page,
+      ruleId: parsed.data.ruleId,
     });
-
-    session = await db.chatSession.create({
-      data: {
-        businessId: business.id,
-        agentId: agent.id,
-        contactId: inbound?.contactId ?? null,
-        visitorId: parsed.data.visitorId,
-        visitorName: parsed.data.visitorName,
-        visitorEmail: parsed.data.visitorEmail,
-        visitorPhone: parsed.data.visitorPhone,
-        status: "active",
-        // The page the chat started on, shown in Conversations.
-        ...(page ? { threadMeta: { page } } : {}),
-      },
-    });
+    if ("error" in started) {
+      return NextResponse.json({ error: started.error }, { status: started.status });
+    }
+    session = started.session;
   } else if (
     (parsed.data.visitorName && !session.visitorName) ||
     (parsed.data.visitorEmail && !session.visitorEmail) ||
