@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import {
   AlertTriangle,
   Archive,
+  BarChart3,
   BookOpen,
   CalendarClock,
   CalendarDays,
@@ -74,6 +75,7 @@ import {
   type PublishSettings,
   type Schedule,
 } from "@/components/dashboard/views/content-calendar";
+import { ContentAnalytics, type StudioIdea } from "@/components/dashboard/views/content-analytics";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 // ─── Types ─────────────────────────────────────────────────────────────
@@ -179,7 +181,17 @@ export function ContentStudioView({ user }: { user: Viewer }) {
   const [post, setPost] = useState<Post | null>(null);
   const [loadingPost, setLoadingPost] = useState(false);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [tab, setTab] = useState<"posts" | "calendar">("posts");
+  const [tab, setTab] = useState<"posts" | "calendar" | "analytics">(() => {
+    // A one-time hint from a notification (e.g. the weekly insight).
+    try {
+      const hint = sessionStorage.getItem("studio-tab");
+      sessionStorage.removeItem("studio-tab");
+      if (hint === "analytics" || hint === "calendar") return hint;
+    } catch {}
+    return "posts";
+  });
+  // An idea from the weekly insight, prefilled into a new brief.
+  const [idea, setIdea] = useState<{ key: number; value: StudioIdea } | null>(null);
   const { settings } = usePublishSettings();
 
   const loadList = useCallback(async () => {
@@ -255,21 +267,24 @@ export function ContentStudioView({ user }: { user: Viewer }) {
             <p className="text-sm text-muted-foreground">One brief, ready-to-post copy for every platform, in your brand voice.</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           {credits && credits.limit > 0 && (
-            <span className={cn("text-xs", credits.remaining < 10 ? "text-destructive" : "text-muted-foreground")}>
+            <span className={cn("basis-full text-xs sm:basis-auto", credits.remaining < 10 ? "text-destructive" : "text-muted-foreground")}>
               {credits.remaining.toLocaleString()} of {credits.limit.toLocaleString()} AI credits left this month
             </span>
           )}
-          <ToggleGroup type="single" size="sm" variant="outline" value={tab} onValueChange={(v) => v && setTab(v as "posts" | "calendar")}>
+          <ToggleGroup type="single" size="sm" variant="outline" value={tab} onValueChange={(v) => v && setTab(v as typeof tab)}>
             <ToggleGroupItem value="posts" className="px-3 text-xs">
               <PenLine className="size-3.5" /> Posts
             </ToggleGroupItem>
             <ToggleGroupItem value="calendar" className="px-3 text-xs">
               <CalendarDays className="size-3.5" /> Calendar
             </ToggleGroupItem>
+            <ToggleGroupItem value="analytics" className="px-3 text-xs">
+              <BarChart3 className="size-3.5" /> Analytics
+            </ToggleGroupItem>
           </ToggleGroup>
-          <Button size="sm" onClick={() => { setTab("posts"); openPost(null); }}>
+          <Button size="sm" onClick={() => { setTab("posts"); setIdea(null); openPost(null); }}>
             <Plus className="size-4" /> New post
           </Button>
         </div>
@@ -277,6 +292,14 @@ export function ContentStudioView({ user }: { user: Viewer }) {
 
       {tab === "calendar" ? (
         <ContentCalendar viewer={user} onOpenPost={(id) => { setTab("posts"); openPost(id); }} />
+      ) : tab === "analytics" ? (
+        <ContentAnalytics
+          onOpenIdea={(value) => {
+            setIdea({ key: Date.now(), value });
+            setTab("posts");
+            openPost(null);
+          }}
+        />
       ) : (
       <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
         {/* Post list */}
@@ -351,7 +374,7 @@ export function ContentStudioView({ user }: { user: Viewer }) {
               onDeleted={() => { setSelectedId(null); setPost(null); setSchedules([]); loadList(); }}
             />
           ) : (
-            <BriefForm onCreated={applyPost} />
+            <BriefForm key={idea?.key ?? 0} initial={idea?.value} onCreated={(p) => { setIdea(null); applyPost(p); }} />
           )}
         </div>
       </div>
@@ -362,10 +385,10 @@ export function ContentStudioView({ user }: { user: Viewer }) {
 
 // ─── New post ──────────────────────────────────────────────────────────
 
-function BriefForm({ onCreated }: { onCreated: (p: Post) => void }) {
-  const [brief, setBrief] = useState("");
-  const [platforms, setPlatforms] = useState<ContentPlatform[]>(["facebook", "instagram", "linkedin"]);
-  const [goal, setGoal] = useState<string>("none");
+function BriefForm({ initial, onCreated }: { initial?: StudioIdea; onCreated: (p: Post) => void }) {
+  const [brief, setBrief] = useState(initial?.brief ?? "");
+  const [platforms, setPlatforms] = useState<ContentPlatform[]>(initial?.platforms.length ? initial.platforms : ["facebook", "instagram", "linkedin"]);
+  const [goal, setGoal] = useState<string>(initial?.goal ?? "none");
   const [toneTweak, setToneTweak] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
   const [campaignTag, setCampaignTag] = useState("");

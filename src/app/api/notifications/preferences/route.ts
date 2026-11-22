@@ -13,6 +13,7 @@ const NOTIF_TYPES = [
   { type: "ai_usage_warning", label: "AI Usage Warning", default: true },
   { type: "subscription_expiry", label: "Subscription Expiry", default: true },
   { type: "integration_failed", label: "Integration Failed", default: true },
+  { type: "content_insight", label: "Weekly Content Insight", default: true },
 ];
 
 // GET /api/notifications/preferences — get user's notification preferences

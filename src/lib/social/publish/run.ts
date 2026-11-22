@@ -15,6 +15,7 @@ import { publishToInstagram } from "./instagram";
 import { publishToLinkedIn, linkedinClient } from "./linkedin";
 import { PublishError, graphClient, type FetchLike } from "./meta-http";
 import { mediaForPlatform, readMediaBytes, unreachableMediaUrl } from "./media";
+import { tagLink } from "@/lib/social/utm";
 
 /** A job that fires earlier than this before the row's time is stale (the post was moved later). */
 export const EARLY_TOLERANCE_MS = 30_000;
@@ -32,7 +33,7 @@ export type RunOutcome =
   | "retry";
 
 export const SCHEDULE_INCLUDE = {
-  variant: { include: { post: { select: { id: true, title: true, brief: true, status: true, businessId: true } } } },
+  variant: { include: { post: { select: { id: true, title: true, brief: true, status: true, businessId: true, campaignTag: true } } } },
   socialAccount: true,
 } satisfies Prisma.ScheduledPostInclude;
 
@@ -73,7 +74,7 @@ export async function variantMedia(businessId: string, mediaIds: Prisma.JsonValu
  * The token that publishes for an account: Meta Pages carry their own; LinkedIn
  * Pages use the connected member's token (refreshed when it's close to expiry).
  */
-async function publishToken(acct: NonNullable<ScheduledRow["socialAccount"]>): Promise<string> {
+export async function publishToken(acct: NonNullable<ScheduledRow["socialAccount"]>): Promise<string> {
   const own = socialAccountToken(acct);
   if (own) return own;
   if (acct.platform !== "linkedin_page") throw new PublishError("The saved access token can't be read.", "auth");
@@ -160,8 +161,15 @@ export async function runScheduledPost(scheduledPostId: string, opts: RunOptions
       );
     }
     const hashtags = Array.isArray(row.variant.hashtags) ? row.variant.hashtags.filter((x): x is string => typeof x === "string") : [];
-    const text = composeText(platform, { body: row.variant.body, hashtags, linkUrl: row.variant.linkUrl });
-    const input = { externalId: acct.externalId, text, linkUrl: row.variant.linkUrl, media, containerId: row.containerId };
+    // UTM-tag the link so leads who arrive through it count toward this post.
+    const linkUrl = tagLink(row.variant.linkUrl, {
+      platform,
+      scheduledPostId: row.id,
+      postId: row.variant.post.id,
+      campaignTag: row.variant.post.campaignTag,
+    });
+    const text = composeText(platform, { body: row.variant.body, hashtags, linkUrl });
+    const input = { externalId: acct.externalId, text, linkUrl, media, containerId: row.containerId };
 
     let result;
     if (platform === "facebook") {

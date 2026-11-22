@@ -13,6 +13,8 @@ import {
   Sparkles,
   TrendingUp,
   Zap,
+  Lightbulb,
+  CalendarClock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +49,10 @@ const TYPE_ICONS: Record<string, React.ComponentType<{ size?: number; className?
   subscription_expiry: AlertTriangle,
   integration_failed: AlertTriangle,
   new_chat_session: MessageSquare,
+  content_insight: Lightbulb,
+  content_review: CalendarClock,
+  content_manual_due: CalendarClock,
+  content_publish_failed: AlertTriangle,
 };
 
 const TYPE_COLORS: Record<string, string> = {
@@ -61,6 +67,10 @@ const TYPE_COLORS: Record<string, string> = {
   subscription_expiry: "bg-destructive/15 text-destructive",
   integration_failed: "bg-destructive/15 text-destructive",
   new_chat_session: "bg-primary/15 text-primary",
+  content_insight: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+  content_review: "bg-violet-500/15 text-violet-600 dark:text-violet-400",
+  content_manual_due: "bg-primary/15 text-primary",
+  content_publish_failed: "bg-destructive/15 text-destructive",
 };
 
 export function NotificationBell({
@@ -193,8 +203,18 @@ export function NotificationBell({
       proposal_generated: "quotes",
       proposal_accepted: "quotes",
       new_chat_session: "conversations",
+      content_insight: "social",
+      content_review: "social",
+      content_manual_due: "social",
+      content_publish_failed: "social",
     };
     const view = navMap[n.type];
+    if (n.type === "content_insight") {
+      // Land on Content Studio's Analytics tab (read once by ContentStudioView).
+      try {
+        sessionStorage.setItem("studio-tab", "analytics");
+      } catch {}
+    }
     if (view) {
       onNavigate(view);
       setOpen(false);

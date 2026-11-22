@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { runScheduledPost } from "@/lib/social/publish/run";
 import { defineJob } from "../define";
+import { queuePostMetrics } from "./social-metrics";
 
 export const PUBLISH_MAX_ATTEMPTS = 5;
 
@@ -18,5 +19,7 @@ export const socialPublishJob = defineJob({
   async handler(p, ctx) {
     const res = await runScheduledPost(p.scheduledPostId, { attempt: ctx.attempt, maxAttempts: PUBLISH_MAX_ATTEMPTS });
     if (res.outcome === "retry" && res.error) throw res.error;
+    // First engagement snapshot an hour after it went out (Phase 1 M).
+    if (res.outcome === "published") await queuePostMetrics(p.scheduledPostId, 0);
   },
 });

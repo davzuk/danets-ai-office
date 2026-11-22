@@ -159,7 +159,31 @@ const EMAIL_TEMPLATES: Record<
     ),
     buildText: (d) => `Payment of ${d.currency || "USD"} ${d.amount || "0.00"} for ${d.planName || ""} plan. Invoice: ${d.invoiceNumber || "N/A"}.`,
   },
+  // Phase 1 M: the Monday "what worked / what next" note. The text is AI-written, so escape it.
+  content_insight: {
+    subject: "Your weekly content insight is ready",
+    buildHtml: (d) => emailTemplate(
+      "This week in your content",
+      escapeHtml(d.headline || "Your weekly content insight is ready."),
+      (Array.isArray(d.ideas) ? d.ideas : []).slice(0, 3).map((t: unknown, i: number) => ({ label: `Idea ${i + 1}`, value: escapeHtml(String(t)) })),
+      "Open Content Studio",
+      "/app"
+    ),
+    buildText: (d) =>
+      [
+        d.headline || "Your weekly content insight is ready.",
+        "",
+        "Ideas for next week:",
+        ...(Array.isArray(d.ideas) ? d.ideas : []).map((t: unknown) => `- ${t}`),
+        "",
+        "Open Content Studio to see the full note.",
+      ].join("\n"),
+  },
 };
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+}
 
 function emailTemplate(
   title: string,

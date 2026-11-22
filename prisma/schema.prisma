@@ -58,6 +58,9 @@ model Business {
   mediaAssets          MediaAsset[]
   contentPosts         ContentPost[]
   scheduledPosts       ScheduledPost[]
+  postMetrics          PostMetric[]
+  accountMetrics       AccountMetric[]
+  contentInsights      ContentInsight[]
   subscription         BusinessSubscription?
   payments             Payment[]
   invoices             Invoice[]
@@ -1471,6 +1474,7 @@ model SocialAccount {
   leadForms      MetaLeadForm[]
   sessions       ChatSession[]
   scheduledPosts ScheduledPost[]
+  accountMetrics AccountMetric[]
 
   @@unique([platform, externalId])
   @@index([businessId])
@@ -1605,15 +1609,75 @@ model ScheduledPost {
   publishedAt     DateTime?
   attempts        Int       @default(0)
   lastError       String?   @db.Text
+  metricsSyncedAt DateTime? // last successful metrics snapshot (Phase 1 M)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   business      Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
   variant       PostVariant    @relation(fields: [variantId], references: [id], onDelete: Cascade)
   socialAccount SocialAccount? @relation(fields: [socialAccountId], references: [id], onDelete: SetNull)
+  metrics       PostMetric[]
 
   @@index([businessId, scheduledFor])
   @@index([status, scheduledFor])
   @@index([variantId])
   @@index([socialAccountId])
+}
+
+// ─── Engagement analytics (Phase 1, workstream M) ────────────────────
+// One snapshot per metrics sync of a published post (1h, 24h, 72h, 7d, then
+// weekly for 4 weeks). Counts are lifetime totals at capture time; null means
+// the platform didn't report that metric.
+model PostMetric {
+  id              String   @id @default(cuid())
+  businessId      String
+  scheduledPostId String
+  capturedAt      DateTime @default(now())
+  impressions     Int? // Meta "views"
+  reach           Int? // unique viewers
+  engagements     Int? // reactions + comments + shares + saves
+  clicks          Int?
+  comments        Int?
+  shares          Int?
+  saves           Int?
+  videoViews      Int?
+  raw             Json?
+
+  business      Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  scheduledPost ScheduledPost @relation(fields: [scheduledPostId], references: [id], onDelete: Cascade)
+
+  @@index([scheduledPostId, capturedAt])
+  @@index([businessId, capturedAt])
+}
+
+// Daily follower count (and reach where the platform reports it) per account.
+model AccountMetric {
+  socialAccountId String
+  date            DateTime @db.Date
+  businessId      String
+  followers       Int?
+  reach           Int?
+  impressions     Int?
+  capturedAt      DateTime @default(now())
+
+  business      Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@id([socialAccountId, date])
+  @@index([businessId, date])
+}
+
+// The weekly AI "what worked / what next" note for a tenant.
+model ContentInsight {
+  id          String   @id @default(cuid())
+  businessId  String
+  periodStart DateTime // start of the 4 weeks analysed
+  periodEnd   DateTime
+  content     Json // { headline, worked[], didnt[], ideas[{ title, brief, platforms[], goal }] }
+  stats       Json? // the numbers the AI was given, for display
+  createdAt   DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, createdAt])
 }

@@ -9,11 +9,16 @@ import { connectionRefreshJob } from "./handlers/connection-refresh";
 import { linkedinLeadgenPollJob } from "./handlers/linkedin-leadgen";
 import { metaLeadgenPollJob } from "./handlers/meta-leadgen";
 import { purgeJobsJob } from "./handlers/purge-jobs";
+import { socialInsightsWeeklyJob } from "./handlers/social-insights";
+import { socialMetricsAccountJob } from "./handlers/social-metrics";
 import { enqueue } from "./queue";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
+const WEEK = 7 * DAY;
+/** The Unix epoch fell on a Thursday, so Monday is 4 days into an epoch-aligned week. */
+const MONDAY = 4 * DAY;
 
 export interface Schedule<S extends z.ZodType = z.ZodType> {
   job: JobDefinition<S>;
@@ -31,6 +36,10 @@ export const SCHEDULES: Schedule[] = [
   { job: metaLeadgenPollJob, everyMs: HOUR, offsetMs: 25 * MINUTE, payload: {} },
   // LinkedIn has no lead webhook wired up yet, so it's polled.
   { job: linkedinLeadgenPollJob, everyMs: 15 * MINUTE, offsetMs: 5 * MINUTE, payload: {} },
+  // Follower counts, once a day.
+  { job: socialMetricsAccountJob, everyMs: DAY, offsetMs: 2 * HOUR + 15 * MINUTE, payload: {} },
+  // The weekly "what worked / what next" note, Mondays 06:00 UTC.
+  { job: socialInsightsWeeklyJob, everyMs: WEEK, offsetMs: MONDAY + 6 * HOUR, payload: {} },
 ];
 
 /** Start of the window containing `now`, shifted by the schedule's offset. */
