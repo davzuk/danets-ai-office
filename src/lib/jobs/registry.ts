@@ -1,6 +1,7 @@
 // Every job type the runner can execute. Add new handlers here.
 
 import type { JobDefinition } from "./define";
+import { bookingRemindJob } from "./handlers/booking-remind";
 import { brandGenerateJob } from "./handlers/brand-generate";
 import { connectionExpiringJob, connectionRefreshJob } from "./handlers/connection-refresh";
 import { linkedinLeadgenJob, linkedinLeadgenPollJob } from "./handlers/linkedin-leadgen";
@@ -31,6 +32,7 @@ const definitions: JobDefinition[] = [
   socialMetricsAccountJob,
   socialInsightsWeeklyJob,
   socialInsightsBusinessJob,
+  bookingRemindJob,
 ];
 
 const byType = new Map<string, JobDefinition>();

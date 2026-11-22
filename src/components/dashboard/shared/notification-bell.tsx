@@ -15,6 +15,8 @@ import {
   Zap,
   Lightbulb,
   CalendarClock,
+  CalendarCheck,
+  CalendarX,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -53,6 +55,8 @@ const TYPE_ICONS: Record<string, React.ComponentType<{ size?: number; className?
   content_review: CalendarClock,
   content_manual_due: CalendarClock,
   content_publish_failed: AlertTriangle,
+  booking_created: CalendarCheck,
+  booking_cancelled: CalendarX,
 };
 
 const TYPE_COLORS: Record<string, string> = {
@@ -71,6 +75,8 @@ const TYPE_COLORS: Record<string, string> = {
   content_review: "bg-violet-500/15 text-violet-600 dark:text-violet-400",
   content_manual_due: "bg-primary/15 text-primary",
   content_publish_failed: "bg-destructive/15 text-destructive",
+  booking_created: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+  booking_cancelled: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
 };
 
 export function NotificationBell({
@@ -207,6 +213,8 @@ export function NotificationBell({
       content_review: "social",
       content_manual_due: "social",
       content_publish_failed: "social",
+      booking_created: "leads",
+      booking_cancelled: "leads",
     };
     const view = navMap[n.type];
     if (n.type === "content_insight") {

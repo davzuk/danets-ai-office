@@ -130,6 +130,19 @@ export async function GET(req: NextRequest) {
   .dn-teaser{position:fixed;bottom:92px;right:20px;z-index:99998;max-width:280px;background:#fff;color:#222;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:12px 34px 12px 14px;font-size:14px;line-height:1.45;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;animation:dnPop .2s ease;}
   .dn-teaser-x{position:absolute;top:6px;right:6px;width:22px;height:22px;border:none;background:none;color:#6b7280;cursor:pointer;border-radius:6px;font-size:16px;line-height:1;}
   .dn-teaser-x:hover{background:#f3f4f6;color:#111;}
+  .dn-book{align-self:stretch;background:#fff;border:1px solid #e8eaed;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px;font-size:13px;}
+  .dn-book h4{margin:0;font-size:14px;font-weight:600;color:#222;}
+  .dn-book p.dn-intro{margin:0;font-size:13px;color:#555;}
+  .dn-book p.dn-err{margin:0;font-size:12px;color:#b91c1c;}
+  .dn-book .dn-day{font-size:12px;color:#555;font-weight:600;margin-top:2px;}
+  .dn-book .dn-times{display:flex;flex-wrap:wrap;gap:6px;}
+  .dn-book .dn-times button{background:#eef2ff;color:#1d4ed8;border:1px solid #c7d2fe;border-radius:8px;padding:6px 10px;font-size:12.5px;cursor:pointer;font-family:inherit;}
+  .dn-book .dn-times button:hover{background:#1d4ed8;color:#fff;}
+  .dn-book input{border:1px solid #d8dadf;border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;outline:none;}
+  .dn-book input:focus{border-color:#1d4ed8;}
+  .dn-book button.dn-primary{background:#1d4ed8;color:#fff;border:none;border-radius:8px;padding:9px;font-weight:600;font-size:13px;cursor:pointer;}
+  .dn-book button.dn-primary:disabled{opacity:.6;cursor:default;}
+  .dn-book a{color:#1d4ed8;font-size:12.5px;}
   .dn-form label.dn-consent{display:flex;gap:8px;align-items:flex-start;font-size:12px;color:#444;line-height:1.4;}
   .dn-form label.dn-consent input{margin-top:2px;}
   .dn-form p.dn-intro{margin:0;font-size:13px;color:#555;}
@@ -184,7 +197,8 @@ export async function GET(req: NextRequest) {
       // A proactive message the visitor saw replaces the welcome message.
       addBot(shownRule ? shownRule.message : cfg.agent.welcomeMessage);
       const replies = shownRule ? shownRule.quickReplies : agentQuickReplies();
-      if(needsPreChat()) showPreChat(replies); else showQuickReplies(replies);
+      if(needsPreChat()) showPreChat(replies);
+    else { showQuickReplies(replies); if (shownRule && shownRule.action === 'booking') showBookingStep(); }
     }
     if(o && !preChatOpen) ta.focus();
   }
@@ -290,8 +304,10 @@ export async function GET(req: NextRequest) {
             .then((lr) => { if (lr.ok) session.leadCaptured = true; }).catch(() => {});
         }
         if (LS) store.set(LS, PRECHAT_KEY, '1');
+        known.name = d.name; known.email = d.email; known.phone = d.phone;
         f.remove(); preChatOpen = false; setInputEnabled(true); ta.focus();
         showQuickReplies(replies);
+        if (shownRule && shownRule.action === 'booking') showBookingStep();
       } catch(_) { submit.disabled = false; fail('Sorry, we could not connect. Please try again.'); }
     };
   }
@@ -372,6 +388,116 @@ export async function GET(req: NextRequest) {
     if (rule) armTrigger(rule);
   }
 
+  // ── Booking step ───────────────────────────────────────────────
+  // Offered when the visitor asks to book (the chat API flags it) or a
+  // proactive message's action is "booking". Asks only for details the chat
+  // doesn't already have.
+  let bookingShown = false;
+  const known = { name: '', email: '', phone: '' };
+  const visitorTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch(_) { return 'UTC'; } };
+  function bookingPageUrl(t){
+    return API + '/book/' + encodeURIComponent(PK) + '/' + encodeURIComponent(t.slug) + (known.email ? '?name=' + encodeURIComponent(known.name) + '&email=' + encodeURIComponent(known.email) : '');
+  }
+  function canBook(){ return !!(cfg && cfg.booking && Array.isArray(cfg.booking.types) && cfg.booking.types.length); }
+  function showBookingStep(){
+    if (!canBook()) return;
+    bookingShown = true;
+    const old = document.getElementById('dn-book'); if (old) old.remove();
+    const card = el('div','dn-book'); card.id = 'dn-book';
+    body.appendChild(card);
+    const types = cfg.booking.types;
+    if (types.length === 1) { loadTimes(card, types[0]); return; }
+    card.innerHTML = '<h4>Book a time</h4><div class="dn-times"></div>';
+    types.forEach((t) => {
+      const b = el('button'); b.type = 'button'; b.textContent = t.name + ' (' + t.durationMin + ' min)';
+      b.onclick = () => loadTimes(card, t);
+      card.querySelector('.dn-times').appendChild(b);
+    });
+    body.scrollTop = body.scrollHeight;
+  }
+  function bookingLink(t, text){ const a = el('a'); a.href = bookingPageUrl(t); a.target = '_blank'; a.rel = 'noopener'; a.textContent = text; return a; }
+  async function loadTimes(card, t){
+    card.innerHTML = '<h4></h4><p class="dn-intro">Loading times...</p>';
+    card.querySelector('h4').textContent = 'Book a ' + t.name;
+    const tz = visitorTz();
+    const from = new Date(), to = new Date(from.getTime() + 14 * 86400000);
+    try {
+      const r = await fetch(API + '/api/public/booking/slots?pk=' + encodeURIComponent(PK) + '&type=' + encodeURIComponent(t.slug) + '&from=' + encodeURIComponent(from.toISOString()) + '&to=' + encodeURIComponent(to.toISOString()) + '&tz=' + encodeURIComponent(tz));
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Failed');
+      renderTimes(card, t, d.days || [], tz);
+    } catch(_) {
+      const p = card.querySelector('.dn-intro');
+      p.textContent = 'Sorry, we could not load times. ';
+      p.appendChild(bookingLink(t, 'Open the booking page'));
+    }
+  }
+  function renderTimes(card, t, days, tz){
+    const fmtDay = (iso) => new Intl.DateTimeFormat(undefined, { timeZone: tz, weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(iso));
+    const fmtTime = (iso) => new Intl.DateTimeFormat(undefined, { timeZone: tz, hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
+    card.innerHTML = '<h4></h4>';
+    card.querySelector('h4').textContent = 'Book a ' + t.name + ' (' + t.durationMin + ' min)';
+    if (!days.length) { const p = el('p','dn-intro'); p.textContent = 'No free times in the next two weeks.'; card.appendChild(p); }
+    days.slice(0, 3).forEach((day) => {
+      const lab = el('div','dn-day'); lab.textContent = fmtDay(day.slots[0]); card.appendChild(lab);
+      const row = el('div','dn-times');
+      day.slots.slice(0, 6).forEach((s) => {
+        const b = el('button'); b.type = 'button'; b.textContent = fmtTime(s);
+        b.onclick = () => pickTime(card, t, s, tz, fmtDay(s) + ', ' + fmtTime(s));
+        row.appendChild(b);
+      });
+      card.appendChild(row);
+    });
+    card.appendChild(bookingLink(t, days.length ? 'More times' : 'See later dates'));
+    body.scrollTop = body.scrollHeight;
+  }
+  function pickTime(card, t, start, tz, label){
+    card.innerHTML = '<h4></h4><p class="dn-intro"></p>';
+    card.querySelector('h4').textContent = t.name;
+    card.querySelector('.dn-intro').textContent = label + ' (' + tz + ')';
+    const fields = [];
+    if (!known.name) fields.push(['name', 'text', 'Your name *', 'name']);
+    if (!known.email) fields.push(['email', 'email', 'Email *', 'email']);
+    if (!known.phone) fields.push(['phone', 'tel', 'Phone (optional)', 'tel']);
+    fields.forEach((f) => { const i = el('input'); i.name = f[0]; i.type = f[1]; i.placeholder = f[2]; i.autocomplete = f[3]; i.setAttribute('aria-label', f[2]); card.appendChild(i); });
+    const qs = Array.isArray(t.questions) ? t.questions : [];
+    qs.forEach((q) => { const i = el('input'); i.type = 'text'; i.maxLength = 1000; i.setAttribute('data-q', q.key); i.placeholder = q.label + ' *'; i.setAttribute('aria-label', q.label); card.appendChild(i); });
+    const err = el('p','dn-err'); err.setAttribute('role','alert'); err.style.display = 'none'; card.appendChild(err);
+    const ok = el('button','dn-primary'); ok.type = 'button'; ok.textContent = 'Confirm booking';
+    if (cfg && cfg.agent && cfg.agent.brandColor) ok.style.background = cfg.agent.brandColor;
+    card.appendChild(ok);
+    const back = el('a'); back.href = '#'; back.textContent = 'Choose another time';
+    back.onclick = (e) => { e.preventDefault(); loadTimes(card, t); };
+    card.appendChild(back);
+    body.scrollTop = body.scrollHeight;
+    const first = card.querySelector('input'); if (first) setTimeout(() => first.focus(), 50);
+    const val = (n) => { const i = card.querySelector('[name=' + n + ']'); return i ? i.value.trim() : known[n]; };
+    ok.onclick = async () => {
+      const name = val('name'), email = val('email'), phone = val('phone');
+      const fail = (m) => { err.textContent = m; err.style.display = 'block'; };
+      if (!name || name.length < 2) return fail('Please enter your name.');
+      if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email || '')) return fail('Please enter a valid email address.');
+      const answers = {};
+      for (const q of qs) {
+        const qi = card.querySelector('[data-q="' + q.key + '"]');
+        const v = qi ? qi.value.trim() : '';
+        if (!v) { if (qi) qi.focus(); return fail('Please answer: ' + q.label); }
+        answers[q.key] = v;
+      }
+      ok.disabled = true; err.style.display = 'none';
+      try {
+        const r = await fetch(API + '/api/public/bookings', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ pk: PK, type: t.slug, start, name, email, phone, answers, timezone: tz, source: 'widget', sessionId: session.id, visitorId: VISITOR_ID, attribution }) });
+        const d = await r.json();
+        if (r.status === 409) { addBot(d.error || 'Sorry, that time was just taken.'); loadTimes(card, t); return; }
+        if (!r.ok) { ok.disabled = false; fail(d.error || 'Something went wrong. Please try again.'); return; }
+        known.name = name; known.email = email; if (phone) known.phone = phone;
+        session.leadCaptured = true;
+        card.remove();
+        addBot('You are booked for ' + label + '. A confirmation with a calendar invite is on its way to ' + email + '.');
+      } catch(_) { ok.disabled = false; fail('Sorry, we could not connect. Please try again.'); }
+    };
+  }
+
   function showLeadForm(){
     if(session.leadCaptured) return;
     const f = el('div','dn-form');
@@ -386,8 +512,9 @@ export async function GET(req: NextRequest) {
         const d = await r2.json();
         if(!r2.ok) throw new Error(d.error||'Failed');
         session.leadCaptured = true;
+        known.name = name; known.email = data.email.trim(); known.phone = data.phone.trim();
         f.remove();
-        addBot('Thank you, ' + esc(name) + '! Our team will reach out to you shortly.');
+        addBot('Thank you, ' + name + '! Our team will reach out to you shortly.');
       }catch(e){ addBot('Sorry, something went wrong. Please try again or contact us directly.'); }
     };
   }
@@ -407,7 +534,8 @@ export async function GET(req: NextRequest) {
       hideTyping();
       if(d.sessionId) session.id = d.sessionId;
       addBot(d.reply);
-      if(d.leadIntent && cfg && cfg.agent.leadCaptureEnabled){ session.leadIntent = true; setTimeout(showLeadForm, 600); }
+      if(d.booking && canBook() && !bookingShown){ setTimeout(showBookingStep, 600); }
+      else if(d.leadIntent && cfg && cfg.agent.leadCaptureEnabled){ session.leadIntent = true; setTimeout(showLeadForm, 600); }
       if(d.handover) showHandover(d.handover);
     }catch(e){
       hideTyping();

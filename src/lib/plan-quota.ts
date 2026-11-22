@@ -15,6 +15,7 @@ export type QuotaResource =
   | "integrations"
   | "proposalTemplates"
   | "quotes"
+  | "bookingTypes"
   | "mediaStorageMb";
 
 export interface EffectiveLimits {
@@ -33,6 +34,7 @@ export interface EffectiveLimits {
   integrationLimit: number;
   proposalTemplateLimit: number;
   quoteLimit: number;
+  bookingTypeLimit: number;
   mediaStorageMbLimit: number;
 }
 
@@ -50,6 +52,7 @@ export interface QuotaUsage {
   integrations: number;
   proposalTemplates: number;
   quotes: number;
+  bookingTypes: number;
   /** Media library size in MB (rounded up). */
   mediaStorageMb: number;
 }
@@ -85,6 +88,7 @@ export const RESOURCE_LABELS: Record<QuotaResource, string> = {
   integrations: "integrations",
   proposalTemplates: "proposal templates",
   quotes: "monthly quotes",
+  bookingTypes: "booking types",
   mediaStorageMb: "MB of media storage",
 };
 
@@ -140,6 +144,7 @@ export async function getEffectiveLimits(
       integrationLimit: planRow?.integrationLimit ?? 3,
       proposalTemplateLimit: planRow?.proposalTemplateLimit ?? 10,
       quoteLimit: planRow?.quoteLimit ?? 50,
+      bookingTypeLimit: planRow?.bookingTypeLimit ?? 3,
       mediaStorageMbLimit: planRow?.mediaStorageMbLimit ?? 1024,
     };
 
@@ -161,6 +166,7 @@ export async function getEffectiveLimits(
       proposalTemplateLimit:
         override?.proposalTemplateLimit ?? base.proposalTemplateLimit,
       quoteLimit: override?.quoteLimit ?? base.quoteLimit,
+      bookingTypeLimit: override?.bookingTypeLimit ?? base.bookingTypeLimit,
       mediaStorageMbLimit: override?.mediaStorageMbLimit ?? base.mediaStorageMbLimit,
     };
   });
@@ -185,6 +191,7 @@ export async function getQuotaUsage(businessId: string): Promise<QuotaUsage> {
     integrations,
     proposalTemplates,
     quotes,
+    bookingTypes,
     media,
   ] = await Promise.all([
     db.chatSession.count({
@@ -210,6 +217,7 @@ export async function getQuotaUsage(businessId: string): Promise<QuotaUsage> {
     db.quoteRequest.count({
       where: { businessId, createdAt: { gte: monthStart } },
     }),
+    db.bookingType.count({ where: { businessId } }),
     db.mediaAsset.aggregate({ where: { businessId }, _sum: { sizeBytes: true } }),
   ]);
 
@@ -227,6 +235,7 @@ export async function getQuotaUsage(businessId: string): Promise<QuotaUsage> {
     integrations,
     proposalTemplates,
     quotes,
+    bookingTypes,
     mediaStorageMb: Math.ceil((media._sum.sizeBytes ?? 0) / (1024 * 1024)),
   };
   });
@@ -263,6 +272,8 @@ function limitForResource(
       return limits.proposalTemplateLimit;
     case "quotes":
       return limits.quoteLimit;
+    case "bookingTypes":
+      return limits.bookingTypeLimit;
     case "mediaStorageMb":
       return limits.mediaStorageMbLimit;
   }
@@ -299,6 +310,8 @@ function usedForResource(
       return usage.proposalTemplates;
     case "quotes":
       return usage.quotes;
+    case "bookingTypes":
+      return usage.bookingTypes;
     case "mediaStorageMb":
       return usage.mediaStorageMb;
   }

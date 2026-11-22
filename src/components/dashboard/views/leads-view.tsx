@@ -113,6 +113,7 @@ import { cn } from "@/lib/utils";
 import { PipelineBoard } from "@/components/dashboard/views/lead-pipeline-board";
 import { FileText, LayoutGrid, List } from "lucide-react";
 import { LeadFormsPanel } from "@/components/dashboard/views/lead-forms-panel";
+import { BookingsPanel } from "@/components/dashboard/views/bookings-panel";
 
 interface UserProp {
   userId: string;
@@ -1718,7 +1719,7 @@ export function LeadsView({ user }: { user: UserProp }) {
   const [scoring, setScoring] = React.useState(false);
 
   const [deleteTarget, setDeleteTarget] = React.useState<Lead | null>(null);
-  const [viewMode, setViewMode] = React.useState<"list" | "pipeline" | "forms">("list");
+  const [viewMode, setViewMode] = React.useState<"list" | "pipeline" | "forms" | "bookings">("list");
 
   // ─── Debounce search input ─────────────────────────────────────
   const debouncedSearch = useDebouncedValue(searchInput.trim(), 350);
@@ -2358,6 +2359,16 @@ export function LeadsView({ user }: { user: UserProp }) {
                 <FileText size={14} />
                 <span className="hidden sm:inline">Lead forms</span>
               </Button>
+              <Button
+                variant={viewMode === "bookings" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setViewMode("bookings")}
+                className="rounded-none gap-1.5 h-8"
+                title="Meetings booked from your booking page or chat widget"
+              >
+                <CalendarDays size={14} />
+                <span className="hidden sm:inline">Bookings</span>
+              </Button>
             </div>
 
             <Button
@@ -2402,7 +2413,9 @@ export function LeadsView({ user }: { user: UserProp }) {
       </Card>
 
       {/* Pipeline board */}
-      {viewMode === "forms" ? (
+      {viewMode === "bookings" ? (
+        <BookingsPanel onOpenLead={(l) => openDetail({ ...l } as unknown as Lead)} />
+      ) : viewMode === "forms" ? (
         <LeadFormsPanel onOpenIntegrations={() => window.location.assign("/app?view=integrations")} />
       ) : viewMode === "pipeline" ? (
         <Card className="p-4">

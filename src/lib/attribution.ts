@@ -20,7 +20,7 @@ export const CHANNELS = [
 ] as const;
 export type Channel = (typeof CHANNELS)[number];
 
-export const TOUCH_KINDS = ["visit", "chat_start", "form_submit", "ad_lead", "social_dm", "email_click"] as const;
+export const TOUCH_KINDS = ["visit", "chat_start", "form_submit", "ad_lead", "social_dm", "email_click", "booking"] as const;
 export type TouchKind = (typeof TOUCH_KINDS)[number];
 
 export const CLICK_ID_TYPES = ["gclid", "gbraid", "wbraid", "dclid", "msclkid", "fbclid", "li_fat_id", "ttclid", "twclid"] as const;

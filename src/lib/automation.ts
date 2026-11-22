@@ -289,6 +289,10 @@ function getNotificationTitle(type: string, ctx: TriggerContext): string {
       return "High quality lead! (auto)";
     case "follow_up_reminder":
       return "Follow-up reminder (auto)";
+    case "booking_created":
+      return "New booking (auto)";
+    case "booking_cancelled":
+      return "Booking cancelled (auto)";
     default:
       return `Automation notification (${type})`;
   }
@@ -298,6 +302,8 @@ function getNotificationMessage(type: string, ctx: TriggerContext): string {
   switch (type) {
     case "new_lead":
     case "high_quality_lead":
+    case "booking_created":
+    case "booking_cancelled":
       return `Automation triggered for lead: ${ctx.leadName || "Unknown"}`;
     case "new_ticket":
     case "urgent_ticket":

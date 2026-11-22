@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { blockedOrigin, publicPreflight, withPublicCors } from "@/lib/public-cors";
 import { isModuleEnabled } from "@/lib/module-access";
 import { readPreChatForm, toPublicRules } from "@/lib/widget-rules";
+import { readQuestions } from "@/lib/booking/slots";
 
 export const OPTIONS = publicPreflight;
 
@@ -52,6 +53,29 @@ export const GET = withPublicCors(async (req: NextRequest) => {
     : [];
   const { preChatForm, ...agentFields } = agent;
 
+  // Booking (Leads module, Starter+): the widget's booking step needs the
+  // active booking types; null hides it.
+  const bookingTypes = (await isModuleEnabled(business.id, "leads", business.plan))
+    ? await db.bookingType.findMany({
+        where: { businessId: business.id, active: true, provider: "native" },
+        orderBy: { createdAt: "asc" },
+        select: { slug: true, name: true, durationMin: true, questions: true },
+      })
+    : [];
+  // The widget asks only the required questions; optional ones stay on the booking page.
+  const booking = bookingTypes.length
+    ? {
+        types: bookingTypes.map((t) => ({
+          slug: t.slug,
+          name: t.name,
+          durationMin: t.durationMin,
+          questions: readQuestions(t.questions)
+            .filter((q) => q.required)
+            .map((q) => ({ key: q.key, label: q.label })),
+        })),
+      }
+    : null;
+
   // Cache for 1 minute in the end-user's browser only.
   //
   // `public` would let any shared proxy / corporate gateway cache the
@@ -62,7 +86,7 @@ export const GET = withPublicCors(async (req: NextRequest) => {
   // not to store it. We also tag the response so the agent-edit handlers
   // can flush it via `revalidateTag()` on writes.
   return NextResponse.json(
-    { publicKey: business.publicKey, businessName: business.name, agent: agentFields, preChatForm: readPreChatForm(preChatForm), rules },
+    { publicKey: business.publicKey, businessName: business.name, agent: agentFields, preChatForm: readPreChatForm(preChatForm), rules, booking },
     {
       headers: {
         "Cache-Control": "private, max-age=60",

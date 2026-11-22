@@ -72,6 +72,8 @@ model Business {
   featureFlagOverrides BusinessFeatureFlag[]
   limitOverride        BusinessLimitOverride?
   widgetRules          WidgetRule[]
+  bookingTypes         BookingType[]
+  bookings             Booking[]
 
   @@index([purgeScheduledAt])
 }
@@ -297,6 +299,7 @@ model Lead {
   notes      LeadNote[]
   tasks      LeadTask[]
   activities LeadActivity[]
+  bookings   Booking[]
 
   // Dedupe within a tenant: a given email can only create one Lead per
   // Business. MySQL allows multiple NULL emails in a unique index, so
@@ -601,6 +604,7 @@ model SubscriptionPlan {
   whatsappTemplateLimit Int      @default(5)
   integrationLimit      Int      @default(3)
   proposalTemplateLimit Int      @default(10)
+  bookingTypeLimit      Int      @default(3) // booking types (0 = unlimited)
   quoteLimit            Int      @default(50)
   mediaStorageMbLimit   Int      @default(1024) // media library, in MB (0 = unlimited)
   auditRetentionDays    Int      @default(30)
@@ -626,6 +630,7 @@ model BusinessLimitOverride {
   whatsappTemplateLimit Int?
   integrationLimit      Int?
   proposalTemplateLimit Int?
+  bookingTypeLimit      Int?
   quoteLimit            Int?
   mediaStorageMbLimit   Int?
   notes                 String?
@@ -1378,6 +1383,7 @@ model Contact {
   chatSessions   ChatSession[]
   supportTickets SupportTicket[]
   quoteRequests  QuoteRequest[]
+  bookings       Booking[]
 
   @@unique([businessId, email])
   @@index([businessId, phone])
@@ -1405,7 +1411,7 @@ model Touchpoint {
   businessId  String
   contactId   String?
   visitorId   String?  @db.VarChar(191)
-  kind        String // visit | chat_start | form_submit | ad_lead | social_dm | email_click
+  kind        String // visit | chat_start | form_submit | ad_lead | social_dm | email_click | booking
   channel     String // organic_search | paid_search | social_organic | social_paid | email | referral | direct | whatsapp
   source      String? // utm_source / referrer host / platform
   medium      String?
@@ -1707,7 +1713,7 @@ model WidgetRule {
   conditions   Json
   message      String   @db.Text
   quickReplies Json? // string[] shown under the message
-  action       String   @default("bubble") // bubble (teaser next to the button) | open (opens the chat; phones get the bubble)
+  action       String   @default("bubble") // bubble (teaser next to the button) | open (opens the chat; phones get the bubble) | booking (bubble; the chat opens on the booking step)
   frequency    String   @default("session") // session | day | once
   shows        Int      @default(0)
   chats        Int      @default(0) // chats started after seeing it
@@ -1718,4 +1724,82 @@ model WidgetRule {
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId, enabled])
+}
+
+// ─── Booking (Phase 2, workstream P) ─────────────────────────────────
+// Native availability: weekly hours in Business.timezone, slots computed on
+// request (src/lib/booking/slots.ts). Bookings are checked for overlaps
+// across all of a business's booking types, with the Business row locked.
+
+model BookingType {
+  id             String   @id @default(cuid())
+  businessId     String
+  name           String
+  slug           String   @db.VarChar(80)
+  description    String?  @db.Text
+  durationMin    Int      @default(30)
+  bufferMin      Int      @default(0) // kept free after each meeting
+  minNoticeHours Int      @default(4)
+  maxDaysAhead   Int      @default(30)
+  slotStepMin    Int      @default(30) // how often a slot can start
+  // { mon: [["09:00","17:00"]], tue: [...], ... } in Business.timezone
+  availability   Json
+  location       String   @default("phone") // phone | video | in_person | custom
+  locationDetail String?  @db.Text // address, video link or instructions
+  // [{ key, label, required }] extra questions asked when booking
+  questions      Json?
+  provider       String   @default("native") // native | google | calendly (sync arrives in P part 2)
+  calendarId     String?
+  calendlyUrl    String?  @db.Text
+  assignedUserId String? // BusinessUser who takes the meeting (gets the emails)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+
+  @@unique([businessId, slug])
+  @@index([businessId, active])
+}
+
+model Booking {
+  id              String    @id @default(cuid())
+  businessId      String
+  bookingTypeId   String?
+  leadId          String?
+  contactId       String?
+  sessionId       String? // chat it came from
+  name            String
+  email           String
+  phone           String?
+  startsAt        DateTime
+  endsAt          DateTime
+  // Snapshot of the type's buffer, so later edits don't change old bookings' busy time.
+  bufferMin       Int       @default(0)
+  status          String    @default("confirmed") // confirmed | cancelled | completed | no_show
+  answers         Json?
+  notes           String?   @db.Text // what the visitor wrote
+  visitorTimezone String?   @db.VarChar(64)
+  source          String    @default("page") // page | widget | dashboard
+  consentText     String?   @db.Text
+  cancelledAt     DateTime?
+  cancelledBy     String? // visitor | business
+  cancelReason    String?   @db.Text
+  sequence        Int       @default(0) // calendar invite revision (bumped on reschedule / cancel)
+  externalId      String?   @db.VarChar(191) // Google event id / Calendly invitee uri
+  cancelToken     String    @unique @db.VarChar(64) // the visitor's manage link
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  business    Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  bookingType BookingType? @relation(fields: [bookingTypeId], references: [id], onDelete: SetNull)
+  lead        Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  contact     Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@unique([businessId, externalId])
+  @@index([businessId, startsAt])
+  @@index([businessId, status, startsAt])
+  @@index([leadId])
+  @@index([contactId])
 }

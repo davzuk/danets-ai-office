@@ -114,6 +114,14 @@ export function detectLeadIntent(message: string): boolean {
   return LEAD_INTENT_RE.test(message);
 }
 
+const BOOKING_INTENT_RE =
+  /\b(book(ing|ed)?|appointments?|(re)?schedul(e|ing)|meetings?|consultations?|demo|call ?back|set up a call|available (times?|slots?)|availability)\b/i;
+
+/** The visitor wants to book a time (the widget then offers slots when the business takes bookings). */
+export function detectBookingIntent(message: string): boolean {
+  return BOOKING_INTENT_RE.test(message);
+}
+
 /** The visitor asked for a person. */
 export function detectHandoverRequest(message: string): boolean {
   return HANDOVER_RE.test(message);

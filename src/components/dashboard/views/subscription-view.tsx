@@ -91,6 +91,7 @@ interface PlanInfo {
   integrationLimit: number;
   proposalTemplateLimit: number;
   quoteLimit: number;
+  bookingTypeLimit?: number;
   features: string[];
 }
 
@@ -120,6 +121,7 @@ interface UsageStats {
   integrations: number;
   proposalTemplates: number;
   quotes: number;
+  bookingTypes?: number;
 }
 
 interface SubscriptionData {
@@ -819,6 +821,7 @@ function UsageThisMonth({
   const integrationLimit = plan?.integrationLimit ?? 0;
   const proposalTemplateLimit = plan?.proposalTemplateLimit ?? 0;
   const quoteLimit = plan?.quoteLimit ?? 0;
+  const bookingTypeLimit = plan?.bookingTypeLimit ?? 0;
 
   const bars: UsageBarSpec[] = [
     {
@@ -904,6 +907,13 @@ function UsageThisMonth({
       used: usage.quotes,
       limit: quoteLimit,
       description: "AI-generated quotes this month",
+    },
+    {
+      key: "bookingTypes",
+      label: "Booking types",
+      used: usage.bookingTypes ?? 0,
+      limit: bookingTypeLimit,
+      description: "Meeting types visitors can book",
     },
   ];
 

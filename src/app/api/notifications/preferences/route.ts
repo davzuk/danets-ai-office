@@ -14,6 +14,8 @@ const NOTIF_TYPES = [
   { type: "subscription_expiry", label: "Subscription Expiry", default: true },
   { type: "integration_failed", label: "Integration Failed", default: true },
   { type: "content_insight", label: "Weekly Content Insight", default: true },
+  { type: "booking_created", label: "New or Moved Booking", default: true },
+  { type: "booking_cancelled", label: "Booking Cancelled", default: true },
 ];
 
 // GET /api/notifications/preferences — get user's notification preferences

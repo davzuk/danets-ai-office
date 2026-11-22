@@ -26,6 +26,8 @@ export interface EmailParams {
   subject: string;
   html: string;
   text?: string;
+  /** e.g. a calendar invite: { filename: "invite.ics", content, contentType: "text/calendar; method=REQUEST" } */
+  attachments?: { filename: string; content: string; contentType: string }[];
 }
 
 export interface EmailLogEntry {
@@ -367,6 +369,7 @@ export async function sendEmail(params: EmailParams): Promise<{ success: boolean
         subject: params.subject,
         html: params.html,
         text: params.text,
+        attachments: params.attachments?.map((a) => ({ filename: a.filename, content: a.content, contentType: a.contentType })),
       });
       return { success: true };
     }
@@ -393,6 +396,16 @@ export async function sendEmail(params: EmailParams): Promise<{ success: boolean
               : []),
             { type: "text/html", value: params.html },
           ],
+          ...(params.attachments?.length
+            ? {
+                attachments: params.attachments.map((a) => ({
+                  filename: a.filename,
+                  type: a.contentType.split(";")[0],
+                  disposition: "attachment",
+                  content: Buffer.from(a.content, "utf8").toString("base64"),
+                })),
+              }
+            : {}),
         }),
       });
 

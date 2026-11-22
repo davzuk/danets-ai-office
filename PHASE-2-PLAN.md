@@ -89,7 +89,7 @@ preChatForm  Json?   // { enabled, fields: [{ key: "name"|"email"|"phone"|"compa
 
 ### As built
 - `WidgetRule` counts `shows`, `chats` and `leads`. Only "show" uses the beacon. A chat counts when a session starts with the rule's id (`ChatSession.widgetRuleId`). A lead counts when that session produces one.
-- Actions: `bubble` (the default) or `open`. On phones, `open` falls back to the bubble. The `form` and `booking` actions wait for P and S.
+- Actions: `bubble` (the default), `open`, or `booking` (added in P: the bubble opens the chat on the booking step). On phones, `open` falls back to the bubble. The `form` action waits for S.
 - Pages use `{ match, value }`. The matcher is plain JS, shared by `widget.js` and the tests (`RULE_MATCHER_JS`). Mobile exit intent uses the fast upward scroll only, with no tab blur.
 - The pre-chat form has fixed fields (name, which is always asked, plus email / phone / company, each off, optional or required). There are no custom fields until S. A browser that has completed the form is remembered, so it isn't asked again.
 - Gating uses its own `proactive_messages` module (Starter+, flag-free), so Free plans keep the embed.
@@ -168,6 +168,20 @@ model Booking {
 - **Reminders:** 24-hour and 1-hour reminder emails go through the job queue, and the reminder template has a cancel and reschedule link. WhatsApp reminders reuse the WhatsApp module's templates when it's enabled.
 - **Dashboard:** a new Bookings tab in Leads, with an upcoming list, a calendar view (reusing the content calendar's month grid), status changes and no-show marking.
 - **Gating:** `leads` module (Starter+). Google and Calendly sync need Pro.
+
+### As built (part 1: native booking)
+- Schema as above, plus `description`, `slotStepMin`, `bufferMin`, `notes`, `visitorTimezone`, `source` (page | widget), `consentText`, cancellation fields and a `sequence` for `.ics` updates. A `bookingTypeLimit` plan limit (3 / 10 / unlimited) and a `booking` touchpoint kind.
+- Slots: `computeSlots` in `src/lib/booking/slots.ts` (pure, DST-tested). Existing bookings block their own buffer as well as the new type's. Google free/busy waits for part 2.
+- Booking: `src/lib/booking/service.ts`. The transaction locks the business row (`SELECT … FOR UPDATE`) and re-checks the slot, so the second of two simultaneous bookings gets 409 `SLOT_TAKEN`. A booking doesn't trigger AI lead scoring.
+- Hosted pages live on the app domain for now (`/book/<publicKey>/<slug>`, `noindex`) and move under tenant sites in Q. Visitors manage a booking at `/book/manage/<token>`.
+- Widget: booking intent comes from the chat reply (`booking` in the `/api/public/chat` response) or a rule with the `booking` action. It shows 3 days × 6 times inline plus a link to the full page.
+- Dashboard: Leads → Bookings (upcoming, calendar, past, booking types, business time zone). Members can cancel, or mark completed or no-show once the start has passed.
+- Notifications `booking_created` / `booking_cancelled` and the automation triggers of the same names.
+
+### Part 2 (next)
+- Google Calendar: incremental Calendar scopes on the Google connection, free/busy in `computeSlots`, events with a Meet link, and a `booking.sync` job (plus push notifications) that cancels bookings whose events were deleted.
+- Calendly: link and embed with UTM and prefill; a personal-access-token connection and an `invitee.created` / `invitee.canceled` webhook.
+- A `send_booking_link` automation action, and WhatsApp reminders through the WhatsApp module's templates.
 
 ### Done when
 - Two simultaneous bookings for one slot: exactly one succeeds.

@@ -71,6 +71,7 @@ export function GET(_req: NextRequest) {
             integrationLimit: plan.integrationLimit,
             proposalTemplateLimit: plan.proposalTemplateLimit,
             quoteLimit: plan.quoteLimit,
+            bookingTypeLimit: plan.bookingTypeLimit,
             features: JSON.parse(plan.features || "[]"),
           }
         : null,
@@ -93,6 +94,7 @@ export function GET(_req: NextRequest) {
         integrationLimit: p.integrationLimit,
         proposalTemplateLimit: p.proposalTemplateLimit,
         quoteLimit: p.quoteLimit,
+        bookingTypeLimit: p.bookingTypeLimit,
         features: JSON.parse(p.features || "[]"),
       })),
     };

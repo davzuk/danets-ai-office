@@ -35,4 +35,5 @@ export const TOUCH_KIND_LABEL: Record<string, string> = {
   ad_lead: "Submitted an ad lead form",
   social_dm: "Sent a social message",
   email_click: "Clicked an email",
+  booking: "Booked a meeting",
 };

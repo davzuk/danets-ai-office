@@ -47,7 +47,7 @@ interface WidgetRule {
   conditions: RuleConditions;
   message: string;
   quickReplies: string[] | null;
-  action: "bubble" | "open";
+  action: "bubble" | "open" | "booking";
   frequency: "session" | "day" | "once";
   shows: number;
   chats: number;
@@ -241,6 +241,7 @@ export function ProactiveMessagesPanel({ brandColor }: { brandColor: string }) {
                     <span className="font-medium text-sm">{r.name}</span>
                     {r.priority !== 0 && <Badge variant="outline">Priority {r.priority}</Badge>}
                     {r.action === "open" && <Badge variant="secondary">Opens chat</Badge>}
+                    {r.action === "booking" && <Badge variant="secondary">Offers booking</Badge>}
                   </div>
                   <p className="text-xs text-muted-foreground truncate">{describe(r)}</p>
                   <p className="text-sm line-clamp-2">&ldquo;{r.message}&rdquo;</p>
@@ -491,9 +492,13 @@ function RuleEditor({
               <SelectContent>
                 <SelectItem value="bubble">Speech bubble by the chat button</SelectItem>
                 <SelectItem value="open">Open the chat window</SelectItem>
+                <SelectItem value="booking">Bubble that offers booking times</SelectItem>
               </SelectContent>
             </Select>
             {draft.action === "open" && <p className="text-xs text-muted-foreground">Phones always get the bubble, so the chat never covers the page.</p>}
+            {draft.action === "booking" && (
+              <p className="text-xs text-muted-foreground">Opening the chat shows your next free times. Needs an active booking type (Leads → Bookings); without one it acts as a plain bubble.</p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">How often</Label>

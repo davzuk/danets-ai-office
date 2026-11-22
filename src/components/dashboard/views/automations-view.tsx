@@ -14,6 +14,8 @@ import {
   RefreshCw,
   FileUp,
   CalendarClock,
+  CalendarCheck,
+  CalendarX,
   ListTodo,
   Sparkles,
   StickyNote,
@@ -82,7 +84,9 @@ type TriggerType =
   | "proposal_accepted"
   | "lead_status_changed"
   | "document_uploaded"
-  | "no_response_days";
+  | "no_response_days"
+  | "booking_created"
+  | "booking_cancelled";
 
 type ActionType =
   | "create_task"
@@ -172,6 +176,18 @@ const TRIGGER_CONFIG: Record<TriggerType, NodeConfig> = {
   no_response_days: {
     icon: CalendarClock,
     label: "No Response After X Days",
+    iconBg: "bg-orange-500/10",
+    iconText: "text-orange-600 dark:text-orange-400",
+  },
+  booking_created: {
+    icon: CalendarCheck,
+    label: "Booking Made",
+    iconBg: "bg-emerald-500/10",
+    iconText: "text-emerald-600 dark:text-emerald-400",
+  },
+  booking_cancelled: {
+    icon: CalendarX,
+    label: "Booking Cancelled",
     iconBg: "bg-orange-500/10",
     iconText: "text-orange-600 dark:text-orange-400",
   },

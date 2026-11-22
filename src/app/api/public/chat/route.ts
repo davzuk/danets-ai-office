@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { logUsage, type UsageInput } from "@/lib/ai";
-import { generateAgentReply } from "@/lib/agent-reply";
+import { detectBookingIntent, generateAgentReply } from "@/lib/agent-reply";
+import { isModuleEnabled } from "@/lib/module-access";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { checkChatRateLimit, checkMonthlyAiQuota } from "@/lib/plan-limits";
 import { startWidgetSession } from "@/lib/widget-session";
@@ -184,12 +185,18 @@ export const POST = withPublicCors(async (req: NextRequest) => {
   if (!reply.failed) await logUsage(business.id, "chat", tokens);
 
   const leadIntent = reply.leadIntent;
+  // Offer the booking step only when this business actually takes bookings.
+  const booking =
+    detectBookingIntent(parsed.data.message) &&
+    (await isModuleEnabled(business.id, "leads", business.plan)) &&
+    (await db.bookingType.count({ where: { businessId: business.id, active: true, provider: "native" } })) > 0;
 
   return NextResponse.json({
     sessionId: session.id,
     reply: aiContent,
     kbContextCount: kbItems.length,
     leadIntent,
+    booking,
     handover: {
       phone: agent.contactPhone,
       whatsapp: agent.whatsappNumber,

@@ -42,7 +42,8 @@ export const widgetRuleInputSchema = z.object({
   conditions: ruleConditionsSchema,
   message: z.string().trim().min(1).max(300),
   quickReplies: z.array(z.string().trim().min(1).max(60)).max(4).default([]),
-  action: z.enum(["bubble", "open"]).default("bubble"),
+  // booking: a bubble whose chat opens on the booking step (needs a booking type).
+  action: z.enum(["bubble", "open", "booking"]).default("bubble"),
   frequency: z.enum(["session", "day", "once"]).default("session"),
 });
 
@@ -64,7 +65,7 @@ export interface PublicRule {
   conditions: RuleConditions;
   message: string;
   quickReplies: string[];
-  action: "bubble" | "open";
+  action: "bubble" | "open" | "booking";
   frequency: "session" | "day" | "once";
 }
 
@@ -85,7 +86,7 @@ export function toPublicRules(
           conditions,
           message: r.message,
           quickReplies: readQuickReplies(r.quickReplies),
-          action: r.action === "open" ? "open" : "bubble",
+          action: r.action === "open" || r.action === "booking" ? r.action : "bubble",
           frequency: r.frequency === "day" || r.frequency === "once" ? r.frequency : "session",
         } satisfies PublicRule,
       ];
