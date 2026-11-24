@@ -120,6 +120,14 @@ export default function AppHome() {
   const [moduleAccess, setModuleAccess] = useState<ModuleAccessInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<ViewId>("overview");
+  const [brand, setBrand] = useState<{
+    appName?: string;
+    appShortName?: string;
+    primaryColor?: string;
+    accentColor?: string;
+    customLogoUrl?: string | null;
+    hideBranding?: boolean;
+  } | null>(null);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -145,6 +153,7 @@ export default function AppHome() {
           setUser(data.user);
           setSubscription(data.subscription ?? null);
           setModuleAccess(data.modules ?? null);
+          setBrand(data.brand ?? null);
           // Deep links: back from the OAuth connect flow (/api/connections/*/callback)
           // and from booking emails (/app?view=leads&tab=bookings).
           const linked = new URLSearchParams(window.location.search).get("view");
@@ -223,6 +232,7 @@ export default function AppHome() {
         onSessionChange={setUser}
         subscription={subscription}
         moduleAccess={moduleAccess}
+        brand={brand}
       >
         {/* key={view} forces a remount so the CSS fade re-runs on navigation */}
         <div key={view} className="animate-view-fade">

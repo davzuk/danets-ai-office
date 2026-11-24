@@ -95,6 +95,7 @@ export function AppShell({
   onSessionChange,
   subscription,
   moduleAccess,
+  brand,
   children,
 }: {
   user: {
@@ -127,6 +128,14 @@ export function AppShell({
     plan: string;
     modules: Record<string, { enabled: boolean; label: string; requiredPlanLabel: string }>;
     enabledModules: string[];
+  } | null;
+  brand?: {
+    appName?: string;
+    appShortName?: string;
+    primaryColor?: string;
+    accentColor?: string;
+    customLogoUrl?: string | null;
+    hideBranding?: boolean;
   } | null;
   children: React.ReactNode;
 }) {
@@ -219,6 +228,7 @@ export function AppShell({
           }}
           groups={groups}
           moduleAccess={moduleAccess}
+          brand={brand}
         />
         <SidebarFooter user={user} onLogout={logout} />
       </aside>
@@ -250,6 +260,7 @@ export function AppShell({
               }}
               groups={groups}
               moduleAccess={moduleAccess}
+              brand={brand}
             />
             <SidebarFooter user={user} onLogout={logout} />
           </aside>
@@ -269,7 +280,7 @@ export function AppShell({
             <Menu size={20} />
           </Button>
           <div className="lg:hidden">
-            <DanetsLogo size="sm" variant="icon" />
+            <DanetsLogo size="sm" variant="icon" brand={brand} />
           </div>
           <div className="hidden sm:flex items-center gap-1.5 text-sm text-muted-foreground">
             <span>Danets AI</span>
@@ -327,11 +338,11 @@ export function AppShell({
         {/* Footer */}
         <footer className="mt-auto border-t bg-background px-4 lg:px-6 py-3 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-muted-foreground">
           <div className="flex items-center gap-2">
-            <DanetsLogo size="sm" variant="icon" />
-            <span>© {new Date().getFullYear()} Danets TecPro Limited</span>
+            <DanetsLogo size="sm" variant="icon" brand={brand} />
+            <span>© {new Date().getFullYear()}{brand?.hideBranding ? (brand.appName ? ` ${brand.appName}` : "") : " Danets TecPro Limited"}</span>
           </div>
           <div className="flex items-center gap-4">
-            <span>Software · Cloud · AI · Cybersecurity</span>
+            {!brand?.hideBranding && <span>Software · Cloud · AI · Cybersecurity</span>}
           </div>
         </footer>
       </div>
@@ -352,6 +363,7 @@ function SidebarContent({
   onNavigate,
   groups,
   moduleAccess,
+  brand,
 }: {
   active: ViewId;
   onNavigate: (v: ViewId) => void;
@@ -359,11 +371,17 @@ function SidebarContent({
   moduleAccess?: {
     modules: Record<string, { enabled: boolean; requiredPlanLabel: string }>;
   } | null;
+  brand?: {
+    appName?: string;
+    customLogoUrl?: string | null;
+    hideBranding?: boolean;
+    primaryColor?: string;
+  } | null;
 }) {
   return (
     <div className="flex-1 flex flex-col overflow-y-auto scroll-thin">
       <div className="p-4 border-b border-sidebar-border">
-        <DanetsLogo size="md" />
+        <DanetsLogo size="md" brand={brand} />
       </div>
       <nav className="flex-1 p-3 space-y-5">
         {groups.map((g) => (

@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { getSubscriptionAccess } from "@/lib/subscription-access";
 import { getTenantModuleAccess } from "@/lib/module-access";
+import { readBrand } from "@/lib/white-label/brand";
 
 export async function GET() {
   const s = await getSession();
@@ -33,5 +34,6 @@ export async function GET() {
     user: { ...s, enforce2fa },
     subscription,
     modules: moduleAccess,
+    brand: await readBrand(),
   });
 }

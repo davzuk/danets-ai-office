@@ -37,9 +37,11 @@ function isDemoMode(): boolean {
 export function AuthScreen({
   onAuthed,
   initialMode = "login",
+  brand,
 }: {
   onAuthed: (u: AuthUser) => void;
   initialMode?: AuthMode;
+  brand?: { appName?: string; customLogoUrl?: string | null; hideBranding?: boolean; primaryColor?: string } | null;
 }) {
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [loading, setLoading] = useState(false);
@@ -134,7 +136,9 @@ export function AuthScreen({
 
   const subtitle =
     mode === "login"
-      ? "Enter your credentials to access Danets AI Automation."
+      ? brand?.appName
+        ? `Enter your credentials to access ${brand.appName}.`
+        : "Enter your credentials to access Danets AI Automation."
       : "Start automating your customer conversations in minutes.";
 
   if (platformStatus?.maintenanceMode) {
@@ -156,14 +160,14 @@ export function AuthScreen({
 
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
-      <div className="relative hidden lg:flex flex-col justify-between p-12 brand-gradient text-white overflow-hidden">
+      <div className="relative hidden lg:flex flex-col justify-between p-12 brand-gradient text-white overflow-hidden" style={brand?.primaryColor ? { background: brand.primaryColor } : undefined}>
         <div className="absolute inset-0 opacity-10" style={{
           backgroundImage:
             "radial-gradient(circle at 20% 30%, white 1px, transparent 1px), radial-gradient(circle at 80% 70%, white 1px, transparent 1px)",
           backgroundSize: "48px 48px",
         }} />
         <div className="relative">
-          <DanetsLogo size="lg" variant="full" />
+          <DanetsLogo size="lg" variant="full" brand={brand} />
         </div>
         <div className="relative space-y-6 max-w-md">
           <h1 className="text-4xl font-bold leading-tight">
@@ -191,17 +195,19 @@ export function AuthScreen({
             ))}
           </div>
         </div>
-        <div className="relative text-sm text-white/70">
-          © {new Date().getFullYear()} Danets TecPro Limited — Software, Cloud,
-          AI Automation & Cybersecurity.
-        </div>
+        {!brand?.hideBranding && (
+          <div className="relative text-sm text-white/70">
+            © {new Date().getFullYear()} Danets TecPro Limited — Software, Cloud,
+            AI Automation & Cybersecurity.
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-center p-6 sm:p-12 bg-background">
         <div className="w-full max-w-md space-y-6">
           <div className="space-y-2 text-center lg:hidden">
             <div className="flex justify-center">
-              <DanetsLogo size="lg" />
+              <DanetsLogo size="lg" brand={brand} />
             </div>
           </div>
 

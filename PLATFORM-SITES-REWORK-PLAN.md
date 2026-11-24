@@ -2,6 +2,8 @@
 
 **Agreed:** 2026-11-24. Supersedes the tenant-facing direction of Phase 2 workstreams Q/R/S/T.
 
+**Status:** A, B and C are implemented. C covers TXT verification of white-label domains (`white-label.verify-domains`) and host-based branding of the login and dashboard (`/api/brand`, `/api/auth/me` `brand` field, `DanetsLogo`/`AuthScreen`/`AppShell` brand props). Remaining follow-up: apply `customCss` and a global primary-color theme in the root layout, and re-scope the dormant `/api/site/*` CRUD to the platform console.
+
 ## Direction (confirmed)
 
 - Tenants do **not** build a website or have a CMS. There is no tenant-facing Website view.

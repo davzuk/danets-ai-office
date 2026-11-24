@@ -8,16 +8,25 @@ import { ErrorBoundary } from "@/components/error-boundary";
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(true);
+  const [brand, setBrand] = useState<{
+    appName?: string;
+    customLogoUrl?: string | null;
+    hideBranding?: boolean;
+    primaryColor?: string;
+  } | null>(null);
   const router = useRouter();
 
   // If a session already exists, jump straight to the dashboard.
   useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data?.user) {
-          window.location.href = data.user.isSuperAdmin ? "/platform" : "/app";
+    Promise.all([
+      fetch("/api/auth/me").then((r) => r.json()),
+      fetch("/api/brand").then((r) => r.json()),
+    ])
+      .then(([me, b]) => {
+        if (me?.user) {
+          window.location.href = me.user.isSuperAdmin ? "/platform" : "/app";
         }
+        setBrand(b?.brand ?? null);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -35,6 +44,7 @@ export default function LoginPage() {
       {/* fade-in handled via CSS so we can drop the framer-motion runtime */}
       <div className="animate-fade-in">
         <AuthScreen
+          brand={brand}
           onAuthed={(u) => {
             window.location.href = u.isSuperAdmin ? "/platform" : "/app";
           }}
