@@ -7,6 +7,7 @@ import { ServiceWorkerRegister } from "@/components/pwa/register-sw";
 import { CsrfProvider } from "@/components/csrf-provider";
 import { QueryProvider } from "@/components/query-provider";
 import { SkipToMain } from "@/components/a11y/skip-to-main";
+import { readBrand } from "@/lib/white-label/brand";
 
 const inter = Inter({
   variable: "--font-geist-sans",
@@ -57,16 +58,19 @@ export const viewport = {
   maximumScale: 1,
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const brand = await readBrand();
   return (
     <html lang="en" suppressHydrationWarning>
       <body
         className={`${inter.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
+        style={brand ? ({ "--brand-primary": brand.primaryColor, "--brand-accent": brand.accentColor } as React.CSSProperties) : undefined}
       >
+        {brand?.customCss ? <style dangerouslySetInnerHTML={{ __html: brand.customCss }} /> : null}
         {/* WCAG 2.4.1: keyboard users can bypass nav and jump to #main. */}
         <SkipToMain />
         <ThemeProvider
