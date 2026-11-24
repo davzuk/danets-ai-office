@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { PAGE_SLUG_RE, RESERVED_PAGE_SLUGS, customDomainFromHost, isSitesOnlyHost, siteSubdomainFromHost } from "@/lib/sites/host";
+import { PAGE_SLUG_RE, RESERVED_PAGE_SLUGS, isSitesOnlyHost, siteSubdomainFromHost } from "@/lib/sites/host";
 
 // Edge runtime doesn't have Node `crypto`, so we use the Web Crypto
 // `randomUUID` available globally on the Edge platform.
@@ -99,9 +99,7 @@ const notFound = (requestId: string) => {
  * A request to a tenant website host. Pages and the site's robots.txt and
  * sitemap.xml are rewritten to the internal /site-render route; the public
  * widget API passes through; everything else (the dashboard, /platform,
- * the private API) is a 404 on tenant hosts. `siteKey` is the subdomain, or
- * the whole hostname for a custom domain (subdomains never contain a dot);
- * the renderer only serves a custom domain once it is verified.
+ * the private API) is a 404 on tenant hosts. `siteKey` is the subdomain.
  */
 function tenantSite(request: NextRequest, siteKey: string, requestId: string, nonce: string): NextResponse {
   const { pathname } = request.nextUrl;
@@ -160,8 +158,6 @@ export function middleware(request: NextRequest) {
   // The bare sites domain, sites.<domain> (the CNAME target) and reserved
   // names under it serve nothing; the app never runs there.
   if (host && isSitesOnlyHost(host) && !pathname.startsWith("/api/public/")) return notFound(requestId);
-  const customDomain = customDomainFromHost(host);
-  if (customDomain) return tenantSite(request, customDomain, requestId, nonce);
   // The internal site renderer is only reachable through a tenant host.
   if (pathname === "/site-render" || pathname.startsWith("/site-render/")) return notFound(requestId);
 

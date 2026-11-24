@@ -5,9 +5,7 @@ import { withSession } from "@/lib/api";
 import { AppError } from "@/lib/app-error";
 import { logActivity } from "@/lib/activity";
 import { checkQuota } from "@/lib/plan-quota";
-import { customDomainOrigin, siteOrigin, sitesDomain } from "@/lib/sites/host";
-import { isModuleEnabled } from "@/lib/module-access";
-import { domainView } from "@/lib/sites/domains";
+import { siteOrigin, sitesDomain } from "@/lib/sites/host";
 import { siteSeoDefaultsSchema, siteThemeSchema } from "@/lib/sites/blocks";
 import { appOrigin, pageConversions, pageUrl, readPageSeo, readSeoDefaults, readTheme } from "@/lib/sites/server";
 import { assertSubdomainFree, availableSubdomain, createSite } from "@/lib/sites/service";
@@ -36,16 +34,14 @@ export async function GET() {
     if (!site) return { ...common, site: null, pages: [], suggestedSubdomain: await availableSubdomain(business?.name ?? "site") };
 
     const subOrigin = siteOrigin(site.subdomain);
-    const domainAllowed = await isModuleEnabled(user.businessId, "sites_domain");
-    const customOrigin = domainAllowed && site.domainStatus === "verified" && site.customDomain ? customDomainOrigin(site.customDomain) : null;
-    const origin = customOrigin ?? subOrigin;
+    const origin = subOrigin;
     const pages = await db.landingPage.findMany({
       where: { siteId: site.id },
       select: { id: true, slug: true, title: true, status: true, publishedAt: true, updatedAt: true, views: true, seo: true },
       orderBy: [{ slug: "asc" }],
     });
     const published = pages.filter((p) => p.status === "published").map((p) => p.slug);
-    const conversions = await pageConversions(user.businessId, [subOrigin, customOrigin].filter((o): o is string => !!o), published);
+    const conversions = await pageConversions(user.businessId, [subOrigin].filter((o): o is string => !!o), published);
     return {
       ...common,
       site: {
@@ -53,8 +49,6 @@ export async function GET() {
         subdomain: site.subdomain,
         origin,
         subdomainOrigin: subOrigin,
-        domainAllowed,
-        domain: domainView(site),
         status: site.status,
         theme: readTheme(site.theme) ?? {},
         seoDefaults: readSeoDefaults(site.seoDefaults) ?? {},

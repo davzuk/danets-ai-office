@@ -3,15 +3,11 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireSuperAdmin } from "@/lib/super-admin";
 import { logActivity } from "@/lib/activity";
-import { DOMAIN_CLEARED } from "@/lib/sites/domains";
 
-const schema = z.union([
-  z.object({ status: z.enum(["active", "suspended"]), reason: z.string().trim().max(300).optional() }),
-  z.object({ removeDomain: z.literal(true), reason: z.string().trim().max(300).optional() }),
-]);
+const schema = z.object({ status: z.enum(["active", "suspended"]), reason: z.string().trim().max(300).optional() });
 
-// PATCH /api/super-admin/sites/<id> {status} | {removeDomain: true}: take a
-// tenant's website offline or bring it back, or disconnect its custom domain.
+// PATCH /api/super-admin/sites/<id> {status}: take a tenant's website offline
+// or bring it back online.
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireSuperAdmin();
   if (!auth.success) return auth.error;
@@ -19,19 +15,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   const site = await db.tenantSite.findUnique({ where: { id: (await params).id } });
   if (!site) return NextResponse.json({ error: "Site not found" }, { status: 404 });
-  if ("removeDomain" in parsed.data) {
-    if (!site.customDomain) return NextResponse.json({ site: { id: site.id, customDomain: null } });
-    await db.tenantSite.update({ where: { id: site.id }, data: DOMAIN_CLEARED });
-    await logActivity({
-      businessId: site.businessId,
-      userName: `${auth.user.name} (Super Admin)`,
-      action: "domain_removed",
-      module: "sites",
-      description: `Domain ${site.customDomain} disconnected from the website by the platform${parsed.data.reason ? `: ${parsed.data.reason}` : ""}`,
-      metadata: { siteId: site.id, domain: site.customDomain, reason: parsed.data.reason ?? null },
-    });
-    return NextResponse.json({ site: { id: site.id, customDomain: null } });
-  }
   const updated = await db.tenantSite.update({ where: { id: site.id }, data: { status: parsed.data.status } });
   if (site.status !== updated.status) {
     await logActivity({

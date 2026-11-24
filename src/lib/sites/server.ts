@@ -8,19 +8,15 @@ import { db } from "@/lib/db";
 import { isModuleEnabled } from "@/lib/module-access";
 import { logger, serializeError } from "@/lib/logger";
 import { appOrigin } from "@/lib/public-cors";
-import { customDomainOrigin, siteOrigin } from "./host";
+import { siteOrigin } from "./host";
 import { pageSeoSchema, readBlocks, siteSeoDefaultsSchema, siteThemeSchema, validateBlocks, type PageSeo, type ParsedBlock, type SiteSeoDefaults, type SiteTheme } from "./blocks";
 
 export interface RenderSite {
   id: string;
   businessId: string;
   subdomain: string;
-  /** The canonical origin: the verified custom domain when there is one, else the subdomain. */
+  /** The canonical origin: the tenant site's subdomain. */
   origin: string;
-  /** Set when a verified custom domain is the canonical address. */
-  customOrigin: string | null;
-  /** Which address this request came in on. */
-  servedOn: "subdomain" | "domain";
   name: string;
   publicKey: string;
   theme: SiteTheme | null;
@@ -45,14 +41,11 @@ export const readPageSeo = (v: unknown): PageSeo => {
 /**
  * The site a tenant host serves, or null when it shouldn't be served: no
  * such site, suspended by a platform admin, the business isn't active, or
- * its plan no longer includes the Website module. `key` is a subdomain, or
- * a whole hostname for a custom domain, which must be verified and on a
- * plan with custom domains.
+ * its plan no longer includes the Website module. `key` is the subdomain.
  */
 export const getRenderSite = cache(async (key: string): Promise<RenderSite | null> => {
-  const byDomain = key.includes(".");
   const site = await db.tenantSite.findUnique({
-    where: byDomain ? { customDomain: key } : { subdomain: key },
+    where: { subdomain: key },
     include: {
       business: {
         select: { id: true, name: true, publicKey: true, status: true, plan: true, phone: true, email: true, whatsapp: true, industry: true },
@@ -61,11 +54,7 @@ export const getRenderSite = cache(async (key: string): Promise<RenderSite | nul
   });
   if (!site || site.status !== "active" || site.business.status !== "active") return null;
   if (!(await isModuleEnabled(site.businessId, "sites", site.business.plan))) return null;
-  const domainLive = site.domainStatus === "verified" && !!site.customDomain && (await isModuleEnabled(site.businessId, "sites_domain", site.business.plan));
-  if (byDomain && !domainLive) return null;
-  const subOrigin = siteOrigin(site.subdomain);
-  const customOrigin = domainLive ? customDomainOrigin(site.customDomain!) : null;
-  const origin = customOrigin ?? subOrigin;
+  const origin = siteOrigin(site.subdomain);
   if (!origin) return null;
   const b = site.business;
   return {
@@ -73,8 +62,6 @@ export const getRenderSite = cache(async (key: string): Promise<RenderSite | nul
     businessId: site.businessId,
     subdomain: site.subdomain,
     origin,
-    customOrigin,
-    servedOn: byDomain ? "domain" : "subdomain",
     name: b.name,
     publicKey: b.publicKey,
     theme: readTheme(site.theme),

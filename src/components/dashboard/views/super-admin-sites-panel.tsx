@@ -13,7 +13,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
 interface SiteRow {
   id: string;
@@ -21,9 +20,6 @@ interface SiteRow {
   url: string | null;
   status: string;
   widgetEnabled: boolean;
-  customDomain: string | null;
-  domainStatus: string;
-  domainError: string | null;
   createdAt: string;
   business: { id: string; name: string; status: string };
   pages: number;
@@ -39,27 +35,6 @@ export function SuperAdminSitesPanel() {
   const [target, setTarget] = useState<SiteRow | null>(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  const [unlinking, setUnlinking] = useState<SiteRow | null>(null);
-
-  const removeDomain = async (site: SiteRow) => {
-    setBusy(site.id);
-    try {
-      const r = await fetch(`/api/super-admin/sites/${site.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ removeDomain: true }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || "Could not remove the domain.");
-      toast.success(`${site.customDomain} disconnected.`);
-      load(q);
-    } catch (e: any) {
-      toast.error(e.message);
-    } finally {
-      setBusy(null);
-      setUnlinking(null);
-    }
-  };
 
   const load = useCallback(async (query: string) => {
     try {
@@ -105,7 +80,7 @@ export function SuperAdminSitesPanel() {
           <CardTitle className="flex items-center gap-2">
             <Globe className="h-5 w-5" /> Tenant sites
           </CardTitle>
-          <CardDescription>Websites tenants have built. Suspending one shows visitors a “not found” page; the tenant keeps their drafts.</CardDescription>
+          <CardDescription>Websites built for tenants. Suspending one shows visitors a “not found” page.</CardDescription>
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">
@@ -127,7 +102,6 @@ export function SuperAdminSitesPanel() {
                 <tr className="border-b">
                   <th className="py-2 pr-3 font-medium">Business</th>
                   <th className="py-2 pr-3 font-medium">Address</th>
-                  <th className="py-2 pr-3 font-medium">Custom domain</th>
                   <th className="py-2 pr-3 text-right font-medium">Pages (live)</th>
                   <th className="py-2 pr-3 text-right font-medium">Views</th>
                   <th className="py-2 pr-3 font-medium">Status</th>
@@ -149,21 +123,6 @@ export function SuperAdminSitesPanel() {
                         </a>
                       ) : (
                         s.subdomain
-                      )}
-                    </td>
-                    <td className="py-2 pr-3">
-                      {s.customDomain ? (
-                        <div className="flex items-center gap-2">
-                          <span title={s.domainError ?? undefined}>{s.customDomain}</span>
-                          <Badge variant={s.domainStatus === "verified" ? "secondary" : s.domainStatus === "failed" ? "destructive" : "outline"}>
-                            {s.domainStatus === "verified" ? "Verified" : s.domainStatus === "failed" ? "Failed" : "Pending"}
-                          </Badge>
-                          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" disabled={busy === s.id} onClick={() => setUnlinking(s)}>
-                            Remove
-                          </Button>
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">None</span>
                       )}
                     </td>
                     <td className="py-2 pr-3 text-right tabular-nums">
@@ -195,7 +154,7 @@ export function SuperAdminSitesPanel() {
                 ))}
                 {sites.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="py-6 text-center text-muted-foreground">
+                    <td colSpan={6} className="py-6 text-center text-muted-foreground">
                       {q ? "No sites match." : "No tenant has set up a website yet."}
                     </td>
                   </tr>
@@ -205,20 +164,6 @@ export function SuperAdminSitesPanel() {
           </div>
         )}
       </CardContent>
-      <AlertDialog open={!!unlinking} onOpenChange={(o) => !o && setUnlinking(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Disconnect {unlinking?.customDomain}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The website stops answering on that domain and goes back to its Danets address. The tenant can add the domain again with new DNS records.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => unlinking && removeDomain(unlinking)}>Disconnect</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
       <Dialog open={!!suspending} onOpenChange={(o) => !o && setSuspending(null)}>
         <DialogContent>
           <DialogHeader>

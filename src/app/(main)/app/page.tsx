@@ -86,10 +86,6 @@ const SubscriptionView = dynamic(
   () => import("@/components/dashboard/views/subscription-view").then((m) => m.SubscriptionView),
   { ssr: false }
 );
-const WebsiteView = dynamic(
-  () => import("@/components/dashboard/views/website-view").then((m) => m.WebsiteView),
-  { ssr: false }
-);
 const AnalyticsView = dynamic(
   () => import("@/components/dashboard/views/analytics-view").then((m) => m.AnalyticsView),
   { ssr: false }
@@ -198,7 +194,6 @@ export default function AppHome() {
       case "documents": return <DocumentsView user={user} />;
       case "social": return <ContentStudioView user={user} />;
       case "media": return <MediaView user={user} />;
-      case "sites": return <WebsiteView user={user} />;
       case "whatsapp": return <WhatsAppView user={user} />;
       case "automations": return <AutomationsView user={user} />;
       case "analytics": return <AnalyticsView user={user} onNavigate={(v) => setView(v as ViewId)} />;

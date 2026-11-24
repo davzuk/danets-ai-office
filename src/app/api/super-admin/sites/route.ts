@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   if (!auth.success) return auth.error;
   const q = req.nextUrl.searchParams.get("q")?.trim().slice(0, 100) || "";
   const sites = await db.tenantSite.findMany({
-    where: q ? { OR: [{ subdomain: { contains: q } }, { customDomain: { contains: q } }, { business: { name: { contains: q } } }] } : undefined,
+    where: q ? { OR: [{ subdomain: { contains: q } }, { business: { name: { contains: q } } }] } : undefined,
     include: { business: { select: { id: true, name: true, status: true } } },
     orderBy: { createdAt: "desc" },
     take: 200,
@@ -26,9 +26,6 @@ export async function GET(req: NextRequest) {
         url: siteOrigin(s.subdomain),
         status: s.status,
         widgetEnabled: s.widgetEnabled,
-        customDomain: s.customDomain,
-        domainStatus: s.domainStatus,
-        domainError: s.domainError,
         createdAt: s.createdAt.toISOString(),
         business: s.business,
         pages: rows.reduce((n, r) => n + r._count._all, 0),

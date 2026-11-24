@@ -1,14 +1,12 @@
 import type { Metadata } from "next";
 import { after } from "next/server";
 import { headers } from "next/headers";
-import { notFound, permanentRedirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { SiteBlocks, SiteFrame } from "@/components/sites/site-blocks";
 import { appOrigin, getPublishedPage, getRenderSite, getSiteNav, pageUrl, recordPageView, type RenderSite } from "@/lib/sites/server";
 
 // A tenant website page. Reached only through the middleware's rewrite of
-// <subdomain>.SITES_DOMAIN/<slug> or a custom domain; the app host 404s
-// /site-render/*. A site with a verified custom domain serves its pages
-// there, and its subdomain redirects.
+// <subdomain>.SITES_DOMAIN/<slug>; the app host 404s /site-render/*.
 export const dynamic = "force-dynamic";
 
 type Props = { params: Promise<{ host: string; slug?: string[] }> };
@@ -57,7 +55,6 @@ export default async function SitePage({ params }: Props) {
   const found = await load(params);
   if (!found) notFound();
   const { site, page } = found;
-  if (site.customOrigin && site.servedOn === "subdomain") permanentRedirect(pageUrl(site.customOrigin, page.slug));
   const nav = await getSiteNav(site.id);
   const h = await headers();
   const nonce = h.get("x-csp-nonce") ?? undefined;

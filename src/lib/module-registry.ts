@@ -31,8 +31,6 @@ export const MODULE_KEYS = [
   "booking_sync",
   // Tenant websites and landing pages (Phase 2 Q).
   "sites",
-  // A tenant's own domain on its website (Phase 2 Q). Internal: lives in the Website view.
-  "sites_domain",
   // Phase 1+ marketing hub. Reserved now so plans can gate them; each is
   // behind a feature flag that doesn't exist yet, so they stay off (and out
   // of every tenant's enabled modules) until a platform admin enables it.
@@ -91,7 +89,6 @@ export const MODULE_REGISTRY: Record<ModuleKey, ModuleDef> = {
   proactive_messages: { label: "Proactive messages", minPlan: "starter" },
   booking_sync: { label: "Calendar sync for bookings", minPlan: "pro" },
   sites: { label: "Website", minPlan: "starter", flagKey: "sites_builder" },
-  sites_domain: { label: "Website custom domain", minPlan: "pro", flagKey: "sites_builder" },
   social: { label: "Social Media", minPlan: "starter", flagKey: "social_hub" },
   seo: { label: "SEO & Search Visibility", minPlan: "pro", flagKey: "seo_hub" },
   campaigns: { label: "Campaigns", minPlan: "pro", flagKey: "campaigns_hub" },

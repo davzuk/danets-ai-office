@@ -1008,8 +1008,15 @@ model WhatsAppMessage {
 model WhiteLabelConfig {
   id            String   @id @default(cuid())
   businessId    String   @unique
-  customDomain  String?
-  customLogoUrl String?
+  customDomain      String?
+  domainStatus      String    @default("none") // none | pending | verified | failed
+  domainToken       String?   @db.VarChar(64) // TXT record value proving ownership
+  domainRequestedAt DateTime? // 72-hour verification window start
+  domainCheckedAt   DateTime?
+  domainVerifiedAt  DateTime?
+  domainError       String?   @db.VarChar(300)
+  domainFailures    Int       @default(0)
+  customLogoUrl     String?
   primaryColor  String   @default("#1d4ed8")
   accentColor   String   @default("#84cc16")
   appName       String   @default("Danets AI Automation")
@@ -1023,6 +1030,7 @@ model WhiteLabelConfig {
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([businessId])
+  @@index([domainStatus, domainCheckedAt])
 }
 
 // ─── Platform Control (Super Admin) ───────────────────────────────
@@ -1820,23 +1828,17 @@ model Booking {
 }
 
 // ─── Tenant websites (Phase 2 Q) ─────────────────────────────────────
-// One site per tenant, served on <subdomain>.SITES_DOMAIN (and, in part 2,
-// a verified custom domain). Separate from the platform CMS (CmsSite /
-// CmsPage), which is Danets' own marketing site. Pages hold structured
-// blocks only (src/lib/sites/blocks.ts): no raw HTML or scripts.
+// One site per tenant, served on <subdomain>.SITES_DOMAIN. Websites are
+// built by the platform (not tenants); a tenant's own domain is a
+// white-label login domain (WhiteLabelConfig), not a website address.
+// Separate from the platform CMS (CmsSite / CmsPage), which is Danets' own
+// marketing site. Pages hold structured blocks only (src/lib/sites/blocks.ts):
+// no raw HTML or scripts.
 
 model TenantSite {
   id                String    @id @default(cuid())
   businessId        String    @unique // one site per tenant to start
   subdomain         String    @unique @db.VarChar(63)
-  customDomain      String?   @unique @db.VarChar(191)
-  domainStatus      String    @default("none") // none | pending | verified | failed
-  domainToken       String?   @db.VarChar(64) // TXT record value for verification
-  domainRequestedAt DateTime? // when the current domain was added (72-hour verify window)
-  domainCheckedAt   DateTime? // last DNS check
-  domainVerifiedAt  DateTime?
-  domainError       String?   @db.VarChar(300) // what the last check found missing
-  domainFailures    Int       @default(0) // daily re-checks in a row that lost the TXT record
   theme             Json? // { primaryColor, accentColor, font, logoUrl, faviconUrl }
   seoDefaults       Json? // { titleSuffix, description, ogImageUrl }
   widgetEnabled     Boolean   @default(true) // add the chat widget to every page
@@ -1847,8 +1849,6 @@ model TenantSite {
 
   business Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
   pages    LandingPage[]
-
-  @@index([domainStatus, domainCheckedAt])
 }
 
 model LandingPage {

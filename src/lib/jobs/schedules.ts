@@ -10,9 +10,9 @@ import { connectionRefreshJob } from "./handlers/connection-refresh";
 import { linkedinLeadgenPollJob } from "./handlers/linkedin-leadgen";
 import { metaLeadgenPollJob } from "./handlers/meta-leadgen";
 import { purgeJobsJob } from "./handlers/purge-jobs";
-import { siteVerifyDomainsJob } from "./handlers/site-domains";
 import { socialInsightsWeeklyJob } from "./handlers/social-insights";
 import { socialMetricsAccountJob } from "./handlers/social-metrics";
+import { whiteLabelVerifyDomainsJob } from "./handlers/white-label-domains";
 import { enqueue } from "./queue";
 
 const MINUTE = 60_000;
@@ -40,8 +40,8 @@ export const SCHEDULES: Schedule[] = [
   { job: linkedinLeadgenPollJob, everyMs: 15 * MINUTE, offsetMs: 5 * MINUTE, payload: {} },
   // Bookings whose Google Calendar event was deleted get cancelled.
   { job: bookingSyncJob, everyMs: 15 * MINUTE, offsetMs: 10 * MINUTE, payload: {} },
-  // Website custom domains waiting for their DNS records (and a daily re-check once verified).
-  { job: siteVerifyDomainsJob, everyMs: 10 * MINUTE, offsetMs: 2 * MINUTE, payload: {} },
+  // White-label custom domains waiting for their DNS TXT record.
+  { job: whiteLabelVerifyDomainsJob, everyMs: 10 * MINUTE, offsetMs: 3 * MINUTE, payload: {} },
   // Follower counts, once a day.
   { job: socialMetricsAccountJob, everyMs: DAY, offsetMs: 2 * HOUR + 15 * MINUTE, payload: {} },
   // The weekly "what worked / what next" note, Mondays 06:00 UTC.

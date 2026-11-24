@@ -103,6 +103,14 @@ export function SettingsView({
   });
   const [wlLoading, setWlLoading] = useState(true);
   const [wlSaving, setWlSaving] = useState(false);
+  const [wlDomain, setWlDomain] = useState<null | {
+    domain: string;
+    status: string;
+    txtName: string;
+    txtValue: string | null;
+    problem: string | null;
+  }>(null);
+  const [wlDomainBusy, setWlDomainBusy] = useState(false);
 
   const [gdprExporting, setGdprExporting] = useState(false);
   const [gdprDeleting, setGdprDeleting] = useState(false);
@@ -153,6 +161,7 @@ export function SettingsView({
             hideBranding: !!d.config.hideBranding,
             isActive: !!d.config.isActive,
           });
+          setWlDomain(d.domain ?? null);
         }
       })
       .catch(() => toast.error("Failed to load white-label configuration"))
@@ -240,11 +249,45 @@ export function SettingsView({
           hideBranding: !!d.config.hideBranding,
           isActive: !!d.config.isActive,
         }));
+        setWlDomain(d.domain ?? null);
       }
     } catch (e: any) {
       toast.error(e.message);
     } finally {
       setWlSaving(false);
+    }
+  }
+
+  async function checkDomainNow() {
+    setWlDomainBusy(true);
+    try {
+      const res = await fetch("/api/white-label/domain/check", { method: "POST" });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Check failed");
+      setWlDomain(d.domain ?? null);
+      toast.success(d.domain?.status === "verified" ? "Domain verified" : "Checked — verify the TXT record if it isn't live yet");
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setWlDomainBusy(false);
+    }
+  }
+
+  async function removeDomain() {
+    setWlDomainBusy(true);
+    try {
+      const res = await fetch("/api/white-label/domain", { method: "DELETE" });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Remove failed");
+      }
+      setWlDomain(null);
+      setWl((prev) => ({ ...prev, customDomain: "" }));
+      toast.success("Domain removed");
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setWlDomainBusy(false);
     }
   }
 
@@ -487,6 +530,30 @@ export function SettingsView({
                         className="h-10"
                       />
                     </div>
+                    {wlDomain && (
+                      <div className="space-y-1.5 sm:col-span-2">
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <Badge variant={wlDomain.status === "verified" ? "secondary" : wlDomain.status === "failed" ? "destructive" : "outline"}>
+                            {wlDomain.status === "verified" ? "Verified" : wlDomain.status === "failed" ? "Failed" : "Pending"}
+                          </Badge>
+                          {wlDomain.problem && <span className="text-muted-foreground">{wlDomain.problem}</span>}
+                        </div>
+                        {wlDomain.status !== "verified" && wlDomain.txtValue && (
+                          <p className="text-xs text-muted-foreground">
+                            Add a TXT record on <code className="font-mono">{wlDomain.txtName}</code> with the value{" "}
+                            <code className="font-mono">{wlDomain.txtValue}</code>, then check again.
+                          </p>
+                        )}
+                        <div className="flex items-center gap-2 pt-1">
+                          <Button size="sm" variant="outline" onClick={checkDomainNow} disabled={wlDomainBusy}>
+                            {wlDomainBusy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}Check now
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={removeDomain} disabled={wlDomainBusy}>
+                            Remove domain
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                     <div className="space-y-1.5">
                       <Label className="text-xs">Custom Logo URL</Label>
                       <Input

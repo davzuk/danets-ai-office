@@ -164,25 +164,21 @@ export function readPageContext(raw: unknown): { url: string; title: string | nu
 }
 
 /**
- * blockedOrigin, plus the tenant's own website (<subdomain>.SITES_DOMAIN, or
- * its verified custom domain), which can always run its chat widget even
- * when the tenant has locked the key to other domains.
+ * blockedOrigin, plus the tenant's own website (<subdomain>.SITES_DOMAIN),
+ * which can always run its chat widget even when the tenant has locked the
+ * key to other domains.
  */
 export async function blockedOriginFor(req: NextRequest, business: { id: string; widgetAllowedOrigins: unknown }): Promise<NextResponse | null> {
   const blocked = blockedOrigin(req, business.widgetAllowedOrigins);
   if (!blocked) return null;
   try {
-    const { customDomainFromHost, siteSubdomainFromHost } = await import("@/lib/sites/host");
+    const { siteSubdomainFromHost } = await import("@/lib/sites/host");
     const host = new URL(req.headers.get("origin") ?? "").host;
     const sub = siteSubdomainFromHost(host);
-    const domain = sub ? null : customDomainFromHost(host);
-    if (sub || domain) {
+    if (sub) {
       const { db } = await import("@/lib/db");
-      const site = await db.tenantSite.findUnique({
-        where: sub ? { subdomain: sub } : { customDomain: domain! },
-        select: { businessId: true, domainStatus: true },
-      });
-      if (site?.businessId === business.id && (sub || site.domainStatus === "verified")) return null;
+      const site = await db.tenantSite.findUnique({ where: { subdomain: sub }, select: { businessId: true } });
+      if (site?.businessId === business.id) return null;
     }
   } catch {
     // Not a URL, or the lookup failed: keep the refusal.

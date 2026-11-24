@@ -10,11 +10,11 @@ import { metaCommentJob, metaMessageJob } from "./handlers/meta-events";
 import { metaLeadgenJob, metaLeadgenPollJob } from "./handlers/meta-leadgen";
 import { metaWebhookJob } from "./handlers/meta-webhook";
 import { purgeJobsJob } from "./handlers/purge-jobs";
-import { siteVerifyDomainsJob } from "./handlers/site-domains";
 import { socialInsightsBusinessJob, socialInsightsWeeklyJob } from "./handlers/social-insights";
 import { socialMetricsAccountJob, socialMetricsPostJob } from "./handlers/social-metrics";
 import { socialPublishJob } from "./handlers/social-publish";
 import { socialSubscribeJob } from "./handlers/social-subscribe";
+import { whiteLabelVerifyDomainsJob } from "./handlers/white-label-domains";
 
 const definitions: JobDefinition[] = [
   purgeJobsJob,
@@ -36,7 +36,7 @@ const definitions: JobDefinition[] = [
   socialInsightsBusinessJob,
   bookingRemindJob,
   bookingSyncJob,
-  siteVerifyDomainsJob,
+  whiteLabelVerifyDomainsJob,
 ];
 
 const byType = new Map<string, JobDefinition>();

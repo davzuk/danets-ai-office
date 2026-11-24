@@ -225,11 +225,9 @@ describe("middleware routing", () => {
     expect(rewrite(run("app.danets.com", "/roofing"))).toBeNull();
   });
 
-  it("sends other hostnames to the renderer as custom domains, keyed by the whole name", () => {
-    expect(rewrite(run("www.acme.com", "/"))).toBe("/site-render/www.acme.com");
-    expect(rewrite(run("www.acme.com", "/services/roofing"))).toBe("/site-render/www.acme.com/services/roofing");
-    expect(run("www.acme.com", "/app").headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
-    expect(run("www.acme.com", "/api/site").status).toBe(404);
+  it("no longer sends other hostnames to the renderer (white-label domains come later)", () => {
+    expect(rewrite(run("www.acme.com", "/"))).toBeNull();
+    expect(rewrite(run("www.acme.com", "/services/roofing"))).toBeNull();
     expect(run("www.acme.com", "/api/public/chat").headers.get("x-middleware-next")).toBe("1");
   });
 
