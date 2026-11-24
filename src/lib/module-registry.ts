@@ -112,6 +112,7 @@ const API_MODULE_ROUTES: [string, ModuleKey][] = [
   ["/api/quotes", "quotes"],
   ["/api/leads", "leads"],
   ["/api/lead-forms", "leads"],
+  ["/api/forms", "leads"],
   ["/api/bookings", "leads"],
   ["/api/booking-sync", "booking_sync"],
   ["/api/booking-types", "leads"],

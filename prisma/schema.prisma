@@ -58,6 +58,8 @@ model Business {
   brandProfile         BrandProfile?
   socialAccounts       SocialAccount[]
   metaLeadForms        MetaLeadForm[]
+  leadForms            LeadFormDef[]
+  formSubmissions      FormSubmission[]
   mediaAssets          MediaAsset[]
   contentPosts         ContentPost[]
   scheduledPosts       ScheduledPost[]
@@ -608,6 +610,7 @@ model SubscriptionPlan {
   proposalTemplateLimit Int      @default(10)
   bookingTypeLimit      Int      @default(3) // booking types (0 = unlimited)
   pageLimit             Int      @default(3) // published website pages (0 = unlimited)
+  formLimit             Int      @default(3) // lead capture forms (0 = unlimited)
   quoteLimit            Int      @default(50)
   mediaStorageMbLimit   Int      @default(1024) // media library, in MB (0 = unlimited)
   auditRetentionDays    Int      @default(30)
@@ -635,6 +638,7 @@ model BusinessLimitOverride {
   proposalTemplateLimit Int?
   bookingTypeLimit      Int?
   pageLimit             Int?
+  formLimit             Int?
   quoteLimit            Int?
   mediaStorageMbLimit   Int?
   notes                 String?
@@ -642,6 +646,50 @@ model BusinessLimitOverride {
   updatedAt             DateTime @updatedAt
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+// ─── Forms (Phase 2 S) ────────────────────────────────────────────────
+// Tenant lead-capture forms, hosted on a tenant site, embeddable on a
+// tenant's own website, and usable as a landing-page block on
+// platform-built pages. "LeadFormDef" avoids clashing with Meta's LeadForm.
+
+model LeadFormDef {
+  id          String   @id @default(cuid())
+  businessId  String
+  name        String   @db.VarChar(120)
+  // [{ key, type, label, required, options?, mapTo?, placeholder? }]
+  fields      Json
+  // { submitLabel, successMessage, redirectUrl?, notifyUserIds, consentText?, leadQuality? }
+  settings    Json
+  status      String   @default("active") // active | archived
+  submissions Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  responses FormSubmission[]
+
+  @@index([businessId, status])
+}
+
+model FormSubmission {
+  id         String   @id @default(cuid())
+  businessId String
+  formId     String
+  leadId     String?
+  contactId  String?
+  data       Json     // every answer, including unmapped fields
+  pageUrl    String?  @db.Text
+  ipHash     String?  @db.VarChar(64)
+  spamScore  Int      @default(0)
+  status     String   @default("accepted") // accepted | spam
+  createdAt  DateTime @default(now())
+
+  business Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  form     LeadFormDef @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@index([formId, createdAt])
+  @@index([businessId, createdAt])
 }
 
 // ─── Notifications ─────────────────────────────────────────────────
