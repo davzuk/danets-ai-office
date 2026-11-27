@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Geist_Mono } from "next/font/google";
 import "../globals.css";
 import { Toaster } from "@/components/ui/toaster";
+import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ServiceWorkerRegister } from "@/components/pwa/register-sw";
 import { CsrfProvider } from "@/components/csrf-provider";
@@ -83,6 +84,8 @@ export default async function RootLayout({
             <CsrfProvider>{children}</CsrfProvider>
           </QueryProvider>
           <Toaster />
+          {/* Every dashboard view raises toasts through `sonner`. */}
+          <SonnerToaster richColors closeButton />
           <ServiceWorkerRegister />
         </ThemeProvider>
       </body>
