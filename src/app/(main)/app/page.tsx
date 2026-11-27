@@ -50,6 +50,7 @@ const WhatsAppView = dynamic(
   () => import("@/components/dashboard/views/whatsapp-view").then((m) => m.WhatsAppView),
   { ssr: false }
 );
+const SeoView = dynamic(() => import("@/components/dashboard/views/seo-view").then((m) => m.SeoView), { ssr: false });
 const ContentStudioView = dynamic(
   () => import("@/components/dashboard/views/content-studio-view").then((m) => m.ContentStudioView),
   { ssr: false }
@@ -157,7 +158,7 @@ export default function AppHome() {
           // Deep links: back from the OAuth connect flow (/api/connections/*/callback)
           // and from booking emails (/app?view=leads&tab=bookings).
           const linked = new URLSearchParams(window.location.search).get("view");
-          if (linked === "integrations" || linked === "leads") {
+          if (linked === "integrations" || linked === "leads" || linked === "seo") {
             setView(linked);
           }
         }
@@ -202,6 +203,7 @@ export default function AppHome() {
       case "tickets": return <TicketsView user={user} />;
       case "documents": return <DocumentsView user={user} />;
       case "social": return <ContentStudioView user={user} />;
+      case "seo": return <SeoView />;
       case "media": return <MediaView user={user} />;
       case "whatsapp": return <WhatsAppView user={user} />;
       case "automations": return <AutomationsView user={user} />;

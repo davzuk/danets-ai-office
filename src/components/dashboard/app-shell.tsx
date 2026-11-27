@@ -25,6 +25,7 @@ import {
   Lock,
   Images,
   Sparkles,
+  SearchCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DanetsLogo } from "@/components/dashboard/shared/danets-logo";
@@ -47,6 +48,7 @@ export type ViewId =
   | "documents"
   | "media"
   | "social"
+  | "seo"
   | "whatsapp"
   | "automations"
   | "analytics"
@@ -73,6 +75,7 @@ const NAV: NavItem[] = [
   { id: "quotes", label: "Quotes & Proposals", icon: FileText, group: "tools", desc: "AI proposal generator" },
   { id: "documents", label: "Document Assistant", icon: FileText, group: "tools", desc: "AI document Q&A" },
   { id: "social", label: "Content Studio", icon: Sparkles, group: "tools", desc: "AI social posts" },
+  { id: "seo", label: "SEO", icon: SearchCheck, group: "tools", desc: "Search & local visibility" },
   { id: "media", label: "Media Library", icon: Images, group: "tools", desc: "Images & videos" },
   { id: "whatsapp", label: "WhatsApp", icon: MessageCircle, group: "tools", desc: "Templates & automation" },
   { id: "automations", label: "Automations", icon: Zap, group: "tools", desc: "Workflow builder" },

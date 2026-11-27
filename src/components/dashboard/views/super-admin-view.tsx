@@ -108,6 +108,7 @@ import { SuperAdminHealthPanel } from "@/components/dashboard/views/super-admin-
 import { TenantWhiteLabelEditor } from "@/components/dashboard/views/tenant-white-label-editor";
 import { TenantTwoFactorPolicy } from "@/components/dashboard/views/tenant-two-factor-policy";
 import { TenantWidgetOrigins } from "@/components/dashboard/views/tenant-widget-origins";
+import { TenantSeoCard } from "@/components/dashboard/views/tenant-seo-card";
 import type { PlatformTabId } from "@/lib/platform-nav";
 import { SuperAdminUsersPanel } from "@/components/dashboard/views/super-admin-users-panel";
 import { SuperAdminAuditPanel } from "@/components/dashboard/views/super-admin-audit-panel";
@@ -1176,6 +1177,8 @@ function SuperAdminInner({
                     .catch(() => {});
                 }}
               />
+
+              <TenantSeoCard key={`seo:${detail.id}`} businessId={detail.id} />
 
               <TenantWhiteLabelEditor businessId={detail.id} plan={detail.plan} />
 

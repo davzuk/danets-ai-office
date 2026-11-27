@@ -19,6 +19,8 @@ export type QuotaResource =
   | "pages"
   | "forms"
   | "leadMagnets"
+  | "seoProperties"
+  | "gbpLocations"
   | "mediaStorageMb";
 
 export interface EffectiveLimits {
@@ -41,6 +43,8 @@ export interface EffectiveLimits {
   pageLimit: number;
   formLimit: number;
   leadMagnetLimit: number;
+  seoPropertyLimit: number;
+  gbpLocationLimit: number;
   mediaStorageMbLimit: number;
 }
 
@@ -62,6 +66,8 @@ export interface QuotaUsage {
   pages: number;
   forms: number;
   leadMagnets: number;
+  seoProperties: number;
+  gbpLocations: number;
   /** Media library size in MB (rounded up). */
   mediaStorageMb: number;
 }
@@ -101,6 +107,8 @@ export const RESOURCE_LABELS: Record<QuotaResource, string> = {
   pages: "published website pages",
   forms: "lead capture forms",
   leadMagnets: "lead magnets",
+  seoProperties: "Search Console properties",
+  gbpLocations: "Business Profile locations",
   mediaStorageMb: "MB of media storage",
 };
 
@@ -160,6 +168,8 @@ export async function getEffectiveLimits(
       pageLimit: planRow?.pageLimit ?? 3,
       formLimit: planRow?.formLimit ?? 3,
       leadMagnetLimit: planRow?.leadMagnetLimit ?? 3,
+      seoPropertyLimit: planRow?.seoPropertyLimit ?? 1,
+      gbpLocationLimit: planRow?.gbpLocationLimit ?? 1,
       mediaStorageMbLimit: planRow?.mediaStorageMbLimit ?? 1024,
     };
 
@@ -185,6 +195,8 @@ export async function getEffectiveLimits(
       pageLimit: override?.pageLimit ?? base.pageLimit,
       formLimit: override?.formLimit ?? base.formLimit,
       leadMagnetLimit: override?.leadMagnetLimit ?? base.leadMagnetLimit,
+      seoPropertyLimit: override?.seoPropertyLimit ?? base.seoPropertyLimit,
+      gbpLocationLimit: override?.gbpLocationLimit ?? base.gbpLocationLimit,
       mediaStorageMbLimit: override?.mediaStorageMbLimit ?? base.mediaStorageMbLimit,
     };
   });
@@ -213,6 +225,8 @@ export async function getQuotaUsage(businessId: string): Promise<QuotaUsage> {
     pages,
     forms,
     leadMagnets,
+    seoProperties,
+    gbpLocations,
     media,
   ] = await Promise.all([
     db.chatSession.count({
@@ -242,6 +256,8 @@ export async function getQuotaUsage(businessId: string): Promise<QuotaUsage> {
     db.landingPage.count({ where: { businessId, status: "published" } }),
     db.leadFormDef.count({ where: { businessId } }),
     db.leadMagnet.count({ where: { businessId } }),
+    db.searchProperty.count({ where: { businessId } }),
+    db.businessLocation.count({ where: { businessId } }),
     db.mediaAsset.aggregate({ where: { businessId }, _sum: { sizeBytes: true } }),
   ]);
 
@@ -263,6 +279,8 @@ export async function getQuotaUsage(businessId: string): Promise<QuotaUsage> {
     pages,
     forms,
     leadMagnets,
+    seoProperties,
+    gbpLocations,
     mediaStorageMb: Math.ceil((media._sum.sizeBytes ?? 0) / (1024 * 1024)),
   };
   });
@@ -307,6 +325,10 @@ function limitForResource(
       return limits.formLimit;
     case "leadMagnets":
       return limits.leadMagnetLimit;
+    case "seoProperties":
+      return limits.seoPropertyLimit;
+    case "gbpLocations":
+      return limits.gbpLocationLimit;
     case "mediaStorageMb":
       return limits.mediaStorageMbLimit;
   }
@@ -351,6 +373,10 @@ function usedForResource(
       return usage.forms;
     case "leadMagnets":
       return usage.leadMagnets;
+    case "seoProperties":
+      return usage.seoProperties;
+    case "gbpLocations":
+      return usage.gbpLocations;
     case "mediaStorageMb":
       return usage.mediaStorageMb;
   }

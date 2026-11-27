@@ -79,6 +79,8 @@ model Business {
   bookings             Booking[]
   site                 TenantSite?
   landingPages         LandingPage[]
+  searchProperties     SearchProperty[]
+  businessLocations    BusinessLocation[]
 
   @@index([purgeScheduledAt])
 }
@@ -613,6 +615,8 @@ model SubscriptionPlan {
   pageLimit             Int      @default(3) // published website pages (0 = unlimited)
   formLimit             Int      @default(3) // lead capture forms (0 = unlimited)
   leadMagnetLimit       Int      @default(3) // lead magnets (0 = unlimited)
+  seoPropertyLimit      Int      @default(1) // Search Console properties (0 = unlimited)
+  gbpLocationLimit      Int      @default(1) // Google Business Profile locations (0 = unlimited)
   quoteLimit            Int      @default(50)
   mediaStorageMbLimit   Int      @default(1024) // media library, in MB (0 = unlimited)
   auditRetentionDays    Int      @default(30)
@@ -642,6 +646,8 @@ model BusinessLimitOverride {
   pageLimit             Int?
   formLimit             Int?
   leadMagnetLimit       Int?
+  seoPropertyLimit      Int?
+  gbpLocationLimit      Int?
   quoteLimit            Int?
   mediaStorageMbLimit   Int?
   notes                 String?
@@ -1974,4 +1980,52 @@ model LandingPageVersion {
   page LandingPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
 
   @@index([pageId, createdAt])
+}
+
+// ─── Phase 3, workstream U: Google properties for SEO ───────────────
+
+// A Search Console property the tenant picked, read through their Google
+// connection.
+model SearchProperty {
+  id            String    @id @default(cuid())
+  businessId    String
+  connectionId  String    // OAuthConnection (google)
+  siteUrl       String    @db.VarChar(300) // "sc-domain:example.com" or "https://www.example.com/"
+  permission    String    @db.VarChar(40) // siteOwner | siteFullUser | siteRestrictedUser
+  status        String    @default("active") // active | lost_access | error
+  lastCheckedAt DateTime?
+  lastSyncedAt  DateTime?
+  syncedThrough DateTime? @db.Date // last day with complete data (workstream V)
+  error         String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, siteUrl])
+  @@index([connectionId])
+}
+
+// A Google Business Profile location the tenant manages in Danets.
+model BusinessLocation {
+  id            String    @id @default(cuid())
+  businessId    String
+  connectionId  String    // OAuthConnection (google)
+  accountName   String    @db.VarChar(120) // accounts/{id}
+  locationName  String    @db.VarChar(120) // locations/{id}
+  title         String    @db.VarChar(300)
+  address       String?   @db.Text
+  mapsUri       String?   @db.Text
+  reviewUri     String?   @db.Text // where "leave a review" links go
+  status        String    @default("active") // active | lost_access | error
+  lastCheckedAt DateTime?
+  lastSyncedAt  DateTime?
+  error         String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, locationName])
+  @@index([connectionId])
 }

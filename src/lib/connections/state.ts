@@ -24,7 +24,8 @@ export interface OAuthStatePayload {
   createdAt: number;
 }
 
-export type ConnectPurpose = "calendar";
+/** calendar: booking sync (Leads → Bookings). seo: SEO → Setup. */
+export type ConnectPurpose = "calendar" | "seo";
 
 function base64url(buf: Buffer): string {
   return buf.toString("base64url");

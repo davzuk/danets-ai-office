@@ -22,6 +22,8 @@ export const LIMIT_FIELDS = [
   { key: "pageLimit", label: "Published website pages", unit: "total", fallback: 3 },
   { key: "formLimit", label: "Lead capture forms", unit: "total", fallback: 3 },
   { key: "leadMagnetLimit", label: "Lead magnets", unit: "total", fallback: 3 },
+  { key: "seoPropertyLimit", label: "Search Console properties", unit: "total", fallback: 1 },
+  { key: "gbpLocationLimit", label: "Business Profile locations", unit: "total", fallback: 1 },
   { key: "mediaStorageMbLimit", label: "Media storage", unit: "MB", fallback: 1024, hint: "Media library storage in MB (1024 = 1 GB)." },
 ] as const satisfies readonly { key: string; label: string; unit: string; fallback: number; hint?: string }[];
 

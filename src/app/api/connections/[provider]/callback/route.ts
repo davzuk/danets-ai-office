@@ -10,6 +10,7 @@ import { enqueue } from "@/lib/jobs";
 import { socialSubscribeJob } from "@/lib/jobs/handlers/social-subscribe";
 import { syncSocialAccounts } from "@/lib/social/accounts";
 import { hasCalendarScopes } from "@/lib/booking/google-calendar";
+import { seoScopes } from "@/lib/seo/google";
 
 type RouteCtx = { params: Promise<{ provider: string }> };
 
@@ -19,7 +20,7 @@ function backToApp(
   status: "connected" | "error",
   reason?: string,
   extra: Record<string, string> = {},
-  view: "integrations" | "leads" = "integrations"
+  view: "integrations" | "leads" | "seo" = "integrations"
 ) {
   const url = new URL("/app", req.nextUrl.origin);
   url.searchParams.set("view", view);
@@ -111,10 +112,21 @@ export async function GET(req: NextRequest, { params }: RouteCtx) {
       const granted = hasCalendarScopes(tokens.scopes);
       return backToApp(req, provider.id, granted ? "connected" : "error", granted ? undefined : "calendar_scopes", { purpose: "calendar" }, "leads");
     }
+    // Connected from SEO → Setup: go back there; say if a scope was unticked.
+    if (check.payload.purpose === "seo") {
+      const s = seoScopes(tokens.scopes);
+      const missing = !s.searchConsole && !s.businessProfile ? "seo_scopes" : undefined;
+      return backToApp(req, provider.id, missing ? "error" : "connected", missing, { purpose: "seo" }, "seo");
+    }
     return backToApp(req, provider.id, "connected", undefined, conflicts ? { conflicts: String(conflicts) } : {});
   } catch (e) {
     logger.error("OAuth connect failed", { provider: provider.id, ...serializeError(e) });
-    const back = check.payload.purpose === "calendar" ? { extra: { purpose: "calendar" }, view: "leads" as const } : { extra: {} as Record<string, string>, view: "integrations" as const };
+    const back =
+      check.payload.purpose === "calendar"
+        ? { extra: { purpose: "calendar" }, view: "leads" as const }
+        : check.payload.purpose === "seo"
+          ? { extra: { purpose: "seo" }, view: "seo" as const }
+          : { extra: {} as Record<string, string>, view: "integrations" as const };
     return backToApp(req, provider.id, "error", e instanceof OAuthGrantError ? "rejected" : "provider", back.extra, back.view);
   }
 }

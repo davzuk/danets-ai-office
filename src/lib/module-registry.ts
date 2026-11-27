@@ -120,6 +120,7 @@ const API_MODULE_ROUTES: [string, ModuleKey][] = [
   ["/api/content-posts", "social"],
   ["/api/scheduled-posts", "social"],
   ["/api/social-analytics", "social"],
+  ["/api/seo", "seo"],
   ["/api/usage", "usage"],
   ["/api/agent", "agent"],
   ["/api/widget-rules", "proactive_messages"],

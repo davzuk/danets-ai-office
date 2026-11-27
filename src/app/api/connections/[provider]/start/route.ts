@@ -4,6 +4,7 @@ import { AppError } from "@/lib/app-error";
 import { callbackUrl, getConnectionProvider } from "@/lib/connections/registry";
 import { createOAuthState, OAUTH_STATE_COOKIE, OAUTH_STATE_TTL_MS, type ConnectPurpose } from "@/lib/connections/state";
 import { GOOGLE_CALENDAR_SCOPES } from "@/lib/booking/google-calendar";
+import { GOOGLE_SEO_SCOPES } from "@/lib/seo/google";
 import { isModuleEnabled } from "@/lib/module-access";
 
 type RouteCtx = { params: Promise<{ provider: string }> };
@@ -29,16 +30,21 @@ export function POST(req: Request, { params }: RouteCtx) {
 
     // { purpose: "calendar" } adds the Calendar scopes (Google only), so
     // tenants are asked for calendar access only when they turn sync on.
+    // { purpose: "seo" } makes sure the Search Console and Business Profile
+    // scopes are asked for, and returns to SEO → Setup.
     const body = (await req.json().catch(() => null)) as { purpose?: unknown } | null;
     let purpose: ConnectPurpose | undefined;
     if (body?.purpose !== undefined) {
-      if (body.purpose !== "calendar" || provider.id !== "google") {
+      if ((body.purpose !== "calendar" && body.purpose !== "seo") || provider.id !== "google") {
         throw new AppError("Unknown connect purpose.", { status: 400, code: "INVALID_INPUT" });
       }
-      if (!(await isModuleEnabled(user.businessId, "booking_sync"))) {
+      if (body.purpose === "calendar" && !(await isModuleEnabled(user.businessId, "booking_sync"))) {
         throw new AppError("Calendar sync for bookings needs the Pro plan.", { status: 403, code: "MODULE_DISABLED" });
       }
-      purpose = "calendar";
+      if (body.purpose === "seo" && !(await isModuleEnabled(user.businessId, "seo"))) {
+        throw new AppError("SEO needs the Pro plan.", { status: 403, code: "MODULE_DISABLED" });
+      }
+      purpose = body.purpose;
     }
 
     const { state, codeChallenge, cookieValue } = createOAuthState({
@@ -64,7 +70,7 @@ export function POST(req: Request, { params }: RouteCtx) {
       redirectUri: callbackUrl(provider.id),
       codeChallenge,
       env: process.env,
-      extraScopes: purpose === "calendar" ? GOOGLE_CALENDAR_SCOPES : undefined,
+      extraScopes: purpose === "calendar" ? GOOGLE_CALENDAR_SCOPES : purpose === "seo" ? GOOGLE_SEO_SCOPES : undefined,
     });
     return { url };
   });
