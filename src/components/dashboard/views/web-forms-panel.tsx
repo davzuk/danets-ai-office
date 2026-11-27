@@ -172,7 +172,7 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
   return d as T;
 }
 
-function CopyField({ value, label, multiline }: { value: string; label: string; multiline?: boolean }) {
+export function CopyField({ value, label, multiline }: { value: string; label: string; multiline?: boolean }) {
   const [copied, setCopied] = React.useState(false);
   return (
     <div className="space-y-1.5">

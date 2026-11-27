@@ -111,10 +111,11 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { PipelineBoard } from "@/components/dashboard/views/lead-pipeline-board";
-import { ClipboardList, FileText, LayoutGrid, List } from "lucide-react";
+import { ClipboardList, FileText, LayoutGrid, List, Magnet } from "lucide-react";
 import { LeadFormsPanel } from "@/components/dashboard/views/lead-forms-panel";
 import { BookingsPanel } from "@/components/dashboard/views/bookings-panel";
 import { WebFormsPanel } from "@/components/dashboard/views/web-forms-panel";
+import { LeadMagnetsPanel } from "@/components/dashboard/views/lead-magnets-panel";
 
 interface UserProp {
   userId: string;
@@ -1734,6 +1735,7 @@ export function LeadsView({ user }: { user: UserProp }) {
     if (typeof window === "undefined") return false;
     try {
       if (new URLSearchParams(window.location.search).get("tab") === "forms") return true;
+      if (new URLSearchParams(window.location.search).get("tab") === "magnets") return "magnets";
       if (sessionStorage.getItem("leads-mode") === "webforms") {
         sessionStorage.removeItem("leads-mode");
         return true;
@@ -1741,7 +1743,9 @@ export function LeadsView({ user }: { user: UserProp }) {
     } catch {}
     return false;
   });
-  const [viewMode, setViewMode] = React.useState<"list" | "pipeline" | "forms" | "webforms" | "bookings">(linked ? "bookings" : formsLinked ? "webforms" : "list");
+  const [viewMode, setViewMode] = React.useState<"list" | "pipeline" | "forms" | "webforms" | "magnets" | "bookings">(
+    linked ? "bookings" : formsLinked === "magnets" ? "magnets" : formsLinked ? "webforms" : "list"
+  );
   React.useEffect(() => {
     if (!linked) return;
     if (linked.status === "connected") toast.success("Google Calendar connected. Choose a calendar for each booking type.");
@@ -2396,6 +2400,16 @@ export function LeadsView({ user }: { user: UserProp }) {
                 <span className="hidden sm:inline">Forms</span>
               </Button>
               <Button
+                variant={viewMode === "magnets" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setViewMode("magnets")}
+                className="rounded-none gap-1.5 h-8"
+                title="Free PDFs people get by email for filling in a form"
+              >
+                <Magnet size={14} />
+                <span className="hidden sm:inline">Lead magnets</span>
+              </Button>
+              <Button
                 variant={viewMode === "forms" ? "default" : "ghost"}
                 size="sm"
                 onClick={() => setViewMode("forms")}
@@ -2463,6 +2477,8 @@ export function LeadsView({ user }: { user: UserProp }) {
         <BookingsPanel initialTab={linked?.tab} onOpenLead={(l) => openDetail({ ...l } as unknown as Lead)} />
       ) : viewMode === "webforms" ? (
         <WebFormsPanel businessName={user.businessName} onOpenLead={(l) => openDetail({ ...l } as unknown as Lead)} />
+      ) : viewMode === "magnets" ? (
+        <LeadMagnetsPanel />
       ) : viewMode === "forms" ? (
         <LeadFormsPanel onOpenIntegrations={() => window.location.assign("/app?view=integrations")} />
       ) : viewMode === "pipeline" ? (

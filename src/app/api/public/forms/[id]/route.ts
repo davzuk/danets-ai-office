@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "node:crypto";
-import { Prisma } from "@prisma/client";
+import { Prisma, type LeadMagnet } from "@prisma/client";
 import { db } from "@/lib/db";
 import { isAppError } from "@/lib/app-error";
 import { getClientIp, rateLimit } from "@/lib/rate-limit";
 import { blockedOriginFor, publicPreflight, withPublicCors } from "@/lib/public-cors";
 import { submitForm } from "@/lib/forms/service";
 import { loadPublicForm } from "@/lib/forms/public";
+import { loadPublicMagnet, sendMagnetEmail } from "@/lib/magnets/service";
 
 export const OPTIONS = publicPreflight;
 
@@ -57,6 +58,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       attribution?: unknown;
       visitorId?: unknown;
       consent?: unknown;
+      magnetId?: unknown;
     } | null;
 
     const loaded = await loadPublicForm(id);
@@ -64,6 +66,14 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     const blocked = await blockedOriginFor(inner, loaded.business);
     if (blocked) return blocked;
     const { form } = loaded;
+
+    // A lead magnet's gate: the magnet must be published and use this form.
+    let magnet: LeadMagnet | null = null;
+    if (typeof body?.magnetId === "string" && body.magnetId) {
+      const m = await loadPublicMagnet(body.magnetId);
+      if (!m || m.magnet.formId !== form.id) return NextResponse.json({ error: "This download isn't available any more." }, { status: 404 });
+      magnet = m.magnet;
+    }
 
     const honeypot = typeof body?.website === "string" && body.website.trim() !== "";
     const startedAt = typeof body?.startedAt === "number" ? body.startedAt : null;
@@ -80,6 +90,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
           ipHash,
           spamScore: honeypot && tooFast ? 10 : 5,
           status: "spam",
+          leadMagnetId: magnet?.id ?? null,
         },
       });
       // Looks like success to the bot.
@@ -87,14 +98,18 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     }
 
     try {
-      await submitForm(form, {
+      const result = await submitForm(form, {
         answers: body?.answers ?? {},
         pageUrl: typeof body?.pageUrl === "string" ? body.pageUrl : null,
         ipHash,
         attribution: body?.attribution,
         visitorId: typeof body?.visitorId === "string" ? body.visitorId.slice(0, 64) : null,
         consent: body?.consent === true,
+        leadMagnetId: magnet?.id ?? null,
       });
+      if (magnet && result.email) {
+        await sendMagnetEmail(magnet, { id: result.submissionId, leadId: result.leadId }, result.email, result.name);
+      }
       // Lead ids stay private: the visitor's browser doesn't need them.
       return NextResponse.json({ accepted: true });
     } catch (e) {

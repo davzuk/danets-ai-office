@@ -261,6 +261,7 @@ async function executeAction(
 /** Whether a workflow's trigger settings narrow it out of this event (e.g. "only for this form"). */
 export function triggerConfigMatches(triggerType: string, cfg: Record<string, unknown>, ctx: TriggerContext): boolean {
   if (triggerType === "form_submitted" && typeof cfg.formId === "string" && cfg.formId) return cfg.formId === ctx.formId;
+  if (triggerType === "lead_magnet_downloaded" && typeof cfg.leadMagnetId === "string" && cfg.leadMagnetId) return cfg.leadMagnetId === ctx.leadMagnetId;
   return true;
 }
 
@@ -312,6 +313,8 @@ function getNotificationTitle(type: string, ctx: TriggerContext): string {
       return "New booking (auto)";
     case "form_submitted":
       return "Form submitted (auto)";
+    case "lead_magnet_downloaded":
+      return "Lead magnet downloaded (auto)";
     case "booking_cancelled":
       return "Booking cancelled (auto)";
     default:
@@ -326,6 +329,7 @@ function getNotificationMessage(type: string, ctx: TriggerContext): string {
     case "booking_created":
     case "booking_cancelled":
     case "form_submitted":
+    case "lead_magnet_downloaded":
       return `Automation triggered for lead: ${ctx.leadName || "Unknown"}`;
     case "new_ticket":
     case "urgent_ticket":

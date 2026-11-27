@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
   const CHAT_OFF = !!(SCRIPT && SCRIPT.getAttribute('data-chat') === 'off');
   function loadForms(){
     if (window.__danetsForms) { window.__danetsForms.scan(); return; }
-    if (!document.querySelector('[data-danets-form]') || document.getElementById('dnf-loader')) return;
+    if (!document.querySelector('[data-danets-form],[data-danets-magnet]') || document.getElementById('dnf-loader')) return;
     const s = document.createElement('script'); s.id = 'dnf-loader'; s.src = API + '/forms.js'; s.async = true; document.head.appendChild(s);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loadForms); else loadForms();

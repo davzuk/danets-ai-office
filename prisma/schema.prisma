@@ -60,6 +60,7 @@ model Business {
   metaLeadForms        MetaLeadForm[]
   leadForms            LeadFormDef[]
   formSubmissions      FormSubmission[]
+  leadMagnets          LeadMagnet[]
   mediaAssets          MediaAsset[]
   contentPosts         ContentPost[]
   scheduledPosts       ScheduledPost[]
@@ -611,6 +612,7 @@ model SubscriptionPlan {
   bookingTypeLimit      Int      @default(3) // booking types (0 = unlimited)
   pageLimit             Int      @default(3) // published website pages (0 = unlimited)
   formLimit             Int      @default(3) // lead capture forms (0 = unlimited)
+  leadMagnetLimit       Int      @default(3) // lead magnets (0 = unlimited)
   quoteLimit            Int      @default(50)
   mediaStorageMbLimit   Int      @default(1024) // media library, in MB (0 = unlimited)
   auditRetentionDays    Int      @default(30)
@@ -639,6 +641,7 @@ model BusinessLimitOverride {
   bookingTypeLimit      Int?
   pageLimit             Int?
   formLimit             Int?
+  leadMagnetLimit       Int?
   quoteLimit            Int?
   mediaStorageMbLimit   Int?
   notes                 String?
@@ -668,6 +671,7 @@ model LeadFormDef {
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
   responses FormSubmission[]
+  magnets   LeadMagnet[]
 
   @@index([businessId, status])
 }
@@ -683,6 +687,9 @@ model FormSubmission {
   ipHash     String?  @db.VarChar(64)
   spamScore  Int      @default(0)
   status     String   @default("accepted") // accepted | spam
+  // Set when the form was the gate of a lead magnet (workstream T).
+  leadMagnetId         String?
+  magnetDownloadedAt   DateTime?
   createdAt  DateTime @default(now())
 
   business Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
@@ -690,6 +697,36 @@ model FormSubmission {
 
   @@index([formId, createdAt])
   @@index([businessId, createdAt])
+}
+
+// A downloadable PDF handed out in exchange for a form submission
+// (Phase 2, workstream T). The file is stored outside the media library
+// (that holds public images and videos) and is only reached through a
+// signed, expiring link emailed to the person who filled in the gate form.
+model LeadMagnet {
+  id            String   @id @default(cuid())
+  businessId    String
+  title         String   @db.VarChar(160)
+  description   String?  @db.Text
+  bullets       Json?    // ["What you'll get", ...] shown beside the form
+  kind          String   @default("upload") // upload | ai
+  // AI-written body: { intro, sections: [{ heading, paragraph?, items[] }] }; the PDF is rendered from it
+  content       Json?
+  fileKey       String?  @db.VarChar(300)
+  fileName      String?  @db.VarChar(200)
+  fileBytes     Int?
+  formId        String?  // the gate
+  deliveryEmail Json?    // { subject?, intro? }
+  downloads     Int      @default(0)
+  status        String   @default("draft") // draft | published
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  business Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  form     LeadFormDef? @relation(fields: [formId], references: [id], onDelete: SetNull)
+
+  @@index([businessId, status])
+  @@index([formId])
 }
 
 // ─── Notifications ─────────────────────────────────────────────────

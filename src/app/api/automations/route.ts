@@ -8,7 +8,7 @@ import { requireQuota } from "@/lib/plan-quota";
 const TRIGGERS = [
   "new_lead", "new_ticket", "proposal_generated", "proposal_accepted",
   "lead_status_changed", "document_uploaded", "no_response_days",
-  "booking_created", "booking_cancelled", "form_submitted",
+  "booking_created", "booking_cancelled", "form_submitted", "lead_magnet_downloaded",
 ];
 const ACTIONS = [
   "create_task", "send_notification", "generate_ai_followup",

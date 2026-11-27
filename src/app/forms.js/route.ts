@@ -6,7 +6,9 @@ import { appOrigin } from "@/lib/public-cors";
 //   <script src="https://app.example.com/forms.js" async></script>
 // widget.js loads this script by itself when the page has a form. Hidden
 // fields can be filled with data-<key>="value" on the div, or from the
-// page's query string. Everything is built with DOM APIs (no innerHTML), so
+// page's query string. A lead magnet uses <div data-danets-magnet="MAGNET_ID">:
+// its title and points are shown above the gate form, and the download
+// link is emailed after submitting. Everything is built with DOM APIs (no innerHTML), so
 // tenant-entered labels can't inject markup into the host page.
 export async function GET() {
   const apiBase = appOrigin();
@@ -24,15 +26,23 @@ export async function GET() {
     + '.dnf textarea{min-height:96px;resize:vertical}.dnf-o{display:flex;align-items:center;gap:8px;margin:4px 0;font-weight:400}'
     + '.dnf-c{display:flex;align-items:flex-start;gap:8px;color:#4b5563;margin:0 0 14px}.dnf-e{color:#dc2626;margin:0 0 12px}'
     + '.dnf-b{width:100%;border:0;border-radius:8px;padding:11px 16px;color:#fff;font:600 14px system-ui,sans-serif;cursor:pointer}.dnf-b:disabled{opacity:.7;cursor:default}'
-    + '.dnf-ok{padding:24px 8px;text-align:center;font-size:15px}.dnf-hp{position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden}';
+    + '.dnf-ok{padding:24px 8px;text-align:center;font-size:15px}.dnf-hp{position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden}'
+    + '.dnf-m h3{font:700 20px/1.3 system-ui,sans-serif;margin:0 0 8px}.dnf-m p{margin:0 0 10px;color:#4b5563}.dnf-m ul{margin:0 0 16px;padding:0;list-style:none}.dnf-m li{display:flex;gap:8px;margin:0 0 6px}.dnf-m li:before{content:"✓";font-weight:700;color:var(--dnf-accent)}';
   function addStyle(){ if (document.getElementById('dnf-style')) return; const s = document.createElement('style'); s.id = 'dnf-style'; s.textContent = css; document.head.appendChild(s); }
   function el(tag, cls, text){ const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 
-  function render(host, form){
+  function render(host, form, magnet){
     const startedAt = Date.now();
     const accent = form.brandColor || '#1d4ed8';
     let q = null; try { q = new URLSearchParams(location.search); } catch(_) {}
     const f = el('form', 'dnf'); f.noValidate = true;
+    let head = null;
+    if (magnet) {
+      head = el('div', 'dnf dnf-m'); head.style.setProperty('--dnf-accent', accent);
+      head.appendChild(el('h3', null, magnet.title));
+      if (magnet.description) head.appendChild(el('p', null, magnet.description));
+      if (magnet.bullets && magnet.bullets.length) { const ul = el('ul'); magnet.bullets.forEach((b) => ul.appendChild(el('li', null, b))); head.appendChild(ul); }
+    }
     const inputs = {};
     form.fields.forEach((fd) => {
       if (fd.type === 'hidden') return;
@@ -92,15 +102,15 @@ export async function GET() {
       btn.disabled = true;
       try {
         const r = await fetch(API + '/api/public/forms/' + encodeURIComponent(form.id), { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ answers, website: hpi.value, startedAt, consent: !!(consentBox && consentBox.checked), pageUrl: location.origin + location.pathname, visitorId: visitorId(), attribution: attribution() }) });
+          body: JSON.stringify({ answers, website: hpi.value, startedAt, consent: !!(consentBox && consentBox.checked), pageUrl: location.origin + location.pathname, visitorId: visitorId(), attribution: attribution(), magnetId: magnet ? magnet.id : undefined }) });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.error || 'Something went wrong. Try again.');
-        if (form.redirectUrl && /^https?:\\/\\//.test(form.redirectUrl)) { location.assign(form.redirectUrl); return; }
-        const ok = el('div', 'dnf dnf-ok', form.successMessage); ok.setAttribute('role', 'status');
+        if (!magnet && form.redirectUrl && /^https?:\\/\\//.test(form.redirectUrl)) { location.assign(form.redirectUrl); return; }
+        const ok = el('div', 'dnf dnf-ok', magnet ? 'Thanks! Check your inbox: we have emailed you the download link.' : form.successMessage); ok.setAttribute('role', 'status');
         f.replaceWith(ok);
       } catch (x) { fail(x && x.message ? x.message : 'Something went wrong. Try again.'); btn.disabled = false; }
     });
-    host.textContent = ''; host.appendChild(f);
+    host.textContent = ''; if (head) host.appendChild(head); host.appendChild(f);
   }
 
   async function mount(host){
@@ -113,7 +123,17 @@ export async function GET() {
       addStyle(); render(host, d.form);
     } catch (e) { console.warn('Danets form failed to load', e); }
   }
-  function scan(){ document.querySelectorAll('[data-danets-form]').forEach(mount); }
+  async function mountMagnet(host){
+    const id = host.getAttribute('data-danets-magnet');
+    if (!id || host.__dnf) return; host.__dnf = true;
+    try {
+      const r = await fetch(API + '/api/public/magnets/' + encodeURIComponent(id));
+      const d = await r.json();
+      if (!r.ok || !d.magnet) { console.warn('Danets lead magnet ' + id + ': ' + (d.error || r.status)); return; }
+      addStyle(); render(host, d.magnet.form, d.magnet);
+    } catch (e) { console.warn('Danets lead magnet failed to load', e); }
+  }
+  function scan(){ document.querySelectorAll('[data-danets-form]').forEach(mount); document.querySelectorAll('[data-danets-magnet]').forEach(mountMagnet); }
   window.__danetsForms = { scan };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scan); else scan();
 })();`;

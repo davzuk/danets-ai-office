@@ -30,6 +30,7 @@ import {
   History,
   CalendarPlus,
   ClipboardList,
+  FileDown,
   type LucideIcon,
 } from "lucide-react";
 
@@ -89,7 +90,8 @@ type TriggerType =
   | "no_response_days"
   | "booking_created"
   | "booking_cancelled"
-  | "form_submitted";
+  | "form_submitted"
+  | "lead_magnet_downloaded";
 
 type ActionType =
   | "create_task"
@@ -200,6 +202,12 @@ const TRIGGER_CONFIG: Record<TriggerType, NodeConfig> = {
     label: "Form Submitted",
     iconBg: "bg-sky-500/10",
     iconText: "text-sky-600 dark:text-sky-400",
+  },
+  lead_magnet_downloaded: {
+    icon: FileDown,
+    label: "Lead Magnet Downloaded",
+    iconBg: "bg-fuchsia-500/10",
+    iconText: "text-fuchsia-600 dark:text-fuchsia-400",
   },
 };
 
@@ -320,6 +328,11 @@ function triggerConfigSummary(t: TriggerType, cfg: Record<string, unknown> | nul
     const n = cfg?.formName;
     if (typeof n === "string" && n) return n;
     return typeof cfg?.formId === "string" && cfg.formId ? "One form" : "Any form";
+  }
+  if (t === "lead_magnet_downloaded") {
+    const n = cfg?.leadMagnetTitle;
+    if (typeof n === "string" && n) return n;
+    return typeof cfg?.leadMagnetId === "string" && cfg.leadMagnetId ? "One lead magnet" : "Any lead magnet";
   }
   return "";
 }
@@ -563,6 +576,7 @@ interface FormState {
   triggerDays: string;
   triggerLeadStatus: string;
   triggerFormId: string;
+  triggerMagnetId: string;
   actionType: ActionType;
   actionTaskTitle: string;
   actionNoteContent: string;
@@ -580,6 +594,7 @@ const EMPTY_FORM: FormState = {
   triggerDays: "3",
   triggerLeadStatus: "contacted",
   triggerFormId: "",
+  triggerMagnetId: "",
   actionType: "create_task",
   actionTaskTitle: "",
   actionNoteContent: "",
@@ -618,6 +633,20 @@ function WorkflowDialog({
       cancelled = true;
     };
   }, [open, form.triggerType, leadForms]);
+  const [leadMagnets, setLeadMagnets] = React.useState<{ id: string; title: string; status: string }[] | null>(null);
+  React.useEffect(() => {
+    if (!open || form.triggerType !== "lead_magnet_downloaded" || leadMagnets) return;
+    let cancelled = false;
+    fetch("/api/lead-magnets")
+      .then((r) => (r.ok ? r.json() : { magnets: [] }))
+      .then((d) => {
+        if (!cancelled) setLeadMagnets(Array.isArray(d?.magnets) ? d.magnets : []);
+      })
+      .catch(() => !cancelled && setLeadMagnets([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [open, form.triggerType, leadMagnets]);
 
   // Booking types for the "Email Booking Link" action, loaded when picked.
   React.useEffect(() => {
@@ -649,6 +678,7 @@ function WorkflowDialog({
         triggerLeadStatus:
           typeof tc?.leadStatus === "string" ? tc.leadStatus : "contacted",
         triggerFormId: typeof tc?.formId === "string" ? tc.formId : "",
+        triggerMagnetId: typeof tc?.leadMagnetId === "string" ? tc.leadMagnetId : "",
         actionType: editing.actionType,
         actionTaskTitle:
           typeof ac?.taskTitle === "string" ? ac.taskTitle : "",
@@ -684,6 +714,10 @@ function WorkflowDialog({
       // The name is kept only to label the card; the id is what's matched.
       const name = leadForms?.find((f) => f.id === form.triggerFormId)?.name;
       return { formId: form.triggerFormId, ...(name ? { formName: name } : {}) };
+    }
+    if (form.triggerType === "lead_magnet_downloaded" && form.triggerMagnetId) {
+      const title = leadMagnets?.find((m) => m.id === form.triggerMagnetId)?.title;
+      return { leadMagnetId: form.triggerMagnetId, ...(title ? { leadMagnetTitle: title } : {}) };
     }
     return undefined;
   }
@@ -955,6 +989,32 @@ function WorkflowDialog({
                 </Select>
                 <p className="text-xs text-muted-foreground">
                   Fires when a visitor submits this form and it isn&apos;t marked as spam.
+                </p>
+              </div>
+            )}
+            {form.triggerType === "lead_magnet_downloaded" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="wf-trigger-magnet">Lead magnet</Label>
+                <Select
+                  value={form.triggerMagnetId || "__any"}
+                  onValueChange={(v) =>
+                    setForm((f) => ({ ...f, triggerMagnetId: v === "__any" ? "" : v }))
+                  }
+                >
+                  <SelectTrigger id="wf-trigger-magnet">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__any">Any lead magnet</SelectItem>
+                    {(leadMagnets ?? []).map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Fires the first time a lead opens the download link from their email.
                 </p>
               </div>
             )}

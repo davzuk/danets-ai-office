@@ -438,6 +438,38 @@ model LeadMagnet {
 - **Where:** the `lead-magnet` block (cover, bullet points, form), the hosted page `/<site>/m/<id>`, and as a widget rule action (O).
 - **Gating:** `sites` module.
 
+### As built
+Re-scoped for platform-only sites: tenants have no site builder, so a lead magnet is shared as a hosted page or an embed, not a site block.
+- **Schema:**
+  - `LeadMagnet`: title, description, bullets, `kind` upload|ai, `content` (AI sections plus style), and `fileKey`/`fileName`/`fileBytes`.
+  - The PDF is stored outside the media library (which holds public images and videos), under an unguessable `lm_<random>.pdf` key.
+  - `formId` (gate, SetNull on form delete), `deliveryEmail`, `downloads`, `status`.
+  - `FormSubmission` gains `leadMagnetId` and `magnetDownloadedAt`.
+  - Plan limit `leadMagnetLimit` (default 3) on plans and overrides, managed in the admin console via `LIMIT_FIELDS`.
+  - Migration `20261218100000_lead_magnets`.
+- **Gating:** the `leads` module (`/api/lead-magnets` in `API_MODULE_ROUTES`), not `sites`.
+- **Upload:** PDF only, checked by its `%PDF-` bytes, up to 10 MB.
+- **AI-written:**
+  - `POST /api/lead-magnets/generate` (checklist or guide) uses the brand voice, KB facts and a banned-phrase re-ask.
+  - 1 credit, feature `lead_magnet`. The magnet quota is checked before the credit is spent.
+  - The tenant edits intro, sections (heading, paragraph, items, reorder) and closing. Every save re-renders the PDF with `@react-pdf/renderer` in the brand colour.
+- **Publish rules:** a magnet needs a file and an active gate form with a required field mapped to Email. Otherwise it stays a draft (409) and the reasons are shown.
+- **Delivery:**
+  - The gate form posts with `magnetId`. The submission is stored with it and runs the normal lead path, and `form_submitted` carries `leadMagnetId`.
+  - A transactional email sends a signed link: HMAC-SHA256 of magnet, submission and expiry, 7 days, secret `MAGNET_LINK_SECRET` (falls back to `INTEGRATION_ENCRYPTION_KEY`).
+  - Spam-held gate submissions get their email when released.
+- **Download:** `GET /api/public/magnets/download`
+  - Refuses tampered or mismatched links (404) and expired ones (410).
+  - Rate-limited per IP.
+  - Counts every download. Only the first logs lead activity and fires the new `lead_magnet_downloaded` trigger, which can be filtered to one magnet.
+  - Local storage streams the file; S3 redirects to the object.
+- **Where:**
+  - Leads → Lead magnets (list, AI or upload, editor, share, publish, delete)
+  - hosted page `/m/<id>`
+  - `<div data-danets-magnet="ID">` through `forms.js`, which widget.js also loads
+- **Also:** GDPR export includes `leadMagnets`, and the lead timeline shows request and download events.
+- **Tests:** `tests/unit/lead-magnets.test.ts` (link signing and expiry, AI output mapping, trigger filter).
+
 ### Done when
 - An AI checklist goes from prompt to edited PDF to a published block. Submitting the gate sends an email whose link downloads the PDF once the link is valid, and is refused after expiry or tampering.
 

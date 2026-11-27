@@ -14,12 +14,16 @@ type Props = {
   preview?: boolean;
   /** Values for hidden fields (e.g. from the page's query string). */
   hiddenValues?: Record<string, string>;
+  /** Set when the form is a lead magnet's gate: the download link is emailed. */
+  magnetId?: string;
+  /** Shown after a gate submission instead of the form's success message. */
+  doneMessage?: string;
 };
 
 const inputCls =
   "w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--form-accent)] disabled:opacity-60";
 
-export function LeadFormRenderer({ form, preview, hiddenValues }: Props) {
+export function LeadFormRenderer({ form, preview, hiddenValues, magnetId, doneMessage }: Props) {
   const startedAt = useRef(Date.now());
   const [values, setValues] = useState<Record<string, string>>({});
   const [consent, setConsent] = useState(false);
@@ -58,11 +62,11 @@ export function LeadFormRenderer({ form, preview, hiddenValues }: Props) {
       const r = await fetch(`/api/public/forms/${encodeURIComponent(form.id)}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ answers, consent, website, startedAt: startedAt.current, pageUrl: location.origin + location.pathname }),
+        body: JSON.stringify({ answers, consent, website, startedAt: startedAt.current, pageUrl: location.origin + location.pathname, ...(magnetId ? { magnetId } : {}) }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || "Something went wrong. Try again.");
-      if (form.redirectUrl) {
+      if (form.redirectUrl && !magnetId) {
         window.location.assign(form.redirectUrl);
         return;
       }
@@ -78,7 +82,7 @@ export function LeadFormRenderer({ form, preview, hiddenValues }: Props) {
     return (
       <div className="flex flex-col items-center gap-3 py-8 text-center" role="status">
         <CheckCircle2 className="h-10 w-10" style={{ color: accent }} aria-hidden />
-        <p className="text-base">{form.successMessage}</p>
+        <p className="text-base">{doneMessage ?? form.successMessage}</p>
       </div>
     );
   }

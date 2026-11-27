@@ -18,6 +18,7 @@ export type QuotaResource =
   | "bookingTypes"
   | "pages"
   | "forms"
+  | "leadMagnets"
   | "mediaStorageMb";
 
 export interface EffectiveLimits {
@@ -39,6 +40,7 @@ export interface EffectiveLimits {
   bookingTypeLimit: number;
   pageLimit: number;
   formLimit: number;
+  leadMagnetLimit: number;
   mediaStorageMbLimit: number;
 }
 
@@ -59,6 +61,7 @@ export interface QuotaUsage {
   bookingTypes: number;
   pages: number;
   forms: number;
+  leadMagnets: number;
   /** Media library size in MB (rounded up). */
   mediaStorageMb: number;
 }
@@ -97,6 +100,7 @@ export const RESOURCE_LABELS: Record<QuotaResource, string> = {
   bookingTypes: "booking types",
   pages: "published website pages",
   forms: "lead capture forms",
+  leadMagnets: "lead magnets",
   mediaStorageMb: "MB of media storage",
 };
 
@@ -155,6 +159,7 @@ export async function getEffectiveLimits(
       bookingTypeLimit: planRow?.bookingTypeLimit ?? 3,
       pageLimit: planRow?.pageLimit ?? 3,
       formLimit: planRow?.formLimit ?? 3,
+      leadMagnetLimit: planRow?.leadMagnetLimit ?? 3,
       mediaStorageMbLimit: planRow?.mediaStorageMbLimit ?? 1024,
     };
 
@@ -179,6 +184,7 @@ export async function getEffectiveLimits(
       bookingTypeLimit: override?.bookingTypeLimit ?? base.bookingTypeLimit,
       pageLimit: override?.pageLimit ?? base.pageLimit,
       formLimit: override?.formLimit ?? base.formLimit,
+      leadMagnetLimit: override?.leadMagnetLimit ?? base.leadMagnetLimit,
       mediaStorageMbLimit: override?.mediaStorageMbLimit ?? base.mediaStorageMbLimit,
     };
   });
@@ -206,6 +212,7 @@ export async function getQuotaUsage(businessId: string): Promise<QuotaUsage> {
     bookingTypes,
     pages,
     forms,
+    leadMagnets,
     media,
   ] = await Promise.all([
     db.chatSession.count({
@@ -234,6 +241,7 @@ export async function getQuotaUsage(businessId: string): Promise<QuotaUsage> {
     db.bookingType.count({ where: { businessId } }),
     db.landingPage.count({ where: { businessId, status: "published" } }),
     db.leadFormDef.count({ where: { businessId } }),
+    db.leadMagnet.count({ where: { businessId } }),
     db.mediaAsset.aggregate({ where: { businessId }, _sum: { sizeBytes: true } }),
   ]);
 
@@ -254,6 +262,7 @@ export async function getQuotaUsage(businessId: string): Promise<QuotaUsage> {
     bookingTypes,
     pages,
     forms,
+    leadMagnets,
     mediaStorageMb: Math.ceil((media._sum.sizeBytes ?? 0) / (1024 * 1024)),
   };
   });
@@ -296,6 +305,8 @@ function limitForResource(
       return limits.pageLimit;
     case "forms":
       return limits.formLimit;
+    case "leadMagnets":
+      return limits.leadMagnetLimit;
     case "mediaStorageMb":
       return limits.mediaStorageMbLimit;
   }
@@ -338,6 +349,8 @@ function usedForResource(
       return usage.pages;
     case "forms":
       return usage.forms;
+    case "leadMagnets":
+      return usage.leadMagnets;
     case "mediaStorageMb":
       return usage.mediaStorageMb;
   }

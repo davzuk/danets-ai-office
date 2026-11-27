@@ -121,6 +121,8 @@ export async function submitForm(
     attribution?: unknown;
     visitorId?: string | null;
     consent?: boolean;
+    /** The lead magnet this form gated (workstream T). */
+    leadMagnetId?: string | null;
   }
 ) {
   const { fields } = normalizeFields(form.fields);
@@ -205,6 +207,7 @@ export async function submitForm(
       pageUrl: (input.pageUrl ?? "").slice(0, 2000) || null,
       ipHash: (input.ipHash ?? "").slice(0, 64) || null,
       status: "accepted",
+      leadMagnetId: input.leadMagnetId ?? null,
     },
   });
   await db.leadFormDef.update({ where: { id: form.id }, data: { submissions: { increment: 1 } } });
@@ -214,13 +217,13 @@ export async function submitForm(
     type: "form_submitted",
     title: "New form submission",
     message: `${form.name}: ${profile.name || email || "a visitor"} submitted the form`,
-    data: { submissionId: submission.id, leadId: leadId ?? undefined, formId: form.id },
+    data: { submissionId: submission.id, leadId: leadId ?? undefined, formId: form.id, leadMagnetId: input.leadMagnetId ?? undefined },
   });
   if (leadId) {
-    await fireTrigger("form_submitted", { businessId: form.businessId, leadId, leadName: profile.name, formId: form.id });
+    await fireTrigger("form_submitted", { businessId: form.businessId, leadId, leadName: profile.name, formId: form.id, leadMagnetId: input.leadMagnetId ?? undefined });
   }
 
-  return { submissionId: submission.id, leadId, alreadyExists };
+  return { submissionId: submission.id, leadId, alreadyExists, email, name: profile.name ?? null };
 }
 
 /**
@@ -234,9 +237,9 @@ export async function releaseSubmission(a: Actor, id: string) {
   if (held.status !== "spam") throw new AppError("Only submissions marked as spam can be released.", { status: 409, code: "NOT_SPAM" });
   const form = await getForm(a.businessId, held.formId);
   const { _consent, ...answers } = (held.data ?? {}) as Record<string, unknown>;
-  const result = await submitForm(form, { answers, pageUrl: held.pageUrl, ipHash: held.ipHash, consent: true });
+  const result = await submitForm(form, { answers, pageUrl: held.pageUrl, ipHash: held.ipHash, consent: true, leadMagnetId: held.leadMagnetId });
   await db.formSubmission.delete({ where: { id: held.id } });
-  return result;
+  return { ...result, leadMagnetId: held.leadMagnetId };
 }
 
 export async function deleteSubmission(businessId: string, id: string) {
