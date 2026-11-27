@@ -28,9 +28,10 @@ export async function GET(req: Request) {
         chatSessions: acc.chatSessions + r.deleted.chatSessions,
         leads: acc.leads + r.deleted.leads,
         touchpoints: acc.touchpoints + r.deleted.touchpoints,
+        formSubmissions: acc.formSubmissions + r.deleted.formSubmissions,
       };
     },
-    { auditLogs: 0, chatSessions: 0, leads: 0, touchpoints: 0 }
+    { auditLogs: 0, chatSessions: 0, leads: 0, touchpoints: 0, formSubmissions: 0 }
   );
 
   return NextResponse.json({

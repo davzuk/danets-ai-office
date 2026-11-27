@@ -49,7 +49,7 @@ export async function applyRetentionForBusiness(businessId: string) {
 
   const policy = await getRetentionPolicy(business.plan);
 
-  const [auditDeleted, chatsDeleted, leadsDeleted, touchesDeleted] = await Promise.all([
+  const [auditDeleted, chatsDeleted, leadsDeleted, touchesDeleted, submissionsDeleted] = await Promise.all([
     db.activityLog.deleteMany({
       where: {
         businessId,
@@ -77,6 +77,17 @@ export async function applyRetentionForBusiness(businessId: string) {
         occurredAt: { lt: daysAgo(policy.chatRetentionDays) },
       },
     }),
+    // Form submissions hold the same personal data as the lead they made.
+    // Spam never became a lead, so it goes after 30 days at most.
+    db.formSubmission.deleteMany({
+      where: {
+        businessId,
+        OR: [
+          { createdAt: { lt: daysAgo(policy.leadRetentionDays) } },
+          { status: "spam", createdAt: { lt: daysAgo(Math.min(30, policy.leadRetentionDays)) } },
+        ],
+      },
+    }),
   ]);
 
   return {
@@ -88,6 +99,7 @@ export async function applyRetentionForBusiness(businessId: string) {
       chatSessions: chatsDeleted.count,
       leads: leadsDeleted.count,
       touchpoints: touchesDeleted.count,
+      formSubmissions: submissionsDeleted.count,
     },
   };
 }

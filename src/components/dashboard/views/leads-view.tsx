@@ -111,9 +111,10 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { PipelineBoard } from "@/components/dashboard/views/lead-pipeline-board";
-import { FileText, LayoutGrid, List } from "lucide-react";
+import { ClipboardList, FileText, LayoutGrid, List } from "lucide-react";
 import { LeadFormsPanel } from "@/components/dashboard/views/lead-forms-panel";
 import { BookingsPanel } from "@/components/dashboard/views/bookings-panel";
+import { WebFormsPanel } from "@/components/dashboard/views/web-forms-panel";
 
 interface UserProp {
   userId: string;
@@ -1728,7 +1729,19 @@ export function LeadsView({ user }: { user: UserProp }) {
     if (q.get("tab") === "bookings") return { tab: "upcoming", status: null, reason: null };
     return null;
   });
-  const [viewMode, setViewMode] = React.useState<"list" | "pipeline" | "forms" | "bookings">(linked ? "bookings" : "list");
+  // Notifications about form submissions land on Forms (set by the bell).
+  const [formsLinked] = React.useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      if (new URLSearchParams(window.location.search).get("tab") === "forms") return true;
+      if (sessionStorage.getItem("leads-mode") === "webforms") {
+        sessionStorage.removeItem("leads-mode");
+        return true;
+      }
+    } catch {}
+    return false;
+  });
+  const [viewMode, setViewMode] = React.useState<"list" | "pipeline" | "forms" | "webforms" | "bookings">(linked ? "bookings" : formsLinked ? "webforms" : "list");
   React.useEffect(() => {
     if (!linked) return;
     if (linked.status === "connected") toast.success("Google Calendar connected. Choose a calendar for each booking type.");
@@ -2373,6 +2386,16 @@ export function LeadsView({ user }: { user: UserProp }) {
                 <span className="hidden sm:inline">Pipeline</span>
               </Button>
               <Button
+                variant={viewMode === "webforms" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setViewMode("webforms")}
+                className="rounded-none gap-1.5 h-8"
+                title="Your own forms for websites and links"
+              >
+                <ClipboardList size={14} />
+                <span className="hidden sm:inline">Forms</span>
+              </Button>
+              <Button
                 variant={viewMode === "forms" ? "default" : "ghost"}
                 size="sm"
                 onClick={() => setViewMode("forms")}
@@ -2380,7 +2403,7 @@ export function LeadsView({ user }: { user: UserProp }) {
                 title="Facebook, Instagram and LinkedIn lead ad forms"
               >
                 <FileText size={14} />
-                <span className="hidden sm:inline">Lead forms</span>
+                <span className="hidden sm:inline">Ad forms</span>
               </Button>
               <Button
                 variant={viewMode === "bookings" ? "default" : "ghost"}
@@ -2438,6 +2461,8 @@ export function LeadsView({ user }: { user: UserProp }) {
       {/* Pipeline board */}
       {viewMode === "bookings" ? (
         <BookingsPanel initialTab={linked?.tab} onOpenLead={(l) => openDetail({ ...l } as unknown as Lead)} />
+      ) : viewMode === "webforms" ? (
+        <WebFormsPanel businessName={user.businessName} onOpenLead={(l) => openDetail({ ...l } as unknown as Lead)} />
       ) : viewMode === "forms" ? (
         <LeadFormsPanel onOpenIntegrations={() => window.location.assign("/app?view=integrations")} />
       ) : viewMode === "pipeline" ? (

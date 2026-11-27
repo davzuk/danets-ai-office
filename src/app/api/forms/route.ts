@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { withSession } from "@/lib/api";
+import { logActivity } from "@/lib/activity";
 import { createForm, listForms } from "@/lib/forms/service";
 
 // /api/forms: the tenant's lead-capture forms.
@@ -18,6 +19,7 @@ export async function POST(req: NextRequest) {
       { businessId: user.businessId, userId: user.userId, name: user.name },
       { name: body?.name, fields: body?.fields, settings: body?.settings }
     );
+    logActivity({ businessId: user.businessId, userId: user.userId, userName: user.name, action: "form_created", module: "leads", description: `Created the form "${form.name}"`, metadata: { formId: form.id } });
     return { form };
   });
 }

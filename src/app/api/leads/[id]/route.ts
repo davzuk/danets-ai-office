@@ -226,7 +226,11 @@ export function DELETE(_req: NextRequest, { params }: RouteCtx) {
     if (!lead) throw new Error("Lead not found");
     if (lead.businessId !== user.businessId) throw new Error("FORBIDDEN");
 
-    await db.lead.delete({ where: { id: lead.id } });
+    // Form answers are the lead's personal data too (no FK cascade on leadId).
+    await db.$transaction([
+      db.formSubmission.deleteMany({ where: { businessId: lead.businessId, leadId: lead.id } }),
+      db.lead.delete({ where: { id: lead.id } }),
+    ]);
     return { success: true, id: lead.id };
   });
 }

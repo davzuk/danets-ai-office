@@ -386,6 +386,20 @@ model FormSubmission {
   Suspected spam is stored with `status = spam`, creates no lead and can be released from the UI.
 - **Retention and GDPR:** submissions follow `leadRetentionDays` and are included in the export and delete. IPs are stored only as a salted hash.
 
+### As built (part 1: backend)
+- `LeadFormDef` and `FormSubmission`, migration `20261216100000_forms`, the `formLimit` plan quota, the tenant CRUD API at `/api/forms` and the public submit endpoint with the spam gates.
+
+### As built (part 2: builder, hosted page, embed)
+- Tenant sites are platform-only now (see Q), so a form runs in two places instead of three: the hosted page `/f/<formId>` on the app host (or the tenant's white-label domain), and the embed. There is no `lead-form` page block for tenants.
+- **Builder:** Leads → *Forms* (`web-forms-panel.tsx`). Four templates (contact, quote request, call me back, newsletter), a dnd-kit field list, mapping to Lead fields (each target once), the settings and a live preview with the shared `LeadFormRenderer`. A form must map an email or phone field. The Meta lead-ad forms tab is now called *Ad forms*.
+- **Share:** the hosted link and the embed code. `<div data-danets-form="<id>">` with `/forms.js`, a standalone script that builds the form with DOM APIs only. `widget.js` loads `/forms.js` itself when the page has a form, and `data-chat="off"` keeps the chat bubble away. Forms follow the widget's allowed-origins list.
+- **Hidden fields** take their value from the link (`?key=value`) or from `data-<key>` on the embed div.
+- **Consent:** with consent text set, the box must be ticked, and its wording and time are stored in the submission as `_consent`.
+- **Spam:** submissions held as spam get the same success message as real ones. Under Submissions → Spam, *Not spam* runs one through the normal path (lead, contact, trigger) and removes the held copy, or it can be deleted. There is also a per-form cap of 300 submissions an hour across all visitors.
+- **Automations:** the `form_submitted` trigger, optionally for one form (`triggerConfig.formId`, matched in `fireTrigger`). Also a notification type and preference, and the bell opens Leads → Forms.
+- **Data:** submissions are in the GDPR export (without IP hashes) and follow `leadRetentionDays`. Spam is kept for 30 days at most. Deleting a lead deletes its submissions.
+- **Not done:** `notifyUserIds` (notifications follow each user's preferences), Turnstile, an email notification template, and forms on the platform-built tenant sites.
+
 ### Done when
 - A form with custom fields creates one Lead with the mapped fields, keeps the unmapped answers on the submission and fires `form_submitted`.
 - The same form works embedded on another origin (N) and on a landing page.

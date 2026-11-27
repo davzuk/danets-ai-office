@@ -4,6 +4,9 @@ import { RULE_MATCHER_JS } from "@/lib/widget-rules";
 
 // Serves an embeddable, self-contained JavaScript widget.
 // Usage: <script src="/widget.js?pk=BUSINESS_PUBLIC_KEY" async></script>
+// Lead forms on the page (<div data-danets-form="ID">) are rendered by
+// /forms.js, which this loads when it finds one. data-chat="off" keeps the
+// chat bubble away and only does forms and attribution.
 export async function GET(req: NextRequest) {
   const pk = req.nextUrl.searchParams.get("pk") || "";
   // The API lives wherever this script was served from, not on the page that
@@ -33,6 +36,13 @@ export async function GET(req: NextRequest) {
   // arrives on a new campaign link. Sites that need consent first embed with
   // data-consent="required" and call window.Danets.consent(true) later.
   const SCRIPT = document.currentScript;
+  const CHAT_OFF = !!(SCRIPT && SCRIPT.getAttribute('data-chat') === 'off');
+  function loadForms(){
+    if (window.__danetsForms) { window.__danetsForms.scan(); return; }
+    if (!document.querySelector('[data-danets-form]') || document.getElementById('dnf-loader')) return;
+    const s = document.createElement('script'); s.id = 'dnf-loader'; s.src = API + '/forms.js'; s.async = true; document.head.appendChild(s);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loadForms); else loadForms();
   const CONSENT_REQUIRED = !!(SCRIPT && SCRIPT.getAttribute('data-consent') === 'required');
   const SESSION_MS = 30 * 60 * 1000;
   const CLICK_IDS = ['gclid','gbraid','wbraid','dclid','msclkid','fbclid','li_fat_id','ttclid','twclid'];
@@ -67,10 +77,11 @@ export async function GET(req: NextRequest) {
   window.Danets = window.Danets || {};
   window.Danets.consent = function(granted){
     consented = granted !== false;
-    if (consented) { initAttribution(); startRules(); }
+    if (consented) { initAttribution(); if (!CHAT_OFF) startRules(); }
     else { attribution = null; try { localStorage.removeItem('danets_ft'); localStorage.removeItem('danets_lt'); } catch(_) {} }
   };
   initAttribution();
+  if (CHAT_OFF) return;
 
   let cfg = null;
   let session = { id: null, leadIntent: false, leadCaptured: false };

@@ -47,6 +47,7 @@ export async function fireTrigger(
     });
 
     for (const wf of workflows) {
+      if (!triggerConfigMatches(triggerType, parseConfig(wf.triggerConfig), ctx)) continue;
       await executeWorkflow(wf, ctx);
     }
   } catch (e) {
@@ -257,6 +258,12 @@ async function executeAction(
   }
 }
 
+/** Whether a workflow's trigger settings narrow it out of this event (e.g. "only for this form"). */
+export function triggerConfigMatches(triggerType: string, cfg: Record<string, unknown>, ctx: TriggerContext): boolean {
+  if (triggerType === "form_submitted" && typeof cfg.formId === "string" && cfg.formId) return cfg.formId === ctx.formId;
+  return true;
+}
+
 function parseConfig(configStr: string | null): Record<string, any> {
   if (!configStr) return {};
   try {
@@ -303,6 +310,8 @@ function getNotificationTitle(type: string, ctx: TriggerContext): string {
       return "Follow-up reminder (auto)";
     case "booking_created":
       return "New booking (auto)";
+    case "form_submitted":
+      return "Form submitted (auto)";
     case "booking_cancelled":
       return "Booking cancelled (auto)";
     default:
@@ -316,6 +325,7 @@ function getNotificationMessage(type: string, ctx: TriggerContext): string {
     case "high_quality_lead":
     case "booking_created":
     case "booking_cancelled":
+    case "form_submitted":
       return `Automation triggered for lead: ${ctx.leadName || "Unknown"}`;
     case "new_ticket":
     case "urgent_ticket":

@@ -16,6 +16,7 @@ const NOTIF_TYPES = [
   { type: "content_insight", label: "Weekly Content Insight", default: true },
   { type: "booking_created", label: "New or Moved Booking", default: true },
   { type: "booking_cancelled", label: "Booking Cancelled", default: true },
+  { type: "form_submitted", label: "Form Submission", default: true },
 ];
 
 // GET /api/notifications/preferences — get user's notification preferences

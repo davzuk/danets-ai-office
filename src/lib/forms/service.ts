@@ -15,13 +15,37 @@ export interface Actor {
   name: string;
 }
 
+/** Only absolute http(s) URLs: the hosted page and embed navigate to it. */
+function safeRedirect(v: unknown): string | null {
+  if (typeof v !== "string" || !v.trim()) return null;
+  try {
+    const u = new URL(v.trim());
+    return u.protocol === "https:" || u.protocol === "http:" ? u.toString().slice(0, 500) : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface FormSettings {
+  submitLabel: string;
+  successMessage: string;
+  redirectUrl: string | null;
+  consentText: string | null;
+  leadQuality: "low" | "medium" | "high" | null;
+}
+
+/** Stored settings read back with defaults (older rows may miss keys). */
+export function readSettings(raw: unknown): FormSettings {
+  return sanitizeSettings(raw) as unknown as FormSettings;
+}
+
 function sanitizeSettings(raw: unknown): Prisma.InputJsonValue {
   const s = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   return {
     submitLabel: typeof s.submitLabel === "string" ? s.submitLabel.slice(0, 80) : "Submit",
     successMessage: typeof s.successMessage === "string" ? s.successMessage.slice(0, 300) : "Thanks — we'll be in touch.",
-    redirectUrl: typeof s.redirectUrl === "string" ? s.redirectUrl.slice(0, 500) : null,
-    consentText: typeof s.consentText === "string" ? s.consentText.slice(0, 300) : null,
+    redirectUrl: safeRedirect(s.redirectUrl),
+    consentText: typeof s.consentText === "string" && s.consentText.trim() ? s.consentText.trim().slice(0, 300) : null,
     leadQuality: s.leadQuality === "high" || s.leadQuality === "low" || s.leadQuality === "medium" ? s.leadQuality : null,
   };
 }
@@ -69,7 +93,7 @@ export async function getForm(businessId: string, id: string) {
   return form;
 }
 
-export async function updateForm(businessId: string, id: string, input: { name?: unknown; fields?: unknown; settings?: unknown }) {
+export async function updateForm(businessId: string, id: string, input: { name?: unknown; fields?: unknown; settings?: unknown; status?: unknown }) {
   const form = await getForm(businessId, id);
   const data: Prisma.LeadFormDefUpdateInput = {};
   if (input.name !== undefined) data.name = validateFormInput({ name: input.name, fields: form.fields }).name;
@@ -78,6 +102,7 @@ export async function updateForm(businessId: string, id: string, input: { name?:
     data.fields = fields as unknown as Prisma.InputJsonValue;
   }
   if (input.settings !== undefined) data.settings = sanitizeSettings(input.settings);
+  if (input.status === "active" || input.status === "archived") data.status = input.status;
   return db.leadFormDef.update({ where: { id: form.id }, data });
 }
 
@@ -95,6 +120,7 @@ export async function submitForm(
     ipHash?: string | null;
     attribution?: unknown;
     visitorId?: string | null;
+    consent?: boolean;
   }
 ) {
   const { fields } = normalizeFields(form.fields);
@@ -104,6 +130,10 @@ export async function submitForm(
     throw new AppError(parsed.error.issues[0]?.message ?? "Check your answers.", { status: 400, code: "INVALID_INPUT" });
   }
   const answers = parsed.data as Record<string, unknown>;
+  const settings = readSettings(form.settings);
+  if (settings.consentText && !input.consent) {
+    throw new AppError("Please tick the consent box to continue.", { status: 400, code: "CONSENT_REQUIRED" });
+  }
   const profile = mapProfile(fields, answers);
 
   const inbound = await captureInbound({
@@ -134,7 +164,6 @@ export async function submitForm(
       if (e instanceof LimitExceededError) throw new AppError("Lead capture limit reached for this business.", { status: 429, code: "LIMIT_EXCEEDED" });
       throw e;
     }
-    const settings = (form.settings ?? {}) as { leadQuality?: "low" | "medium" | "high" };
     try {
       const lead = await db.lead.create({
         data: {
@@ -171,7 +200,8 @@ export async function submitForm(
       formId: form.id,
       leadId,
       contactId,
-      data: answers as unknown as Prisma.InputJsonValue,
+      // The consent wording and time are kept with the answers (compliance).
+      data: (settings.consentText ? { ...answers, _consent: { text: settings.consentText, at: new Date().toISOString() } } : answers) as unknown as Prisma.InputJsonValue,
       pageUrl: (input.pageUrl ?? "").slice(0, 2000) || null,
       ipHash: (input.ipHash ?? "").slice(0, 64) || null,
       status: "accepted",
@@ -191,4 +221,39 @@ export async function submitForm(
   }
 
   return { submissionId: submission.id, leadId, alreadyExists };
+}
+
+/**
+ * Release a submission that was held as spam: run it through the normal
+ * path (lead, contact, trigger) and drop the held copy. Fails if the
+ * stored answers don't satisfy the form's current fields.
+ */
+export async function releaseSubmission(a: Actor, id: string) {
+  const held = await db.formSubmission.findFirst({ where: { id, businessId: a.businessId } });
+  if (!held) throw new AppError("Submission not found.", { status: 404, code: "NOT_FOUND" });
+  if (held.status !== "spam") throw new AppError("Only submissions marked as spam can be released.", { status: 409, code: "NOT_SPAM" });
+  const form = await getForm(a.businessId, held.formId);
+  const { _consent, ...answers } = (held.data ?? {}) as Record<string, unknown>;
+  const result = await submitForm(form, { answers, pageUrl: held.pageUrl, ipHash: held.ipHash, consent: true });
+  await db.formSubmission.delete({ where: { id: held.id } });
+  return result;
+}
+
+export async function deleteSubmission(businessId: string, id: string) {
+  const r = await db.formSubmission.deleteMany({ where: { id, businessId } });
+  if (!r.count) throw new AppError("Submission not found.", { status: 404, code: "NOT_FOUND" });
+}
+
+export async function listSubmissions(businessId: string, formId: string, status: "accepted" | "spam" | "all" = "all") {
+  await getForm(businessId, formId);
+  const rows = await db.formSubmission.findMany({
+    where: { formId, businessId, ...(status === "all" ? {} : { status }) },
+    select: { id: true, leadId: true, contactId: true, data: true, pageUrl: true, status: true, spamScore: true, createdAt: true },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+  });
+  const leadIds = [...new Set(rows.map((r) => r.leadId).filter((x): x is string => !!x))];
+  const leads = leadIds.length ? await db.lead.findMany({ where: { id: { in: leadIds }, businessId }, select: { id: true, name: true, email: true } }) : [];
+  const byId = new Map(leads.map((l) => [l.id, l]));
+  return rows.map((r) => ({ ...r, lead: r.leadId ? byId.get(r.leadId) ?? null : null }));
 }

@@ -29,6 +29,7 @@ import {
   Clock,
   History,
   CalendarPlus,
+  ClipboardList,
   type LucideIcon,
 } from "lucide-react";
 
@@ -87,7 +88,8 @@ type TriggerType =
   | "document_uploaded"
   | "no_response_days"
   | "booking_created"
-  | "booking_cancelled";
+  | "booking_cancelled"
+  | "form_submitted";
 
 type ActionType =
   | "create_task"
@@ -192,6 +194,12 @@ const TRIGGER_CONFIG: Record<TriggerType, NodeConfig> = {
     label: "Booking Cancelled",
     iconBg: "bg-orange-500/10",
     iconText: "text-orange-600 dark:text-orange-400",
+  },
+  form_submitted: {
+    icon: ClipboardList,
+    label: "Form Submitted",
+    iconBg: "bg-sky-500/10",
+    iconText: "text-sky-600 dark:text-sky-400",
   },
 };
 
@@ -307,6 +315,11 @@ function triggerConfigSummary(t: TriggerType, cfg: Record<string, unknown> | nul
   if (t === "lead_status_changed") {
     const s = cfg?.leadStatus;
     return typeof s === "string" ? formatTitleCase(s) : "";
+  }
+  if (t === "form_submitted") {
+    const n = cfg?.formName;
+    if (typeof n === "string" && n) return n;
+    return typeof cfg?.formId === "string" && cfg.formId ? "One form" : "Any form";
   }
   return "";
 }
@@ -549,6 +562,7 @@ interface FormState {
   triggerType: TriggerType;
   triggerDays: string;
   triggerLeadStatus: string;
+  triggerFormId: string;
   actionType: ActionType;
   actionTaskTitle: string;
   actionNoteContent: string;
@@ -565,6 +579,7 @@ const EMPTY_FORM: FormState = {
   triggerType: "new_lead",
   triggerDays: "3",
   triggerLeadStatus: "contacted",
+  triggerFormId: "",
   actionType: "create_task",
   actionTaskTitle: "",
   actionNoteContent: "",
@@ -589,6 +604,20 @@ function WorkflowDialog({
   const [form, setForm] = React.useState<FormState>(EMPTY_FORM);
   const [submitting, setSubmitting] = React.useState(false);
   const [bookingTypes, setBookingTypes] = React.useState<{ slug: string; name: string; active: boolean }[] | null>(null);
+  const [leadForms, setLeadForms] = React.useState<{ id: string; name: string; status: string }[] | null>(null);
+  React.useEffect(() => {
+    if (!open || form.triggerType !== "form_submitted" || leadForms) return;
+    let cancelled = false;
+    fetch("/api/forms")
+      .then((r) => (r.ok ? r.json() : { forms: [] }))
+      .then((d) => {
+        if (!cancelled) setLeadForms(Array.isArray(d?.forms) ? d.forms : []);
+      })
+      .catch(() => !cancelled && setLeadForms([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [open, form.triggerType, leadForms]);
 
   // Booking types for the "Email Booking Link" action, loaded when picked.
   React.useEffect(() => {
@@ -619,6 +648,7 @@ function WorkflowDialog({
           typeof tc?.days === "number" ? String(tc.days) : "3",
         triggerLeadStatus:
           typeof tc?.leadStatus === "string" ? tc.leadStatus : "contacted",
+        triggerFormId: typeof tc?.formId === "string" ? tc.formId : "",
         actionType: editing.actionType,
         actionTaskTitle:
           typeof ac?.taskTitle === "string" ? ac.taskTitle : "",
@@ -649,6 +679,11 @@ function WorkflowDialog({
     }
     if (form.triggerType === "lead_status_changed") {
       return { leadStatus: form.triggerLeadStatus };
+    }
+    if (form.triggerType === "form_submitted" && form.triggerFormId) {
+      // The name is kept only to label the card; the id is what's matched.
+      const name = leadForms?.find((f) => f.id === form.triggerFormId)?.name;
+      return { formId: form.triggerFormId, ...(name ? { formName: name } : {}) };
     }
     return undefined;
   }
@@ -892,6 +927,34 @@ function WorkflowDialog({
                 </Select>
                 <p className="text-xs text-muted-foreground">
                   Fires when a lead is moved to this status.
+                </p>
+              </div>
+            )}
+            {form.triggerType === "form_submitted" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="wf-trigger-form">Form</Label>
+                <Select
+                  value={form.triggerFormId || "__any"}
+                  onValueChange={(v) =>
+                    setForm((f) => ({ ...f, triggerFormId: v === "__any" ? "" : v }))
+                  }
+                >
+                  <SelectTrigger id="wf-trigger-form">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__any">Any form</SelectItem>
+                    {(leadForms ?? [])
+                      .filter((f) => f.status === "active" || f.id === form.triggerFormId)
+                      .map((f) => (
+                        <SelectItem key={f.id} value={f.id}>
+                          {f.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Fires when a visitor submits this form and it isn&apos;t marked as spam.
                 </p>
               </div>
             )}
