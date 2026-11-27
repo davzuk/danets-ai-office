@@ -15,6 +15,34 @@ export interface SiteRenderContext {
   publicKey: string;
   /** Where the hosted booking pages live (the app origin). */
   appOrigin: string;
+  /** The editor's preview: forms and lead magnets show a stand-in (forms.js isn't loaded there). */
+  preview?: boolean;
+  /** Names for the preview stand-ins, by id. */
+  labels?: Record<string, string>;
+}
+
+/** Blocks that need /forms.js on the page. */
+export const needsFormsScript = (blocks: ParsedBlock[]) => blocks.some((b) => b.blockKey === "lead-form" || b.blockKey === "lead-magnet");
+
+function EmbedSlot({ kind, id, ctx }: { kind: "form" | "magnet"; id: string; ctx: SiteRenderContext }) {
+  if (ctx.preview) {
+    return (
+      <div className="rounded-2xl border-2 border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">
+        {kind === "form" ? "Form" : "Lead magnet"}: <strong className="text-gray-700">{ctx.labels?.[id] ?? (id ? "unknown" : "none chosen")}</strong>
+        <div className="mt-1">It appears here on the live page.</div>
+      </div>
+    );
+  }
+  // forms.js fills the element; the text shows only if it can't load.
+  return kind === "form" ? (
+    <div data-danets-form={id} className="rounded-2xl border bg-white p-6 shadow-sm sm:p-8">
+      <p className="text-sm text-gray-500">Loading the form…</p>
+    </div>
+  ) : (
+    <div data-danets-magnet={id} className="rounded-2xl border bg-white p-6 shadow-sm sm:p-8">
+      <p className="text-sm text-gray-500">Loading…</p>
+    </div>
+  );
 }
 
 const ICONS: Record<string, LucideIcon> = {
@@ -333,7 +361,22 @@ function Block({ block, ctx }: { block: ParsedBlock; ctx: SiteRenderContext }) {
         </Section>
       );
     }
+    case "lead-form":
+      return <LeadBlock kind="form" p={p} ctx={ctx} />;
+    case "lead-magnet":
+      return <LeadBlock kind="magnet" p={p} ctx={ctx} />;
   }
+}
+
+function LeadBlock({ kind, p, ctx }: { kind: "form" | "magnet"; p: Record<string, unknown>; ctx: SiteRenderContext }) {
+  return (
+    <Section muted id={kind === "form" ? "form" : "download"}>
+      <div className="mx-auto max-w-2xl">
+        <SectionTitle title={s(p.title)} subtitle={s(p.subtitle)} />
+        <EmbedSlot kind={kind} id={s(kind === "form" ? p.formId : p.magnetId)} ctx={ctx} />
+      </div>
+    </Section>
+  );
 }
 
 export function SiteBlocks({ blocks, ctx }: { blocks: ParsedBlock[]; ctx: SiteRenderContext }) {

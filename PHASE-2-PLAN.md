@@ -325,6 +325,17 @@ model LandingPageVersion {         // a snapshot on every publish, for rollback
 - **Section edits:** *Regenerate*, *Shorter*, *More persuasive* or a free-text instruction on any one block, sending only that block and the page outline.
 - **Cost:** a page generation costs 1 AI credit and a section edit costs 0.25, both through `checkMonthlyAiQuota` and `logUsage` with feature `landing_page`. The result is always a draft.
 
+### As built (platform console)
+Per the platform-only rework, only super admins build tenant sites, so R lives in the platform console (Tenant sites → New site / Edit), not the tenant dashboard.
+- **Site CMS moved:** the tenant `/api/site/*` routes are gone (and their module-registry mapping). Platform routes: `/api/super-admin/sites` (GET list, `?suggest=<businessId>`, POST create), `[id]` (GET builder data, PATCH settings or status), `[id]/pages` (POST), `[id]/pages/generate` (POST), `[id]/pages/[pageId]` (GET with versions, PATCH, DELETE, POST `{action: publish | unpublish | restore}`) and `[pageId]/rewrite` (POST). Shared helpers in `src/lib/sites/platform.ts`; changes are logged on the tenant as "<admin> (Platform)".
+- **Builder UI:** `src/components/platform/site-builder.tsx`, opened from `SuperAdminSitesPanel`. Image fields pick from the tenant's media library; the preview shows stand-ins for forms and lead magnets. It warns when the tenant's `sites` module is off (plan or the `sites_builder` flag), since pages wouldn't be served.
+- **New blocks:** `lead-form` (`formId`) and `lead-magnet` (`magnetId`), embedded with `/forms.js` on the live site. Publishing and restoring check the form is active and the magnet published (`referenceIssues`).
+- **Generation** (`src/lib/sites/ai.ts`): all-required AI block schemas (strict structured outputs); the admin picks the form, magnet or booking type and the code links it, never the model; exactly one conversion block for the goal is kept or added. Images are offered to the model as short ids (`img1`…) mapped back to URLs. One retry when a banned brand phrase appears. Pages are saved as drafts with `generatedFrom`.
+- **Placeholders:** `findPlaceholders` matches `[Add|Insert|Replace|Confirm …]`. The editor lists them as a checklist and disables Publish; `publishPage` also refuses with code `PLACEHOLDERS`.
+- **Section edits:** Write it again / Shorter / More persuasive / custom instruction, sending only that block plus the page outline; the block keeps its id and linked record, with an Undo toast.
+- **Cost (changed):** the platform pays, so generation uses the platform's AI provider (no `businessId`) and does not count against the tenant's AI quota. Tokens, model and provider are recorded on the tenant's activity log (`ai_generate`, `billedTo: "platform"`).
+- **Tests:** `tests/unit/site-builder.test.ts` (block mapping, conversion block, placeholders, prompt, strict schema). The five-industry prompt check against a fixture KB still needs a run with a real model.
+
 ### Done when
 - Five prompts across different industries each produce a page that passes the block schemas with no fix-ups, includes the requested conversion block and invents no facts (checked against a fixture KB).
 - A section edit changes only that block.

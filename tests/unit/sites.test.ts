@@ -117,8 +117,10 @@ describe("blocks", () => {
       const names = Object.keys((SITE_BLOCK_SCHEMAS[key] as unknown as { shape: Record<string, unknown> }).shape);
       for (const f of SITE_BLOCK_DEFS[key].fields) expect(names, `${key}.${f.name}`).toContain(f.name);
     }
-    // Video and gallery need the tenant's own media before they can publish.
-    const starter = SITE_BLOCK_KEYS.filter((k) => k !== "video" && k !== "gallery").map((k, i) => newBlock(k, `b${i}`));
+    // Video and gallery need the tenant's own media, and lead blocks a form
+    // or magnet, before they can publish.
+    const needsRecord = new Set(["video", "gallery", "lead-form", "lead-magnet"]);
+    const starter = SITE_BLOCK_KEYS.filter((k) => !needsRecord.has(k)).map((k, i) => newBlock(k, `b${i}`));
     expect(validateBlocks(starter).issues).toEqual([]);
   });
 

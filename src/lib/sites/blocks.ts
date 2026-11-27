@@ -71,6 +71,7 @@ const href = z.string().trim().max(500).refine(isSafeHref, "Use a page path (/ab
 const optHref = z.union([href, z.literal("")]).optional();
 const imageUrl = z.string().trim().max(1000).refine(isImageUrl, "Choose an image");
 const optImage = z.union([imageUrl, z.literal("")]).optional();
+const recordId = (what: string) => z.string({ error: `Choose ${what}` }).trim().regex(/^[a-z0-9]{10,40}$/i, `Choose ${what}`);
 
 export const FEATURE_ICONS = [
   "sparkles", "check", "star", "shield", "clock", "zap", "heart", "users", "phone", "map-pin",
@@ -170,6 +171,16 @@ export const SITE_BLOCK_SCHEMAS = {
     bookingTypeSlug: optText(80),
     buttonLabel: optText(40),
   }),
+  "lead-form": z.object({
+    title: optText(160),
+    subtitle: optText(400),
+    formId: recordId("a form"),
+  }),
+  "lead-magnet": z.object({
+    title: optText(160),
+    subtitle: optText(400),
+    magnetId: recordId("a lead magnet"),
+  }),
 } as const;
 
 export type SiteBlockKey = keyof typeof SITE_BLOCK_SCHEMAS;
@@ -189,6 +200,7 @@ export type BlockField =
   | { name: string; label: string; type: "text" | "textarea" | "href" | "image" | "video" | "email"; placeholder?: string; help?: string; required?: boolean }
   | { name: string; label: string; type: "select"; options: { value: string; label: string }[] }
   | { name: string; label: string; type: "booking-type" }
+  | { name: string; label: string; type: "form" | "lead-magnet" }
   | { name: string; label: string; type: "list"; itemLabel: string; max: number; fields: BlockField[] };
 
 const ctaFields: BlockField[] = [
@@ -351,7 +363,52 @@ export const SITE_BLOCK_DEFS: Record<SiteBlockKey, { label: string; description:
     ],
     defaults: { title: "Book a time", subtitle: "Pick a time that suits you.", buttonLabel: "Book a time" },
   },
+  "lead-form": {
+    label: "Lead form",
+    description: "One of the tenant's forms. Submissions become leads.",
+    fields: [
+      { name: "title", label: "Title", type: "text" },
+      { name: "subtitle", label: "Supporting text", type: "textarea" },
+      { name: "formId", label: "Form", type: "form" },
+    ],
+    defaults: { title: "Get in touch", subtitle: "Tell us what you need and we'll get back to you." },
+  },
+  "lead-magnet": {
+    label: "Lead magnet",
+    description: "A free download offered for an email address.",
+    fields: [
+      { name: "title", label: "Section title (optional)", type: "text" },
+      { name: "subtitle", label: "Supporting text", type: "textarea" },
+      { name: "magnetId", label: "Lead magnet", type: "lead-magnet" },
+    ],
+    defaults: {},
+  },
 };
+
+/** The section anchor each conversion block renders with, for button links. */
+export const CONVERSION_ANCHORS = { booking: "#book", "lead-form": "#form", "lead-magnet": "#download" } as const;
+
+// ─── Placeholders ───────────────────────────────────────────────────
+
+/**
+ * Text the AI page builder leaves where it lacks a real fact, e.g.
+ * "[Add a real testimonial]". A page can't be published while any remain.
+ */
+export const PLACEHOLDER_RE = /\[(?:add|insert|replace|confirm)\b[^\]]{0,200}\]/gi;
+
+export type Placeholder = { blockId: string; blockKey: SiteBlockKey; index: number; path: string; text: string };
+
+export function findPlaceholders(blocks: SiteBlock[]): Placeholder[] {
+  const out: Placeholder[] = [];
+  const walk = (v: unknown, path: string, b: SiteBlock, index: number) => {
+    if (typeof v === "string") {
+      for (const m of v.matchAll(PLACEHOLDER_RE)) out.push({ blockId: b.id, blockKey: b.blockKey, index, path, text: m[0] });
+    } else if (Array.isArray(v)) v.forEach((x, i) => walk(x, path ? `${path}.${i}` : String(i), b, index));
+    else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) walk(x, path ? `${path}.${k}` : k, b, index);
+  };
+  blocks.forEach((b, i) => walk(b.props, "", b, i));
+  return out;
+}
 
 // ─── Page validation ────────────────────────────────────────────────
 

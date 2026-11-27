@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { after } from "next/server";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { SiteBlocks, SiteFrame } from "@/components/sites/site-blocks";
+import { SiteBlocks, SiteFrame, needsFormsScript } from "@/components/sites/site-blocks";
 import { appOrigin, getPublishedPage, getRenderSite, getSiteNav, pageUrl, recordPageView, type RenderSite } from "@/lib/sites/server";
 
 // A tenant website page. Reached only through the middleware's rewrite of
@@ -69,6 +69,8 @@ export default async function SitePage({ params }: Props) {
         <SiteBlocks blocks={page.blocks} ctx={{ publicKey: site.publicKey, appOrigin: appOrigin() }} />
       </SiteFrame>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(site) }} />
+      {/* id="dnf-loader" stops widget.js from loading forms.js a second time. */}
+      {needsFormsScript(page.blocks) && <script id="dnf-loader" src={`${appOrigin()}/forms.js`} nonce={nonce} async />}
       {site.widgetEnabled && <script src={`${appOrigin()}/widget.js?pk=${encodeURIComponent(site.publicKey)}`} nonce={nonce} async />}
     </>
   );
