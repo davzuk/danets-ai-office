@@ -2001,6 +2001,7 @@ model SearchProperty {
   updatedAt     DateTime  @updatedAt
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  metrics  SearchMetricDaily[]
 
   @@unique([businessId, siteUrl])
   @@index([connectionId])
@@ -2028,4 +2029,27 @@ model BusinessLocation {
 
   @@unique([businessId, locationName])
   @@index([connectionId])
+}
+
+// ─── Phase 3, workstream V: search performance ────────────────────────
+// One row per property, day and dimension slice. `kind` is the Search
+// Console dimension (or "total", key "") and `key` holds the query, page
+// URL, device or country. Totals give the time series; query/page/device/
+// country rows are also per-day so the dashboard can aggregate any range
+// offline and prune to Search Console's own retention.
+model SearchMetricDaily {
+  id          String   @id @default(cuid())
+  propertyId  String
+  date        DateTime @db.Date
+  kind        String   @db.VarChar(20) // total | query | page | device | country
+  key         String   @db.VarChar(500) // "" for total; query, page URL, device or country
+  clicks      Int
+  impressions Int
+  ctr         Float
+  position    Float
+
+  property SearchProperty @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([propertyId, date, kind, key])
+  @@index([propertyId, kind, date])
 }

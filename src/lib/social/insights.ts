@@ -12,6 +12,7 @@ import { CONTENT_GOALS, CONTENT_PLATFORMS } from "@/lib/content/platforms";
 import { aiStructured, logUsage, AiRefusalError, type AiMessage } from "@/lib/llm";
 import { logger, serializeError } from "@/lib/logger";
 import { checkMonthlyAiQuota } from "@/lib/plan-limits";
+import { searchSummary } from "@/lib/seo/search";
 import { buildAnalyticsReport, type AnalyticsReport, type PostStat } from "./analytics";
 
 export const INSIGHT_USAGE_FEATURE = "content_insight";
@@ -77,12 +78,8 @@ export function insightStats(report: AnalyticsReport) {
 }
 export type InsightStats = ReturnType<typeof insightStats>;
 
-export function insightMessages(brandContext: string, stats: InsightStats): AiMessage[] {
-  const system = [
-    "You are the social media strategist for this business. Each Monday you review the last four weeks of the business's own posts and write a short, practical note for the owner.",
-    "",
-    brandContext,
-    "",
+export function insightMessages(brandContext: string, stats: InsightStats, search?: string | null): AiMessage[] {
+  const rules = [
     "Rules:",
     "- Base every observation on the numbers given. Quote a number when it makes the point. Never invent results.",
     "- Leads matter more than likes: call out posts that produced site visits or leads.",
@@ -90,10 +87,23 @@ export function insightMessages(brandContext: string, stats: InsightStats): AiMe
     "- With few posts or little data, say so plainly and focus on what to try next.",
     "- Ideas must fit the brand and use only facts in the brand context. Each brief should be ready to paste into the content generator.",
     "- Write in plain language for a busy owner. No jargon, no hype.",
+  ];
+  if (search) {
+    rules.push("- Search Console numbers are provided too: fold the click trend and any query movers into what worked / what didn't where they matter, but never invent search figures beyond what's given.");
+  }
+  const system = [
+    "You are the social media strategist for this business. Each Monday you review the last four weeks of the business's own posts and write a short, practical note for the owner.",
+    "",
+    brandContext,
+    "",
+    ...rules,
   ].join("\n");
   return [
     { role: "system", content: system },
-    { role: "user", content: `Here are the numbers for the last ${stats.periodDays} days (times in ${stats.timezone}):\n\n${JSON.stringify(stats, null, 2)}\n\nWrite this week's note.` },
+    {
+      role: "user",
+      content: `Here are the numbers for the last ${stats.periodDays} days (times in ${stats.timezone}):\n\n${JSON.stringify(stats, null, 2)}${search ? `\n\n${search}` : ""}\n\nWrite this week's note.`,
+    },
   ];
 }
 
@@ -136,7 +146,10 @@ export async function generateInsight(
   if (opts.requirePosts && report.posts.length === 0) throw new InsightSkipped("no_posts");
 
   const stats = insightStats(report);
-  const messages = insightMessages(await getBrandContext(businessId), stats);
+  // Search Console context is best-effort: a tenant without a property (or a
+  // broken one) must not stop the social insight from being written.
+  const search = await searchSummary(businessId).catch(() => null);
+  const messages = insightMessages(await getBrandContext(businessId), stats, search);
   let content: InsightContent;
   try {
     const result = await aiStructured(messages, insightSchema, { businessId, task: "plan", maxTokens: 4000 });

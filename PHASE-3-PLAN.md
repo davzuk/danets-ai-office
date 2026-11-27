@@ -1,7 +1,7 @@
 # Phase 3: Search & Local Visibility
 
 **Date:** 2026-11-27
-**Status:** U built (uncommitted). V to Z not started.
+**Status:** U built and committed. V built (uncommitted). W to Z not started.
 **Goal:** Show tenants how people find them on Google and help them get found more. That covers how their website performs in search, what is broken on it, and their Google Business Profile (reviews, posts, calls and directions). Each part links back to the leads it brings in.
 **Builds on:**
 - **Phase 0:** OAuth connections (C, the Google provider already asks for `webmasters.readonly` and `business.manage`), the job queue (B), contacts and attribution (D, `organic_search` touchpoints), Brand Voice (E) and the AI provider layer (A).
@@ -138,6 +138,16 @@ model SearchMetricDaily {
 ### Done when
 - After the backfill, totals for a test property match the Search Console UI for the same range and filters (allowing for its rounding).
 - Organic leads show against the page they landed on.
+
+### As built
+- **Schema:** migration `20261228100000_search_metrics` creates `SearchMetricDaily` (one row per property, day and dimension slice; `kind` = total | query | page | device | country, `key` = "" for total or the query/page URL/device/country), plus the `metrics` back-relation on `SearchProperty` so deleting a property clears its data.
+- **Google call:** `searchAnalyticsQuery` in `src/lib/seo/google.ts` POSTs `searchAnalytics/query` with `dataState: "final"` and pages with `startRow`.
+- **Sync:** `src/lib/seo/search.ts` holds the pure date/window/row helpers and the DB work. `syncWindow` fetches one window's five slices (date, query+date, page+date, device+date, country+date), trims query and page to the top 1,000 per day by impressions, and re-inserts the window in one transaction (delete-then-insert, so retries are clean). `windowsFor` returns the 16-month backfill on first connect and the daily gap afterward, chunked into calendar months so no single job runs long. `pruneSearchMetrics` keeps query/page/device/country for 16 months and totals for 5 years.
+- **Jobs:** `seo.search-sync` (daily driver: enqueues each property's missing windows with dedupe keys, then prunes) and `seo.search-sync-window` (one window of one property), in `src/lib/jobs/handlers/seo-search-sync.ts`, both registered and the driver scheduled at 06:30 UTC.
+- **Dashboard:** `/api/seo/performance` + `performanceData` read only from `SearchMetricDaily` (never wait on Google): clicks, impressions, CTR and average position with previous-period deltas, a day-by-day series, top queries with month-over-month gain/loss, top pages with **leads from search** (distinct contacts with a `channel = organic_search` touchpoint on that page; anonymous visits don't count; Search Console page and landing URL are matched ignoring case, query string and trailing slash), and device/country breakdowns.
+- **Tenant UI:** the SEO view now has Setup / Performance tabs; `seo-performance-view.tsx` renders the 7/28/90-day range, property selector, KPI cards, chart, top queries/pages and breakdowns.
+- **AI context:** `searchSummary` writes a short "clicks trend + top movers" paragraph that `social/insights.ts` folds into the weekly content insight, so the note can comment on search as well as social.
+- **Not verified live:** no Google OAuth credentials are set up locally, so real Search Console calls are untested (same as U). By design the sync lags 3 days behind today so only final data is stored, and "top 1,000 by impressions" is computed from the rows Google returns (which are sorted by clicks — the API has no sort parameter); for very large sites the true by-impressions top can sit beyond the 25,000-row fetch cap.
 
 ---
 

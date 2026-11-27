@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { SeoPerformanceView } from "./seo-performance-view";
 
 interface Connection {
   id: string;
@@ -101,6 +102,7 @@ function useConnectResult() {
 }
 
 export function SeoView() {
+  const [tab, setTab] = useState<"setup" | "performance">("setup");
   const [data, setData] = useState<SetupData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
@@ -132,27 +134,50 @@ export function SeoView() {
     }
   };
 
-  if (error) return <p className="text-sm text-destructive">{error}</p>;
-  if (!data) return <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />;
-  const hasAny = data.properties.length + data.locations.length > 0;
-
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">SEO &amp; Search Visibility</h1>
-          <p className="text-sm text-muted-foreground">How people find you on Google. Start by connecting your Search Console property and Business Profile.</p>
-        </div>
-        {data.canEdit && hasAny && (
-          <Button variant="outline" size="sm" onClick={checkNow} disabled={checking}>
-            {checking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Check access
-          </Button>
-        )}
+      <div className="inline-flex items-center gap-1 rounded-lg border p-0.5">
+        <TabButton active={tab === "setup"} onClick={() => setTab("setup")}>
+          Setup
+        </TabButton>
+        <TabButton active={tab === "performance"} onClick={() => setTab("performance")}>
+          Performance
+        </TabButton>
       </div>
-      <GoogleCard data={data} />
-      <PropertiesCard data={data} onChange={load} />
-      <LocationsCard data={data} onChange={load} />
+
+      {tab === "performance" ? (
+        <SeoPerformanceView />
+      ) : error ? (
+        <p className="text-sm text-destructive">{error}</p>
+      ) : !data ? (
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      ) : (
+        <>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h1 className="text-2xl font-bold">SEO &amp; Search Visibility</h1>
+              <p className="text-sm text-muted-foreground">How people find you on Google. Start by connecting your Search Console property and Business Profile.</p>
+            </div>
+            {data.canEdit && data.properties.length + data.locations.length > 0 && (
+              <Button variant="outline" size="sm" onClick={checkNow} disabled={checking}>
+                {checking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}Check access
+              </Button>
+            )}
+          </div>
+          <GoogleCard data={data} />
+          <PropertiesCard data={data} onChange={load} />
+          <LocationsCard data={data} onChange={load} />
+        </>
+      )}
     </div>
+  );
+}
+
+function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <Button size="sm" variant={active ? "secondary" : "ghost"} className="h-8" onClick={onClick}>
+      {children}
+    </Button>
   );
 }
 

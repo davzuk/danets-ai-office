@@ -81,6 +81,48 @@ export async function getSearchSite(ref: GoogleRef, siteUrl: string): Promise<Se
   return toSearchSites({ siteEntry: [r] })[0] ?? null;
 }
 
+export interface SearchAnalyticsRow {
+  keys: string[];
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+}
+
+export interface SearchAnalyticsQuery {
+  startDate: string;
+  endDate: string;
+  dimensions: ("date" | "query" | "page" | "country" | "device")[];
+  rowLimit?: number;
+  startRow?: number;
+  dataState?: "final" | "all";
+}
+
+/**
+ * One Search Analytics query. `keys` lists the dimension values in the same
+ * order as `dimensions`; rows come back sorted by clicks (Google's default —
+ * the API has no sort parameter). Points are spent on the tenant's own
+ * Search Console read quota, so callers page with `startRow`.
+ */
+export async function searchAnalyticsQuery(ref: GoogleRef, siteUrl: string, q: SearchAnalyticsQuery): Promise<SearchAnalyticsRow[]> {
+  const token = await getAccessToken(ref.connectionId, ref.businessId);
+  const url = `${SEARCH_CONSOLE}/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`;
+  const body = {
+    startDate: q.startDate,
+    endDate: q.endDate,
+    dimensions: q.dimensions,
+    rowLimit: q.rowLimit ?? 1000,
+    ...(q.startRow ? { startRow: q.startRow } : {}),
+    ...(q.dataState ? { dataState: q.dataState } : {}),
+  };
+  const r = await providerFetch<{ rows?: SearchAnalyticsRow[] }>(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return r?.rows ?? [];
+}
+
 // ─── Business Profile ────────────────────────────────────────────────
 
 export interface GbpAccount {
