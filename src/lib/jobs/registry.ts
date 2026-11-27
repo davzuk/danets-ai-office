@@ -11,6 +11,7 @@ import { metaLeadgenJob, metaLeadgenPollJob } from "./handlers/meta-leadgen";
 import { metaWebhookJob } from "./handlers/meta-webhook";
 import { purgeJobsJob } from "./handlers/purge-jobs";
 import { seoHealthJob } from "./handlers/seo-health";
+import { seoAuditJob, seoAuditScheduleJob } from "./handlers/seo-audit";
 import { seoSearchSyncJob, seoSearchSyncWindowJob } from "./handlers/seo-search-sync";
 import { socialInsightsBusinessJob, socialInsightsWeeklyJob } from "./handlers/social-insights";
 import { socialMetricsAccountJob, socialMetricsPostJob } from "./handlers/social-metrics";
@@ -42,6 +43,8 @@ const definitions: JobDefinition[] = [
   seoHealthJob,
   seoSearchSyncWindowJob,
   seoSearchSyncJob,
+  seoAuditJob,
+  seoAuditScheduleJob,
 ];
 
 const byType = new Map<string, JobDefinition>();

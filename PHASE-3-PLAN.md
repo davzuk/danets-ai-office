@@ -1,7 +1,7 @@
 # Phase 3: Search & Local Visibility
 
 **Date:** 2026-11-27
-**Status:** U built and committed. V built (uncommitted). W to Z not started.
+**Status:** U, V and W built and committed. X to Z not started.
 **Goal:** Show tenants how people find them on Google and help them get found more. That covers how their website performs in search, what is broken on it, and their Google Business Profile (reviews, posts, calls and directions). Each part links back to the leads it brings in.
 **Builds on:**
 - **Phase 0:** OAuth connections (C, the Google provider already asks for `webmasters.readonly` and `business.manage`), the job queue (B), contacts and attribution (D, `organic_search` touchpoints), Brand Voice (E) and the AI provider layer (A).
@@ -207,6 +207,52 @@ model AuditIssue {
 - An audit of a local test site with planted problems finds every planted issue, with no false positives on a clean page.
 - The fetcher refuses `127.0.0.1`, `10.x`, `169.254.169.254`, `[::1]`, a public name that resolves to a private address, and a redirect to any of these (unit tests plus one integration test).
 - A 200-page crawl finishes within the job timeout and resumes after the worker is killed halfway.
+
+### As built
+- **Schema** (migration `20261229100000_site_audit`):
+  - `SeoSettings`: the site to audit and the monthly on/off switch.
+  - `SiteAudit`: adds `trigger`, `pageLimit`, `vitals`, `state` (the crawl checkpoint) and `requestedBy` to the planned fields.
+  - `AuditIssue`: adds `suggestedAt`.
+  - `auditPageLimit` on plans (default 200; Enterprise set to 1,000 by the migration and the seed) and on tenant overrides. It shows in the console limit editors.
+- **Safe fetcher** (`src/lib/seo/fetch.ts`):
+  - Every hostname goes through our own DNS lookup, which refuses the whole answer if any address isn't public. The socket connects only to the checked addresses.
+  - IP literals are checked directly: private, loopback, link-local, metadata, CGNAT, multicast and reserved ranges, IPv4-mapped/NAT64/6to4 IPv6, and numeric hosts.
+  - Redirects are followed by hand: at most 5, each re-checked and limited to the tenant's own hosts.
+  - http(s) only, ports 80/443 only, no credentials in URLs.
+  - 10 s timeout, 2 MB body cap; gzip, deflate and brotli are handled.
+  - User agent `DanetsAuditBot/1.0 (+<app>/bot)`.
+  - A test-only escape hatch (`allowPrivate`, or `SEO_AUDIT_ALLOW_PRIVATE=1`) is ignored in production.
+- **robots.txt and sitemaps** (`robots.ts`): RFC 9309 rules (the bot's own group else `*`, longest match, Allow wins ties, `*` and `$`), `Crawl-delay` (capped at 10 s), and sitemaps (one sitemap index level, at most 5 files).
+- **Parser** (`html.ts`, `htmlparser2@12.0.0`): title, meta description and robots, X-Robots-Tag, canonical, lang, viewport, H1s, links, images and alt text, mixed content, JSON-LD and word count.
+- **Rules and score** (`audit-rules.ts`): one table of 24 issue kinds with severity, help text, weight and per-kind cap. Poor Core Web Vitals count double.
+- **Crawler** (`audit.ts` + the `seo.audit` job):
+  - **Scope:** breadth-first from the root and the sitemap, staying on the root's host. It stops at the page limit, a depth of 10, nofollow and robots.txt.
+  - **Pacing:** one request at a time, at least 250 ms apart.
+  - **Links:** up to 200 links to files and other sites are checked with HEAD (GET when HEAD isn't supported).
+  - **Runs:** each run works for 4 minutes, checkpointing every 25 pages (state and issues in one transaction), then queues the next run. A killed worker resumes from the last checkpoint.
+  - **Phases:** crawl, links, vitals, then finish (duplicates, broken links, redirect chains, error pages, score).
+  - **Afterwards:** the tenant gets a notification and only the last 12 audits are kept.
+- **Ownership:** only hosts from the tenant's Search Console properties (domain properties include subdomains), chat-widget allowed origins (plus the www twin) and their platform-built site can be audited. The check runs again before each crawl.
+- **Core Web Vitals:** PageSpeed Insights (mobile) on the home page and the top 5 pages from V. It uses field data when there's enough, else lab data (lab has no INP). It runs only when `PAGESPEED_API_KEY` is set; otherwise the audit says so.
+- **AI fixes:**
+  - "Suggest a fix" works on title, description, H1 and alt-text issues.
+  - It re-reads the page through the safe fetcher, then calls `aiStructured` with the brand voice on the tenant's provider and quota (`requireAiQuota`, usage feature `seo_fix`).
+  - The result is stored on the issue for the tenant to copy.
+- **Schedule:** `seo.audit-schedule` runs daily at 03:40 UTC. It starts the monthly re-audit 30 days after a tenant's last audit (unless they turned it off) and fails audits that made no progress for 6 hours. "Run audit" is limited to once an hour; the platform can run one any time.
+- **Tenant UI:** SEO → Audit tab with:
+  - the score, severity counts, and fixed/new issues and the score change since the last audit;
+  - crawl notes and issues grouped worst first, each with the affected pages, details and suggested fixes;
+  - Core Web Vitals, past audits, and settings (which site and monthly on/off).
+- **Console and data:** the tenant SEO card shows the latest audit and its top issue kinds, with "Run audit". The GDPR export includes the audits. A notification type `site_audit_done` opens the Audit tab.
+- **Tests:** `tests/unit/seo-audit.test.ts`:
+  - **Address policy:** the plan's list of refused addresses.
+  - **Fetcher:** a real local server with fake DNS: a name resolving to a private address, redirects to a private name or to `169.254.169.254`, redirect loops, the body cap.
+  - **Robots and sitemaps,** the parser, the rules and score caps, and PageSpeed parsing.
+  - **Fixture crawl:** every planted issue is found and the clean page has none. Resuming one page per run, and after a crash, gives identical results. A 200-page crawl stops at the limit. Vitals are added when PageSpeed is available.
+- **Not done here:**
+  - The free Starter teaser (open decision 2); SEO stays Pro-only.
+  - Applying fixes in the platform builder: the console shows the issues, but the builder isn't linked to them.
+  - A public `/bot` info page for the crawler (open decision 6).
 
 ---
 

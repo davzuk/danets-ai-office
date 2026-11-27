@@ -6,7 +6,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Loader2, RefreshCw, SearchCheck, Trash2 } from "lucide-react";
+import { Gauge, Loader2, Play, RefreshCw, SearchCheck, Trash2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,9 +17,22 @@ interface Item {
   error: string | null;
   lastCheckedAt: string | null;
 }
+interface Audit {
+  id: string;
+  rootUrl: string;
+  status: string;
+  trigger: string;
+  score: number | null;
+  pagesCrawled: number;
+  error: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+  top: { code: string; count: number; label: string; severity: string }[];
+}
 interface Data {
   properties: (Item & { siteUrl: string; permission: string })[];
   locations: (Item & { title: string; address: string | null })[];
+  audit: Audit | null;
 }
 
 export function TenantSeoCard({ businessId }: { businessId: string }) {
@@ -31,8 +44,8 @@ export function TenantSeoCard({ businessId }: { businessId: string }) {
     let live = true;
     fetch(url, { cache: "no-store" })
       .then((r) => r.json())
-      .then((d) => live && setData(d.properties ? d : { properties: [], locations: [] }))
-      .catch(() => live && setData({ properties: [], locations: [] }));
+      .then((d) => live && setData(d.properties ? d : { properties: [], locations: [], audit: null }))
+      .catch(() => live && setData({ properties: [], locations: [], audit: null }));
     return () => {
       live = false;
     };
@@ -71,6 +84,8 @@ export function TenantSeoCard({ businessId }: { businessId: string }) {
   );
 
   const empty = data && data.properties.length + data.locations.length === 0;
+  const a = data?.audit ?? null;
+  const auditRunning = a?.status === "queued" || a?.status === "running";
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-3">
@@ -78,7 +93,7 @@ export function TenantSeoCard({ businessId }: { businessId: string }) {
           <CardTitle className="flex items-center gap-2 text-base">
             <SearchCheck className="h-4 w-4 text-primary" /> SEO setup
           </CardTitle>
-          <CardDescription>Search Console properties and Business Profile locations the tenant connected.</CardDescription>
+          <CardDescription>Search Console properties, Business Profile locations and the latest site audit.</CardDescription>
         </div>
         {data && !empty && (
           <Button size="sm" variant="outline" disabled={!!busy} onClick={() => post({ action: "check" }, "check", "Checked with Google.")}>
@@ -96,6 +111,46 @@ export function TenantSeoCard({ businessId }: { businessId: string }) {
             {data.properties.map((p) => row("property", p, p.siteUrl.replace(/^sc-domain:/, ""), p.siteUrl.startsWith("sc-domain:") ? "Domain property" : "URL-prefix property"))}
             {data.locations.map((l) => row("location", l, l.title, l.address))}
           </>
+        )}
+        {data && (
+          <div className="rounded-md border px-3 py-2 text-sm">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2 font-medium">
+                  <Gauge className="h-4 w-4 text-muted-foreground" /> Site audit
+                  {a && a.status === "done" && <Badge variant="secondary">{a.score}/100</Badge>}
+                  {a && a.status === "failed" && <Badge variant="destructive">Failed</Badge>}
+                  {auditRunning && <Badge variant="outline">Running</Badge>}
+                </div>
+                {a ? (
+                  <>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {a.rootUrl} · {a.pagesCrawled} pages · {new Date(a.finishedAt ?? a.createdAt).toLocaleString()}
+                      {a.trigger === "platform" ? " · run by platform" : a.trigger === "schedule" ? " · monthly" : ""}
+                    </div>
+                    {a.error && <div className="text-xs text-amber-700 dark:text-amber-400">{a.error}</div>}
+                    {a.top.length > 0 && (
+                      <ul className="mt-1 space-y-0.5 text-xs">
+                        {a.top.map((t) => (
+                          <li key={t.code} className="flex items-center gap-1.5">
+                            <span className={t.severity === "critical" ? "text-red-600 dark:text-red-400" : t.severity === "warning" ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}>
+                              {t.severity === "critical" ? "Critical" : t.severity === "warning" ? "Warning" : "Notice"}
+                            </span>
+                            {t.label} ({t.count})
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-xs text-muted-foreground">Not audited yet.</div>
+                )}
+              </div>
+              <Button variant="outline" size="sm" disabled={!!busy || auditRunning} onClick={() => post({ action: "audit" }, "audit", "Audit started.")}>
+                {busy === "audit" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}Run audit
+              </Button>
+            </div>
+          </div>
         )}
       </CardContent>
     </Card>

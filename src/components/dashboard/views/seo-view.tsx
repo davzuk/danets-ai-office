@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { SeoPerformanceView } from "./seo-performance-view";
+import { SeoAuditView } from "./seo-audit-view";
 
 interface Connection {
   id: string;
@@ -102,7 +103,15 @@ function useConnectResult() {
 }
 
 export function SeoView() {
-  const [tab, setTab] = useState<"setup" | "performance">("setup");
+  const [tab, setTab] = useState<"setup" | "performance" | "audit">(() => {
+    // A notification can ask to land on a tab (read once).
+    try {
+      const t = sessionStorage.getItem("seo-tab");
+      sessionStorage.removeItem("seo-tab");
+      if (t === "audit" || t === "performance") return t;
+    } catch {}
+    return "setup";
+  });
   const [data, setData] = useState<SetupData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
@@ -143,10 +152,15 @@ export function SeoView() {
         <TabButton active={tab === "performance"} onClick={() => setTab("performance")}>
           Performance
         </TabButton>
+        <TabButton active={tab === "audit"} onClick={() => setTab("audit")}>
+          Audit
+        </TabButton>
       </div>
 
       {tab === "performance" ? (
         <SeoPerformanceView />
+      ) : tab === "audit" ? (
+        <SeoAuditView />
       ) : error ? (
         <p className="text-sm text-destructive">{error}</p>
       ) : !data ? (

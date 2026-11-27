@@ -45,6 +45,7 @@ export interface EffectiveLimits {
   leadMagnetLimit: number;
   seoPropertyLimit: number;
   gbpLocationLimit: number;
+  auditPageLimit: number;
   mediaStorageMbLimit: number;
 }
 
@@ -170,6 +171,7 @@ export async function getEffectiveLimits(
       leadMagnetLimit: planRow?.leadMagnetLimit ?? 3,
       seoPropertyLimit: planRow?.seoPropertyLimit ?? 1,
       gbpLocationLimit: planRow?.gbpLocationLimit ?? 1,
+      auditPageLimit: planRow?.auditPageLimit ?? 200,
       mediaStorageMbLimit: planRow?.mediaStorageMbLimit ?? 1024,
     };
 
@@ -197,6 +199,7 @@ export async function getEffectiveLimits(
       leadMagnetLimit: override?.leadMagnetLimit ?? base.leadMagnetLimit,
       seoPropertyLimit: override?.seoPropertyLimit ?? base.seoPropertyLimit,
       gbpLocationLimit: override?.gbpLocationLimit ?? base.gbpLocationLimit,
+      auditPageLimit: override?.auditPageLimit ?? base.auditPageLimit,
       mediaStorageMbLimit: override?.mediaStorageMbLimit ?? base.mediaStorageMbLimit,
     };
   });

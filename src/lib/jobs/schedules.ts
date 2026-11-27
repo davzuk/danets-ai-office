@@ -12,6 +12,7 @@ import { metaLeadgenPollJob } from "./handlers/meta-leadgen";
 import { purgeJobsJob } from "./handlers/purge-jobs";
 import { seoHealthJob } from "./handlers/seo-health";
 import { seoSearchSyncJob } from "./handlers/seo-search-sync";
+import { seoAuditScheduleJob } from "./handlers/seo-audit";
 import { socialInsightsWeeklyJob } from "./handlers/social-insights";
 import { socialMetricsAccountJob } from "./handlers/social-metrics";
 import { whiteLabelVerifyDomainsJob } from "./handlers/white-label-domains";
@@ -50,6 +51,8 @@ export const SCHEDULES: Schedule[] = [
   { job: seoHealthJob, everyMs: DAY, offsetMs: 4 * HOUR + 20 * MINUTE, payload: {} },
   // SEO: pull each property's Search Console search data forward and prune it.
   { job: seoSearchSyncJob, everyMs: DAY, offsetMs: 6 * HOUR + 30 * MINUTE, payload: {} },
+  // SEO: monthly site re-audits, and audits that stopped making progress.
+  { job: seoAuditScheduleJob, everyMs: DAY, offsetMs: 3 * HOUR + 40 * MINUTE, payload: {} },
   // The weekly "what worked / what next" note, Mondays 06:00 UTC.
   { job: socialInsightsWeeklyJob, everyMs: WEEK, offsetMs: MONDAY + 6 * HOUR, payload: {} },
 ];

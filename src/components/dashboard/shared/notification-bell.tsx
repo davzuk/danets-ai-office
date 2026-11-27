@@ -18,6 +18,7 @@ import {
   CalendarCheck,
   CalendarX,
   ClipboardList,
+  SearchCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -59,6 +60,7 @@ const TYPE_ICONS: Record<string, React.ComponentType<{ size?: number; className?
   booking_created: CalendarCheck,
   booking_cancelled: CalendarX,
   form_submitted: ClipboardList,
+  site_audit_done: SearchCheck,
 };
 
 const TYPE_COLORS: Record<string, string> = {
@@ -80,6 +82,7 @@ const TYPE_COLORS: Record<string, string> = {
   booking_created: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
   booking_cancelled: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
   form_submitted: "bg-sky-500/15 text-sky-600 dark:text-sky-400",
+  site_audit_done: "bg-primary/15 text-primary",
 };
 
 export function NotificationBell({
@@ -219,12 +222,19 @@ export function NotificationBell({
       booking_created: "leads",
       booking_cancelled: "leads",
       form_submitted: "leads",
+      site_audit_done: "seo",
     };
     const view = navMap[n.type];
     if (n.type === "form_submitted") {
       // Land on Leads -> Forms (read once by LeadsView).
       try {
         sessionStorage.setItem("leads-mode", "webforms");
+      } catch {}
+    }
+    if (n.type === "site_audit_done") {
+      // Land on SEO -> Audit (read once by SeoView).
+      try {
+        sessionStorage.setItem("seo-tab", "audit");
       } catch {}
     }
     if (n.type === "content_insight") {

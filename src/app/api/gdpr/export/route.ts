@@ -8,7 +8,7 @@ export async function GET(_req: NextRequest) {
   try { user = await requireSession(); } catch { return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); }
   const businessId = user.businessId;
 
-  const [business, users, aiAgents, knowledgeBase, chatSessions, leads, tickets, quoteRequests, documents, automationWorkflows, notifications, activityLogs, payments, invoices, contacts, touchpoints, socialAccounts, metaLeadForms, mediaAssets, contentPosts, scheduledPosts, postMetrics, accountMetrics, contentInsights, leadForms, formSubmissions, leadMagnets, searchProperties, businessLocations] = await Promise.all([
+  const [business, users, aiAgents, knowledgeBase, chatSessions, leads, tickets, quoteRequests, documents, automationWorkflows, notifications, activityLogs, payments, invoices, contacts, touchpoints, socialAccounts, metaLeadForms, mediaAssets, contentPosts, scheduledPosts, postMetrics, accountMetrics, contentInsights, leadForms, formSubmissions, leadMagnets, searchProperties, businessLocations, seoSettings, siteAudits] = await Promise.all([
     db.business.findUnique({ where: { id: businessId }, select: { id: true, name: true, email: true, industry: true, phone: true, whatsapp: true, plan: true, status: true, createdAt: true } }),
     db.businessUser.findMany({ where: { businessId }, select: { id: true, name: true, email: true, role: true, createdAt: true } }),
     db.aiAgent.findMany({ where: { businessId }, select: { id: true, botName: true, tone: true, status: true } }),
@@ -38,10 +38,12 @@ export async function GET(_req: NextRequest) {
     db.leadMagnet.findMany({ where: { businessId }, omit: { fileKey: true } }),
     db.searchProperty.findMany({ where: { businessId } }),
     db.businessLocation.findMany({ where: { businessId } }),
+    db.seoSettings.findUnique({ where: { businessId } }),
+    db.siteAudit.findMany({ where: { businessId }, omit: { state: true }, include: { issues: true } }),
   ]);
 
   await logActivity({ businessId, userId: user.userId, userName: user.name, action: "business_settings_changed", module: "business", description: "GDPR data export requested" });
 
-  const exportData = { exportedAt: new Date().toISOString(), exportedBy: user.name, business, users, aiAgents, knowledgeBase, chatSessions, leads, tickets, quoteRequests, documents, automationWorkflows, notifications, activityLogs, payments, invoices, contacts, touchpoints, socialAccounts, metaLeadForms, mediaAssets, contentPosts, scheduledPosts, postMetrics, accountMetrics, contentInsights, leadForms, formSubmissions, leadMagnets, searchProperties, businessLocations };
+  const exportData = { exportedAt: new Date().toISOString(), exportedBy: user.name, business, users, aiAgents, knowledgeBase, chatSessions, leads, tickets, quoteRequests, documents, automationWorkflows, notifications, activityLogs, payments, invoices, contacts, touchpoints, socialAccounts, metaLeadForms, mediaAssets, contentPosts, scheduledPosts, postMetrics, accountMetrics, contentInsights, leadForms, formSubmissions, leadMagnets, searchProperties, businessLocations, seoSettings, siteAudits };
   return new NextResponse(JSON.stringify(exportData, null, 2), { headers: { "Content-Type": "application/json; charset=utf-8", "Content-Disposition": `attachment; filename="danets-data-export-${new Date().toISOString().slice(0, 10)}.json"`, "Cache-Control": "no-store" } });
 }
