@@ -1,7 +1,7 @@
 # Phase 3: Search & Local Visibility
 
 **Date:** 2026-11-27
-**Status:** U, V and W built and committed. X to Z not started.
+**Status:** U, V, W and X built and committed. Y and Z not started.
 **Goal:** Show tenants how people find them on Google and help them get found more. That covers how their website performs in search, what is broken on it, and their Google Business Profile (reviews, posts, calls and directions). Each part links back to the leads it brings in.
 **Builds on:**
 - **Phase 0:** OAuth connections (C, the Google provider already asks for `webmasters.readonly` and `business.manage`), the job queue (B), contacts and attribution (D, `organic_search` touchpoints), Brand Voice (E) and the AI provider layer (A).
@@ -323,6 +323,52 @@ model ReviewRequest {
 - With API access approved, a test location's reviews sync and a drafted reply posts after approval, and shows on Google.
 - A completed booking sends one review request, and a second booking within 90 days doesn't.
 - A scheduled Business Profile post publishes from the calendar.
+
+### As built
+- **Schema** (migration `20261230100000_google_business_profile`):
+  - `GbpReview` as planned, plus reviewer photo and anonymity, Google's reply moderation state (`replyState`: PENDING, APPROVED or REJECTED), who drafted the reply, the last reply error and `autoReplied`.
+  - `GbpDailyMetric` and `ReviewRequest` as planned. `ReviewRequest` also records the recipient, booking, workflow and click count.
+  - `BusinessLocation` gains the average rating, review count, and reviews and performance sync state and errors. `SeoSettings.autoReplyNoText` is the auto-reply switch (off by default).
+  - The migration backfills a `google_business` `SocialAccount` for each existing location.
+- **Google client** (`src/lib/seo/gbp.ts`): reviews list (50 a page, `updateTime desc`), `PUT .../reply` (4,096 bytes), `localPosts`, and `fetchMultiDailyMetricsTimeSeries` for 8 metrics. `MESSAGING_CLICKS` replaces the deprecated `BUSINESS_CONVERSATIONS`. Endpoints were checked against Google's docs on 2026-11-27.
+- **Reviews sync** (`reviews.ts`, `gbp.reviews-sync` every 2 hours, then one job per location):
+  - It reads up to 10 pages on a location's first sync and 4 after that, stopping at the last review it has seen.
+  - A reply found on Google counts as posted, including one written in Google's own UI. A reply deleted there resets the review to "no reply". A draft, or a reply waiting for approval, is left alone.
+  - The first sync is quiet. After that, new reviews notify the team (1–2 stars are urgent), fire the new `review_received` trigger, and get the auto-reply when it's on.
+  - Reviewers are matched to a contact only when exactly one contact has the same name.
+- **Replies:**
+  - "Draft reply" uses `aiStructured` with the brand voice on the tenant's provider and quota (usage feature `gbp_reply`). Drafts that use a banned phrase are flagged.
+  - Posting follows `Business.contentApproval`, like posts do. A reply that needs approval notifies admins and opens the Reviews tab.
+  - The auto-reply uses 3 fixed thank-you templates, not AI. Under "every post needs approval", auto-replies wait for an admin too.
+- **Review requests** (`review-requests.ts`, the `send_review_request` action):
+  - Sent by email or WhatsApp, with a tracked link `/r/{token}` that redirects only to Google's own hosts (google.com, g.page, goo.gl).
+  - Each person is asked at most once per 90 days, matched by contact or by recipient. Nobody who refused consent for the channel is asked. There is no review gating.
+  - The cooldown is reserved before sending and released if sending fails.
+- **Triggers:**
+  - `booking_completed` fires 30 minutes after a booking's end time, unless the booking was cancelled (job `booking.complete`).
+  - `review_received` can filter on a rating range.
+  - The `lead_status_changed` status picker now filters as its card said it did (a status of "won" covers "a lead marked won").
+- **Profile posts:** `google_business` is a content platform (1,500 characters, one photo, no video, no hashtags). Each location has its own `SocialAccount`, kept in step with it when it's added, removed or re-checked. Posts publish through the existing calendar and publish job as "What's new" posts. A link becomes a Book button for booking pages and Learn more otherwise.
+- **Performance** (`gbp-metrics.ts`, `gbp.metrics-sync` daily at 07:10 UTC):
+  - The first sync backfills 180 days. Later syncs re-read the last 7 days, because Google revises recent figures. Data is kept for 550 days.
+  - The Performance tab shows views on Search and Maps, calls, website clicks, directions and messages, with the change from the previous period, a daily chart and a per-location breakdown.
+- **Tenant UI:** SEO → Reviews tab:
+  - counts, plus review-request sends and clicks over the last 30 days;
+  - filters (no reply, needs approval, low ratings, rating, location);
+  - draft, edit, post, approve and discard, with Google's moderation state;
+  - the auto-reply setting.
+
+  The automations editor has the two new triggers and the new action.
+- **Console and data:** each location on the tenant SEO card shows its rating, unreplied and awaiting-approval counts, sync errors and a "Sync reviews" action. The GDPR export includes reviews, review requests and daily metrics.
+- **Tests:** `tests/unit/seo-gbp.test.ts` covers:
+  - review, page, reply-size and metrics mapping against Google's documented response shapes;
+  - the sync row rules, auto-reply eligibility and templates, and reply approval decisions;
+  - the reply prompt, local post building and publish error sorting;
+  - the metrics window, grouping and daily series, and the trigger filters;
+  - review requests: the same link for everyone, the cooldown, consent, a failed send releasing the cooldown, the module, location and WhatsApp checks, and the redirect host check.
+- **Not done here:**
+  - Offer and event posts. Only "What's new" posts are supported.
+  - Live verification. It needs Business Profile API access approved for the Google project, so none of the "Done when" checks have been run against Google yet.
 
 ---
 

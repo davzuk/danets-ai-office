@@ -192,6 +192,9 @@ export async function validateMediaIds(businessId: string, platform: ContentPlat
   if (videos > 0 && unique.length > 1 && platform !== "instagram") {
     throw new AppError(`${PLATFORM_RULES[platform].label} posts can have several images or one video, not both.`, { status: 400, code: "MEDIA_MIX" });
   }
+  if (platform === "google_business" && (videos > 0 || unique.length > 1)) {
+    throw new AppError("Google Business Profile posts take one photo (no video).", { status: 400, code: "MEDIA_GBP" });
+  }
   if (platform === "tiktok" && (videos !== 1 || unique.length !== 1)) {
     throw new AppError("TikTok posts need exactly one video.", { status: 400, code: "MEDIA_TIKTOK" });
   }

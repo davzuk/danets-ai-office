@@ -24,6 +24,7 @@ export const PLATFORM_COLOR: Record<ContentPlatform, string> = {
   linkedin: "bg-[#0A66C2]",
   x: "bg-black dark:bg-white dark:text-black",
   tiktok: "bg-black",
+  google_business: "bg-[#4285F4]",
 };
 
 export function PlatformDot({ platform, className }: { platform: ContentPlatform | string; className?: string }) {
@@ -37,7 +38,7 @@ export function PlatformDot({ platform, className }: { platform: ContentPlatform
       )}
       title={PLATFORM_RULES[p]?.label ?? platform}
     >
-      {p === "linkedin" ? "in" : p === "tiktok" ? "tt" : String(platform).slice(0, 1)}
+      {p === "linkedin" ? "in" : p === "tiktok" ? "tt" : p === "google_business" ? "G" : String(platform).slice(0, 1)}
     </span>
   );
 }

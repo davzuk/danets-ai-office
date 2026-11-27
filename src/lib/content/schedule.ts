@@ -27,6 +27,7 @@ export const PUBLISH_ACCOUNT_PLATFORM: Partial<Record<ContentPlatform, SocialAcc
   facebook: "facebook_page",
   instagram: "instagram",
   linkedin: "linkedin_page",
+  google_business: "google_business",
 };
 
 export const IG_DAILY_LIMIT = 25;
@@ -186,6 +187,13 @@ async function resolveAccount(
   return acct;
 }
 
+/** Business Profile posts take at most one photo, and no video through the API. */
+async function checkGoogleBusinessMedia(businessId: string, mediaIds: unknown) {
+  const media = await variantMedia(businessId, mediaIds as never);
+  if (media.some((m) => m.kind !== "image")) throw new AppError("Google Business Profile posts can have a photo, not a video.", { status: 400, code: "GBP_MEDIA" });
+  if (media.length > 1) throw new AppError("Google Business Profile posts take one photo.", { status: 400, code: "GBP_MEDIA" });
+}
+
 async function checkInstagram(businessId: string, acct: SocialAccount, mediaIds: unknown, when: Date, excludeId?: string) {
   const media = await variantMedia(businessId, mediaIds as never);
   if (media.length === 0) throw new AppError("Instagram posts need at least one image or video.", { status: 400, code: "IG_NO_MEDIA" });
@@ -233,6 +241,7 @@ export async function schedulePost(actor: Actor, postId: string, input: z.infer<
         throw new AppError(`${label} posts can have several images or one video, not both.`, { status: 400, code: "MEDIA_MIX" });
       }
     }
+    if (acct && t.platform === "google_business") await checkGoogleBusinessMedia(actor.businessId, v.mediaIds);
     plans.push({ variantId: v.id, platform: t.platform, acct });
   }
 

@@ -19,6 +19,7 @@ import {
   CalendarX,
   ClipboardList,
   SearchCheck,
+  Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -61,6 +62,8 @@ const TYPE_ICONS: Record<string, React.ComponentType<{ size?: number; className?
   booking_cancelled: CalendarX,
   form_submitted: ClipboardList,
   site_audit_done: SearchCheck,
+  review_new: Star,
+  review_urgent: Star,
 };
 
 const TYPE_COLORS: Record<string, string> = {
@@ -83,6 +86,8 @@ const TYPE_COLORS: Record<string, string> = {
   booking_cancelled: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
   form_submitted: "bg-sky-500/15 text-sky-600 dark:text-sky-400",
   site_audit_done: "bg-primary/15 text-primary",
+  review_new: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+  review_urgent: "bg-rose-500/15 text-rose-600 dark:text-rose-400",
 };
 
 export function NotificationBell({
@@ -223,8 +228,18 @@ export function NotificationBell({
       booking_cancelled: "leads",
       form_submitted: "leads",
       site_audit_done: "seo",
+      review_new: "seo",
+      review_urgent: "seo",
     };
-    const view = navMap[n.type];
+    // A reply waiting for approval is a review, not a social post.
+    const isReview = n.type === "review_new" || n.type === "review_urgent" || (n.type === "content_review" && !!n.data?.includes('"reviewId"'));
+    const view = isReview ? "seo" : navMap[n.type];
+    if (isReview) {
+      // Land on SEO -> Reviews (read once by SeoView).
+      try {
+        sessionStorage.setItem("seo-tab", "reviews");
+      } catch {}
+    }
     if (n.type === "form_submitted") {
       // Land on Leads -> Forms (read once by LeadsView).
       try {

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { AlertTriangle, Facebook, Instagram, Linkedin } from "lucide-react";
+import { AlertTriangle, Facebook, Instagram, Linkedin, MapPin } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -26,11 +26,12 @@ export interface SocialAccountView {
 
 type Patch = Partial<Pick<SocialAccountView, "inboxEnabled" | "leadSyncEnabled" | "publishEnabled" | "autoReply">>;
 
-const PLATFORM_ICON = { facebook_page: Facebook, instagram: Instagram, linkedin_page: Linkedin } as const;
+const PLATFORM_ICON = { facebook_page: Facebook, instagram: Instagram, linkedin_page: Linkedin, google_business: MapPin } as const;
 const PLATFORM_LABEL: Record<string, string> = {
   facebook_page: "Facebook Page",
   instagram: "Instagram",
   linkedin_page: "LinkedIn Page",
+  google_business: "Google Business Profile",
 };
 
 /** Per-asset switches under a connection: what Danets may do with each Page / IG account. */
@@ -73,7 +74,7 @@ export function SocialAccountRows({
         const disabled = !canManage || saving === a.id || a.status !== "active";
         const toggles: { key: keyof Patch; label: string; show: boolean }[] = [
           { key: "leadSyncEnabled", label: "Lead Ads", show: a.platform === "facebook_page" || a.platform === "linkedin_page" },
-          { key: "inboxEnabled", label: "Inbox", show: a.platform !== "linkedin_page" },
+          { key: "inboxEnabled", label: "Inbox", show: a.platform !== "linkedin_page" && a.platform !== "google_business" },
           { key: "publishEnabled", label: "Publishing", show: true },
         ];
         return (

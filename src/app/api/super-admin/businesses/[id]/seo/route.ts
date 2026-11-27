@@ -7,15 +7,20 @@ import { checkBusiness, publicLocation, publicProperty } from "@/lib/seo/setup";
 import { ISSUE_DEFS, isIssueCode } from "@/lib/seo/audit-rules";
 import { startAudit } from "@/lib/seo/audit";
 import { enqueueAuditRun } from "@/lib/jobs/handlers/seo-audit";
+import { removeLocationAccount } from "@/lib/seo/gbp-account";
+import { enqueueReviewsSync } from "@/lib/jobs/handlers/gbp-sync";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 async function view(businessId: string) {
-  const [properties, locations, audit] = await Promise.all([
+  const [properties, locations, audit, unreplied, awaiting] = await Promise.all([
     db.searchProperty.findMany({ where: { businessId }, orderBy: { createdAt: "asc" } }),
     db.businessLocation.findMany({ where: { businessId }, orderBy: { createdAt: "asc" } }),
     db.siteAudit.findFirst({ where: { businessId }, orderBy: { createdAt: "desc" } }),
+    db.gbpReview.groupBy({ by: ["locationId"], where: { businessId, replyStatus: { notIn: ["posted", "pending_approval"] } }, _count: { _all: true } }),
+    db.gbpReview.groupBy({ by: ["locationId"], where: { businessId, replyStatus: "pending_approval" }, _count: { _all: true } }),
   ]);
+  const countOf = (rows: { locationId: string; _count: { _all: number } }[], id: string) => rows.find((r) => r.locationId === id)?._count._all ?? 0;
   // The latest site audit and its biggest issue kinds, so the platform can
   // fix them on a platform-built site.
   let latestAudit: Record<string, unknown> | null = null;
@@ -40,7 +45,22 @@ async function view(businessId: string) {
       top,
     };
   }
-  return { properties: properties.map(publicProperty), locations: locations.map(publicLocation), audit: latestAudit };
+  return {
+    properties: properties.map(publicProperty),
+    // Each location with its reviews state, so the platform can see a tenant
+    // falling behind on replies or a sync that keeps failing.
+    locations: locations.map((l) => ({
+      ...publicLocation(l),
+      averageRating: l.averageRating,
+      totalReviewCount: l.totalReviewCount,
+      reviewsSyncedAt: l.reviewsSyncedAt,
+      reviewsError: l.reviewsError,
+      metricsError: l.metricsError,
+      unreplied: countOf(unreplied, l.id),
+      awaitingApproval: countOf(awaiting, l.id),
+    })),
+    audit: latestAudit,
+  };
 }
 
 // GET /api/super-admin/businesses/<id>/seo: the tenant's Search Console
@@ -54,7 +74,8 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
 }
 
 // POST {action: "check"} re-checks access now; {action: "audit"} starts a
-// site audit (no hourly limit); {action: "remove", kind, itemId} clears a
+// site audit (no hourly limit); {action: "sync_reviews", itemId} queues a
+// Business Profile reviews sync; {action: "remove", kind, itemId} clears a
 // property or location (e.g. one that belongs to someone else).
 export async function POST(req: NextRequest, { params }: Ctx) {
   const auth = await requireSuperAdmin();
@@ -74,6 +95,13 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     }
     return NextResponse.json(await view(id));
   }
+  if (body?.action === "sync_reviews" && typeof body.itemId === "string") {
+    const loc = await db.businessLocation.findFirst({ where: { id: body.itemId, businessId: id } });
+    if (!loc) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (loc.status === "lost_access") return NextResponse.json({ error: "This location has lost access. The tenant needs to reconnect Google first." }, { status: 409 });
+    await enqueueReviewsSync(loc.id, id);
+    return NextResponse.json(await view(id));
+  }
   if (body?.action === "remove" && (body.kind === "property" || body.kind === "location") && typeof body.itemId === "string") {
     const label =
       body.kind === "property"
@@ -81,7 +109,11 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         : (await db.businessLocation.findFirst({ where: { id: body.itemId, businessId: id } }))?.title;
     if (!label) return NextResponse.json({ error: "Not found" }, { status: 404 });
     if (body.kind === "property") await db.searchProperty.delete({ where: { id: body.itemId } });
-    else await db.businessLocation.delete({ where: { id: body.itemId } });
+    else {
+      const loc = await db.businessLocation.findUniqueOrThrow({ where: { id: body.itemId } });
+      await removeLocationAccount(loc);
+      await db.businessLocation.delete({ where: { id: loc.id } });
+    }
     await logActivity({
       businessId: id,
       userName: `${auth.user.name} (Super Admin)`,

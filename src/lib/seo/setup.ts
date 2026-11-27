@@ -23,6 +23,7 @@ import {
   type GbpLocation,
   type SearchSite,
 } from "./google";
+import { ensureLocationAccount, mirrorLocationStatus, removeLocationAccount } from "./gbp-account";
 
 export interface Actor {
   businessId: string;
@@ -108,7 +109,7 @@ async function usableConnection(businessId: string, connectionId: string, need: 
 }
 
 /** Turn a Google failure into a message for the person in setup. */
-function googleProblem(e: unknown, what: string): AppError {
+export function googleProblem(e: unknown, what: string): AppError {
   if (e instanceof AppError) return e;
   if (e instanceof ConnectionUnavailableError) return new AppError("The Google connection needs reconnecting.", { status: 409, code: "CONNECTION_INACTIVE" });
   const kind = classifyGoogleError(e);
@@ -198,6 +199,7 @@ export async function addLocation(a: Actor, input: { connectionId: string; accou
       lastCheckedAt: new Date(),
     },
   });
+  await ensureLocationAccount(row);
   await log(a, "create", `Added the Business Profile location ${loc.title}`, { locationId: row.id });
   return row;
 }
@@ -205,6 +207,7 @@ export async function addLocation(a: Actor, input: { connectionId: string; accou
 export async function removeLocation(a: Actor, id: string) {
   const row = await db.businessLocation.findFirst({ where: { id, businessId: a.businessId } });
   if (!row) throw new AppError("Location not found.", { status: 404, code: "NOT_FOUND" });
+  await removeLocationAccount(row);
   await db.businessLocation.delete({ where: { id: row.id } });
   await log(a, "delete", `Removed the Business Profile location ${row.title}`, { locationId: row.id });
 }
@@ -243,7 +246,10 @@ async function applyOutcome(kind: "property" | "location", row: SearchProperty |
     ...(out.fields ?? {}),
   };
   if (kind === "property") await db.searchProperty.update({ where: { id: row.id }, data });
-  else await db.businessLocation.update({ where: { id: row.id }, data });
+  else {
+    await db.businessLocation.update({ where: { id: row.id }, data });
+    if (!out.retry) await mirrorLocationStatus(row as BusinessLocation, out.status, out.error);
+  }
 
   // Tell the tenant once, when something that worked stops working.
   if (!out.retry && row.status === "active" && out.status !== "active") {

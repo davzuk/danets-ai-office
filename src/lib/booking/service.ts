@@ -293,6 +293,7 @@ async function afterChange(
     logger.error("booking notification/trigger failed", { bookingId: booking.id, ...serializeError(e) });
   }
 
+  if (kind !== "cancelled") await scheduleCompletion(booking);
   if (viaCalendly) return;
 
   try {
@@ -322,6 +323,21 @@ export async function scheduleReminders(booking: Pick<Booking, "id" | "businessI
     }
   } catch (e) {
     logger.error("booking reminders not scheduled", { bookingId: booking.id, ...serializeError(e) });
+  }
+}
+
+/** The booking_completed trigger, half an hour after the meeting ends. Keyed by the end, so a reschedule queues a fresh one. */
+export async function scheduleCompletion(booking: Pick<Booking, "id" | "businessId" | "endsAt">) {
+  try {
+    const { enqueue } = await import("@/lib/jobs/queue");
+    const { bookingCompleteJob, COMPLETE_AFTER_MS } = await import("@/lib/jobs/handlers/booking-complete");
+    await enqueue(
+      bookingCompleteJob,
+      { bookingId: booking.id, endsAt: booking.endsAt.toISOString() },
+      { runAt: new Date(booking.endsAt.getTime() + COMPLETE_AFTER_MS), businessId: booking.businessId, dedupeKey: `booking-complete:${booking.id}:${booking.endsAt.toISOString()}` }
+    );
+  } catch (e) {
+    logger.error("booking completion not scheduled", { bookingId: booking.id, ...serializeError(e) });
   }
 }
 

@@ -2,11 +2,12 @@
 
 // Platform console → tenant: the tenant's SEO setup (Phase 3, workstream U).
 // Shows each Search Console property and Business Profile location with its
-// last access check; the platform can re-check or clear one.
+// last access check; the platform can re-check or clear one. Locations also
+// show their Google reviews state (workstream X) with a "Sync reviews" action.
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Gauge, Loader2, Play, RefreshCw, SearchCheck, Trash2 } from "lucide-react";
+import { Gauge, Loader2, Play, RefreshCw, SearchCheck, Star, Trash2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,7 +32,17 @@ interface Audit {
 }
 interface Data {
   properties: (Item & { siteUrl: string; permission: string })[];
-  locations: (Item & { title: string; address: string | null })[];
+  locations: (Item & {
+    title: string;
+    address: string | null;
+    averageRating: number | null;
+    totalReviewCount: number | null;
+    reviewsSyncedAt: string | null;
+    reviewsError: string | null;
+    metricsError: string | null;
+    unreplied: number;
+    awaitingApproval: number;
+  })[];
   audit: Audit | null;
 }
 
@@ -66,7 +77,29 @@ export function TenantSeoCard({ businessId }: { businessId: string }) {
     }
   }
 
-  const row = (kind: "property" | "location", it: Item, name: string, sub: string | null) => (
+  const reviewsLine = (l: Data["locations"][number]) => (
+    <div className="mt-1 space-y-0.5 text-xs">
+      <div className="flex flex-wrap items-center gap-x-2 text-muted-foreground">
+        <Star className="h-3 w-3" />
+        {l.totalReviewCount != null ? `${l.averageRating?.toFixed(1) ?? "-"}★ from ${l.totalReviewCount} reviews` : "Reviews not synced yet"}
+        {l.unreplied > 0 && <span className="text-amber-700 dark:text-amber-400">{l.unreplied} unreplied</span>}
+        {l.awaitingApproval > 0 && <span>{l.awaitingApproval} awaiting approval</span>}
+        {l.reviewsSyncedAt && <span>synced {new Date(l.reviewsSyncedAt).toLocaleString()}</span>}
+        <button
+          type="button"
+          className="underline underline-offset-2 hover:text-foreground disabled:opacity-50"
+          disabled={!!busy || l.status === "lost_access"}
+          onClick={() => post({ action: "sync_reviews", itemId: l.id }, `sync-${l.id}`, "Reviews sync queued.")}
+        >
+          {busy === `sync-${l.id}` ? "Queuing…" : "Sync reviews"}
+        </button>
+      </div>
+      {l.reviewsError && <div className="text-amber-700 dark:text-amber-400">{l.reviewsError}</div>}
+      {l.metricsError && <div className="text-amber-700 dark:text-amber-400">{l.metricsError}</div>}
+    </div>
+  );
+
+  const row = (kind: "property" | "location", it: Item, name: string, sub: string | null, extra?: React.ReactNode) => (
     <div key={it.id} className="flex items-start justify-between gap-2 rounded-md border px-3 py-2 text-sm">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2 font-medium">
@@ -76,6 +109,7 @@ export function TenantSeoCard({ businessId }: { businessId: string }) {
         {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
         {it.error && <div className="text-xs text-amber-700 dark:text-amber-400">{it.error}</div>}
         <div className="text-xs text-muted-foreground">{it.lastCheckedAt ? `Checked ${new Date(it.lastCheckedAt).toLocaleString()}` : "Not checked yet"}</div>
+        {extra}
       </div>
       <Button variant="ghost" size="icon" title="Clear" disabled={!!busy} onClick={() => post({ action: "remove", kind, itemId: it.id }, it.id, "Cleared.")}>
         {busy === it.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
@@ -109,7 +143,7 @@ export function TenantSeoCard({ businessId }: { businessId: string }) {
         ) : (
           <>
             {data.properties.map((p) => row("property", p, p.siteUrl.replace(/^sc-domain:/, ""), p.siteUrl.startsWith("sc-domain:") ? "Domain property" : "URL-prefix property"))}
-            {data.locations.map((l) => row("location", l, l.title, l.address))}
+            {data.locations.map((l) => row("location", l, l.title, l.address, reviewsLine(l)))}
           </>
         )}
         {data && (

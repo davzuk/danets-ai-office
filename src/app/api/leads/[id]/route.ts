@@ -187,6 +187,7 @@ export function PATCH(req: NextRequest, { params }: RouteCtx) {
         businessId: user.businessId,
         leadId: lead.id,
         leadName: lead.name,
+        status: updated.status,
       });
     }
 

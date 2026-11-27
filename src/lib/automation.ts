@@ -3,14 +3,17 @@ import { db } from "@/lib/db";
 import { createNotification } from "@/lib/activity";
 import { logger, serializeError } from "@/lib/logger";
 import { sendBookingLinkEmail } from "@/lib/booking/link-email";
+import { sendReviewRequest } from "@/lib/seo/review-requests";
 
 /**
  * Automation Execution Engine
  *
  * Checks for active workflows matching a trigger type and executes their actions.
  * Actions are internal (tasks, notifications, notes, status changes), with
- * one exception: "send_booking_link" emails the lead a link to book a time.
- * Nothing else sends external messages automatically.
+ * two exceptions: "send_booking_link" emails the lead a link to book a time,
+ * and "send_review_request" asks them for a Google review (email or
+ * WhatsApp, at most once per 90 days). Nothing else sends external messages
+ * automatically.
  *
  * Usage: call `fireTrigger("new_lead", { businessId, leadId, lead }) from
  * any route where a trigger event occurs.
@@ -79,7 +82,7 @@ async function executeWorkflow(
 
   try {
     const actionConfig = parseConfig(workflow.actionConfig);
-    actionData = await executeAction(workflow.actionType, actionConfig, workflow.businessId, ctx);
+    actionData = await executeAction(workflow.actionType, actionConfig, workflow.businessId, { ...ctx, workflowId: workflow.id });
   } catch (e: any) {
     status = "error";
     errorMsg = e?.message || String(e);
@@ -253,6 +256,21 @@ async function executeAction(
       return { action: "send_booking_link", leadId: ctx.leadId, to: result.to, url: result.url };
     }
 
+    case "send_review_request": {
+      if (!ctx.leadId && typeof ctx.bookingId !== "string") return { action: "send_review_request", skipped: "no lead" };
+      const result = await sendReviewRequest(
+        businessId,
+        { leadId: ctx.leadId, bookingId: typeof ctx.bookingId === "string" ? ctx.bookingId : undefined, workflowId: typeof ctx.workflowId === "string" ? ctx.workflowId : undefined },
+        {
+          channel: typeof config.channel === "string" ? config.channel : undefined,
+          locationId: typeof config.locationId === "string" && config.locationId ? config.locationId : undefined,
+          message: typeof config.message === "string" ? config.message : undefined,
+        }
+      );
+      if (!result.sent) return { action: "send_review_request", leadId: ctx.leadId, skipped: result.reason };
+      return { action: "send_review_request", leadId: ctx.leadId, to: result.to, channel: result.channel, requestId: result.requestId };
+    }
+
     default:
       return { action: actionType, skipped: "unknown action" };
   }
@@ -262,6 +280,14 @@ async function executeAction(
 export function triggerConfigMatches(triggerType: string, cfg: Record<string, unknown>, ctx: TriggerContext): boolean {
   if (triggerType === "form_submitted" && typeof cfg.formId === "string" && cfg.formId) return cfg.formId === ctx.formId;
   if (triggerType === "lead_magnet_downloaded" && typeof cfg.leadMagnetId === "string" && cfg.leadMagnetId) return cfg.leadMagnetId === ctx.leadMagnetId;
+  if (triggerType === "lead_status_changed" && typeof cfg.leadStatus === "string" && cfg.leadStatus) return cfg.leadStatus === ctx.status;
+  if (triggerType === "review_received") {
+    const rating = typeof ctx.rating === "number" ? ctx.rating : 0;
+    const min = Number(cfg.minRating);
+    const max = Number(cfg.maxRating);
+    if (Number.isFinite(min) && min > 0 && rating < min) return false;
+    if (Number.isFinite(max) && max > 0 && rating > max) return false;
+  }
   return true;
 }
 
@@ -317,6 +343,10 @@ function getNotificationTitle(type: string, ctx: TriggerContext): string {
       return "Lead magnet downloaded (auto)";
     case "booking_cancelled":
       return "Booking cancelled (auto)";
+    case "booking_completed":
+      return "Booking completed (auto)";
+    case "review_received":
+      return "New Google review (auto)";
     default:
       return `Automation notification (${type})`;
   }
@@ -328,9 +358,12 @@ function getNotificationMessage(type: string, ctx: TriggerContext): string {
     case "high_quality_lead":
     case "booking_created":
     case "booking_cancelled":
+    case "booking_completed":
     case "form_submitted":
     case "lead_magnet_downloaded":
       return `Automation triggered for lead: ${ctx.leadName || "Unknown"}`;
+    case "review_received":
+      return `${ctx.reviewerName || "Someone"} left a ${ctx.rating || "new"}-star review${ctx.locationTitle ? ` of ${ctx.locationTitle}` : ""}`;
     case "new_ticket":
     case "urgent_ticket":
       return `Automation triggered for ticket: ${ctx.ticketSubject || "Unknown"}`;

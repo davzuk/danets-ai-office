@@ -49,6 +49,8 @@ export function planAssetSync(
     else plan.upserts.push(a);
   }
   for (const r of existing) {
+    // Business Profile locations are managed from SEO setup, not by the connection's asset list.
+    if (r.platform === "google_business") continue;
     if (r.connectionId === connectionId && r.businessId === businessId && !incoming.has(key(r.platform, r.externalId)) && r.status !== "revoked") {
       plan.revokeIds.push(r.id);
     }

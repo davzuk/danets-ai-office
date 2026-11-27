@@ -89,7 +89,7 @@ interface SchedulablePost {
   variants: { platform: ContentPlatform; issues: { severity: string }[]; mediaIds: string[] }[];
 }
 
-const ACCOUNT_PLATFORM: Record<string, string> = { facebook: "facebook_page", instagram: "instagram", linkedin: "linkedin_page" };
+const ACCOUNT_PLATFORM: Record<string, string> = { facebook: "facebook_page", instagram: "instagram", linkedin: "linkedin_page", google_business: "google_business" };
 
 export const SCHEDULE_STATUS: Record<Schedule["status"], { label: string; className: string; icon: typeof Clock }> = {
   pending_approval: { label: "Needs approval", className: "text-amber-700 dark:text-amber-400", icon: ShieldCheck },
@@ -357,7 +357,7 @@ export function ScheduleDialog({
         <DialogHeader>
           <DialogTitle>Schedule &quot;{post.title}&quot;</DialogTitle>
           <DialogDescription>
-            Facebook, Instagram and LinkedIn publish automatically. X, TikTok and platforms without a connected account become a reminder to post by hand.
+            Facebook, Instagram, LinkedIn and Google Business Profile publish automatically. X, TikTok and platforms without a connected account become a reminder to post by hand.
           </DialogDescription>
         </DialogHeader>
 

@@ -1,7 +1,7 @@
 // Per-platform rules for social copy. Pure (no server imports) so the Studio
 // can show the same counts and warnings the server enforces.
 
-export const CONTENT_PLATFORMS = ["facebook", "instagram", "linkedin", "x", "tiktok"] as const;
+export const CONTENT_PLATFORMS = ["facebook", "instagram", "linkedin", "x", "tiktok", "google_business"] as const;
 export type ContentPlatform = (typeof CONTENT_PLATFORMS)[number];
 
 export const CONTENT_GOALS = ["awareness", "engagement", "leads", "promotion"] as const;
@@ -73,6 +73,19 @@ export const PLATFORM_RULES: Record<ContentPlatform, PlatformRule> = {
     autoPublish: false,
     style:
       "One punchy post of at most 280 characters INCLUDING hashtags and the link (a link always counts as 23 characters). 0–2 hashtags. No threads.",
+  },
+  google_business: {
+    label: "Google Business Profile",
+    maxChars: 1_500,
+    idealChars: 300,
+    maxHashtags: 0,
+    idealHashtags: [0, 0],
+    // The post's button carries the link; URLs typed into the text aren't clickable.
+    clickableLinks: false,
+    linkInline: false,
+    autoPublish: true,
+    style:
+      "A Google Business Profile 'What's new' update shown on Google Search and Maps: 1-3 short sentences about one thing (news, an offer, a tip, an event), written for local customers, with a clear reason to act. No hashtags, no emoji walls, no URLs and no phone numbers in the text (Google rejects posts with phone numbers; the link goes on the post's button). Mention the town or area if it fits naturally.",
   },
   tiktok: {
     label: "TikTok",

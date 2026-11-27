@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { LocalPerformanceCard } from "./seo-local-card";
 
 const BLUE = "#1d4ed8";
 const GREEN = "#84cc16";
@@ -285,6 +286,8 @@ export function SeoPerformanceView() {
           </div>
         </>
       )}
+
+      <LocalPerformanceCard range={range} />
     </div>
   );
 }

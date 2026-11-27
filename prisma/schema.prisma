@@ -83,6 +83,9 @@ model Business {
   businessLocations    BusinessLocation[]
   siteAudits           SiteAudit[]
   seoSettings          SeoSettings?
+  gbpReviews           GbpReview[]
+  gbpDailyMetrics      GbpDailyMetric[]
+  reviewRequests       ReviewRequest[]
 
   @@index([purgeScheduledAt])
 }
@@ -1491,6 +1494,8 @@ model Contact {
   supportTickets SupportTicket[]
   quoteRequests  QuoteRequest[]
   bookings       Booking[]
+  gbpReviews     GbpReview[]
+  reviewRequests ReviewRequest[]
 
   @@unique([businessId, email])
   @@index([businessId, phone])
@@ -1574,7 +1579,7 @@ model SocialAccount {
   id               String    @id @default(cuid())
   businessId       String
   connectionId     String
-  platform         String // facebook_page | instagram | linkedin_page
+  platform         String // facebook_page | instagram | linkedin_page | google_business (one per BusinessLocation)
   externalId       String    @db.VarChar(191) // Page id / IG business account id / LinkedIn org URN
   parentExternalId String?   @db.VarChar(191) // IG: the Facebook Page it is linked to
   name             String
@@ -2026,10 +2031,21 @@ model BusinessLocation {
   lastCheckedAt DateTime?
   lastSyncedAt  DateTime?
   error         String?   @db.Text
+  // Workstream X: reviews and performance sync state
+  averageRating        Float?
+  totalReviewCount     Int?
+  reviewsSyncedAt      DateTime?
+  reviewsSyncedThrough DateTime? // newest review updateTime seen; the sync stops there
+  reviewsError         String?   @db.Text
+  metricsSyncedThrough DateTime? @db.Date
+  metricsError         String?   @db.Text
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business       Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  reviews        GbpReview[]
+  dailyMetrics   GbpDailyMetric[]
+  reviewRequests ReviewRequest[]
 
   @@unique([businessId, locationName])
   @@index([connectionId])
@@ -2066,6 +2082,8 @@ model SeoSettings {
   businessId   String   @unique
   auditUrl     String?  @db.VarChar(300) // site to audit; null = pick automatically
   auditMonthly Boolean  @default(true) // re-audit every month
+  // Workstream X: thank 4-5 star reviews that have no text automatically
+  autoReplyNoText Boolean @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -2111,4 +2129,82 @@ model AuditIssue {
   audit SiteAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
 
   @@index([auditId, severity])
+}
+
+// ─── Phase 3, workstream X: Google Business Profile ──────────────────
+
+// A review of one of the tenant's Business Profile locations, as Google has it.
+model GbpReview {
+  id              String    @id @default(cuid())
+  businessId      String
+  locationId      String
+  reviewName      String    @db.VarChar(400) // accounts/../locations/../reviews/{id}
+  reviewerName    String?   @db.VarChar(200)
+  reviewerPhoto   String?   @db.Text
+  anonymous       Boolean   @default(false)
+  starRating      Int // 1-5 (0 when Google doesn't say)
+  comment         String?   @db.Text
+  reviewCreatedAt DateTime // Google's createTime
+  reviewUpdatedAt DateTime // Google's updateTime
+  replyText       String?   @db.Text // the reply live on Google
+  repliedAt       DateTime?
+  replyState      String?   @db.VarChar(20) // Google moderation: PENDING | REJECTED | APPROVED
+  replyStatus     String    @default("none") // none | draft | pending_approval | posted | failed
+  draftReply      String?   @db.Text
+  draftedById     String?
+  draftedByName   String?   @db.VarChar(120)
+  replyError      String?   @db.Text
+  autoReplied     Boolean   @default(false)
+  contactId       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  business Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  location BusinessLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  contact  Contact?         @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@unique([locationId, reviewName])
+  @@index([businessId, reviewCreatedAt])
+  @@index([businessId, replyStatus])
+}
+
+// Business Profile performance, one row per location, day and metric.
+model GbpDailyMetric {
+  id         String   @id @default(cuid())
+  businessId String
+  locationId String
+  date       DateTime @db.Date
+  metric     String   @db.VarChar(60) // BUSINESS_IMPRESSIONS_MOBILE_MAPS | CALL_CLICKS | WEBSITE_CLICKS | ...
+  value      Int
+
+  business Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  location BusinessLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([locationId, date, metric])
+  @@index([businessId, date])
+}
+
+// A "please review us" message sent to a customer, with a tracked link.
+model ReviewRequest {
+  id         String    @id @default(cuid())
+  businessId String
+  locationId String
+  contactId  String?
+  leadId     String?
+  bookingId  String?
+  workflowId String?
+  channel    String    @db.VarChar(20) // email | whatsapp
+  recipient  String    @db.VarChar(191) // normalised email or phone, for the 90-day cooldown
+  token      String    @unique @db.VarChar(32)
+  sentAt     DateTime  @default(now())
+  clickedAt  DateTime?
+  clicks     Int       @default(0)
+
+  business Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  location BusinessLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  contact  Contact?         @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([businessId, recipient, sentAt])
+  @@index([businessId, contactId, sentAt])
+  @@index([businessId, sentAt])
 }

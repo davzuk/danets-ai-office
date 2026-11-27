@@ -50,8 +50,10 @@ async function jpegUrl(asset: MediaAsset): Promise<string> {
 export async function mediaForPlatform(platform: string, assets: MediaAsset[]): Promise<PublishMedia[]> {
   const out: PublishMedia[] = [];
   for (const a of assets) {
-    const url = platform === "instagram" && a.kind === "image" ? await jpegUrl(a) : a.url;
-    out.push({ kind: a.kind, url, mimeType: platform === "instagram" && a.kind === "image" ? "image/jpeg" : a.mimeType, altText: a.altText });
+    // Instagram takes JPEG only; Google Business Profile takes JPEG or PNG.
+    const convert = a.kind === "image" && (platform === "instagram" || (platform === "google_business" && a.mimeType !== "image/png"));
+    const url = convert ? await jpegUrl(a) : a.url;
+    out.push({ kind: a.kind, url, mimeType: convert ? "image/jpeg" : a.mimeType, altText: a.altText });
   }
   return out;
 }

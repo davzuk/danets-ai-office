@@ -31,6 +31,7 @@ import {
   CalendarPlus,
   ClipboardList,
   FileDown,
+  Star,
   type LucideIcon,
 } from "lucide-react";
 
@@ -91,7 +92,9 @@ type TriggerType =
   | "booking_created"
   | "booking_cancelled"
   | "form_submitted"
-  | "lead_magnet_downloaded";
+  | "lead_magnet_downloaded"
+  | "booking_completed"
+  | "review_received";
 
 type ActionType =
   | "create_task"
@@ -101,7 +104,8 @@ type ActionType =
   | "change_lead_status"
   | "create_ticket"
   | "create_proposal_reminder"
-  | "send_booking_link";
+  | "send_booking_link"
+  | "send_review_request";
 
 interface Workflow {
   id: string;
@@ -209,6 +213,18 @@ const TRIGGER_CONFIG: Record<TriggerType, NodeConfig> = {
     iconBg: "bg-fuchsia-500/10",
     iconText: "text-fuchsia-600 dark:text-fuchsia-400",
   },
+  booking_completed: {
+    icon: CalendarCheck,
+    label: "Booking Completed",
+    iconBg: "bg-teal-500/10",
+    iconText: "text-teal-600 dark:text-teal-400",
+  },
+  review_received: {
+    icon: Star,
+    label: "Google Review Received",
+    iconBg: "bg-yellow-500/10",
+    iconText: "text-yellow-600 dark:text-yellow-400",
+  },
 };
 
 const ACTION_CONFIG: Record<ActionType, NodeConfig> = {
@@ -259,6 +275,12 @@ const ACTION_CONFIG: Record<ActionType, NodeConfig> = {
     label: "Email Booking Link",
     iconBg: "bg-sky-500/10",
     iconText: "text-sky-600 dark:text-sky-400",
+  },
+  send_review_request: {
+    icon: Star,
+    label: "Ask for a Google Review",
+    iconBg: "bg-yellow-500/10",
+    iconText: "text-yellow-600 dark:text-yellow-400",
   },
 };
 
@@ -334,6 +356,14 @@ function triggerConfigSummary(t: TriggerType, cfg: Record<string, unknown> | nul
     if (typeof n === "string" && n) return n;
     return typeof cfg?.leadMagnetId === "string" && cfg.leadMagnetId ? "One lead magnet" : "Any lead magnet";
   }
+  if (t === "review_received") {
+    const min = Number(cfg?.minRating) || 0;
+    const max = Number(cfg?.maxRating) || 0;
+    if (min && max) return min === max ? `${min}★` : `${min}–${max}★`;
+    if (min) return `${min}★ and up`;
+    if (max) return `${max}★ and below`;
+    return "Any rating";
+  }
   return "";
 }
 
@@ -355,6 +385,9 @@ function actionConfigSummary(a: ActionType, cfg: Record<string, unknown> | null)
   if (a === "send_booking_link") {
     const s = cfg?.bookingTypeSlug;
     return typeof s === "string" && s ? `/${s}` : "";
+  }
+  if (a === "send_review_request") {
+    return cfg?.channel === "whatsapp" ? "By WhatsApp" : "By email";
   }
   if (a === "send_notification") {
     const s = cfg?.notificationType;
@@ -577,6 +610,8 @@ interface FormState {
   triggerLeadStatus: string;
   triggerFormId: string;
   triggerMagnetId: string;
+  triggerMinRating: string;
+  triggerMaxRating: string;
   actionType: ActionType;
   actionTaskTitle: string;
   actionNoteContent: string;
@@ -584,6 +619,9 @@ interface FormState {
   actionNotificationType: string;
   actionBookingTypeSlug: string;
   actionBookingMessage: string;
+  actionReviewChannel: string;
+  actionReviewLocationId: string;
+  actionReviewMessage: string;
   isActive: boolean;
 }
 
@@ -595,6 +633,8 @@ const EMPTY_FORM: FormState = {
   triggerLeadStatus: "contacted",
   triggerFormId: "",
   triggerMagnetId: "",
+  triggerMinRating: "",
+  triggerMaxRating: "",
   actionType: "create_task",
   actionTaskTitle: "",
   actionNoteContent: "",
@@ -602,6 +642,9 @@ const EMPTY_FORM: FormState = {
   actionNotificationType: "",
   actionBookingTypeSlug: "",
   actionBookingMessage: "",
+  actionReviewChannel: "email",
+  actionReviewLocationId: "",
+  actionReviewMessage: "",
   isActive: true,
 };
 
@@ -663,6 +706,22 @@ function WorkflowDialog({
     };
   }, [open, form.actionType, bookingTypes]);
 
+  // Business Profile locations for the "Ask for a Google Review" action.
+  const [reviewLocations, setReviewLocations] = React.useState<{ id: string; title: string }[] | null>(null);
+  React.useEffect(() => {
+    if (!open || form.actionType !== "send_review_request" || reviewLocations) return;
+    let cancelled = false;
+    fetch("/api/seo/reviews")
+      .then((r) => (r.ok ? r.json() : { locations: [] }))
+      .then((d) => {
+        if (!cancelled) setReviewLocations(Array.isArray(d?.locations) ? d.locations : []);
+      })
+      .catch(() => !cancelled && setReviewLocations([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [open, form.actionType, reviewLocations]);
+
   // Sync form when dialog opens (new vs edit).
   React.useEffect(() => {
     if (!open) return;
@@ -679,6 +738,8 @@ function WorkflowDialog({
           typeof tc?.leadStatus === "string" ? tc.leadStatus : "contacted",
         triggerFormId: typeof tc?.formId === "string" ? tc.formId : "",
         triggerMagnetId: typeof tc?.leadMagnetId === "string" ? tc.leadMagnetId : "",
+        triggerMinRating: Number(tc?.minRating) > 0 ? String(tc?.minRating) : "",
+        triggerMaxRating: Number(tc?.maxRating) > 0 ? String(tc?.maxRating) : "",
         actionType: editing.actionType,
         actionTaskTitle:
           typeof ac?.taskTitle === "string" ? ac.taskTitle : "",
@@ -692,6 +753,9 @@ function WorkflowDialog({
           typeof ac?.bookingTypeSlug === "string" ? ac.bookingTypeSlug : "",
         actionBookingMessage:
           typeof ac?.message === "string" ? ac.message : "",
+        actionReviewChannel: ac?.channel === "whatsapp" ? "whatsapp" : "email",
+        actionReviewLocationId: typeof ac?.locationId === "string" ? ac.locationId : "",
+        actionReviewMessage: typeof ac?.message === "string" ? ac.message : "",
         isActive: editing.isActive,
       });
     } else {
@@ -719,6 +783,12 @@ function WorkflowDialog({
       const title = leadMagnets?.find((m) => m.id === form.triggerMagnetId)?.title;
       return { leadMagnetId: form.triggerMagnetId, ...(title ? { leadMagnetTitle: title } : {}) };
     }
+    if (form.triggerType === "review_received") {
+      const cfg: Record<string, number> = {};
+      if (form.triggerMinRating) cfg.minRating = Number(form.triggerMinRating);
+      if (form.triggerMaxRating) cfg.maxRating = Number(form.triggerMaxRating);
+      return Object.keys(cfg).length ? cfg : undefined;
+    }
     return undefined;
   }
 
@@ -744,6 +814,12 @@ function WorkflowDialog({
         if (form.actionBookingMessage.trim()) cfg.message = form.actionBookingMessage.trim();
         return Object.keys(cfg).length ? cfg : undefined;
       }
+      case "send_review_request": {
+        const cfg: Record<string, string> = { channel: form.actionReviewChannel };
+        if (form.actionReviewLocationId) cfg.locationId = form.actionReviewLocationId;
+        if (form.actionReviewMessage.trim()) cfg.message = form.actionReviewMessage.trim();
+        return cfg;
+      }
       default:
         return undefined;
     }
@@ -752,6 +828,13 @@ function WorkflowDialog({
   function validate(): string | null {
     if (form.name.trim().length < 2)
       return "Name must be at least 2 characters.";
+    if (
+      form.triggerType === "review_received" &&
+      form.triggerMinRating &&
+      form.triggerMaxRating &&
+      Number(form.triggerMinRating) > Number(form.triggerMaxRating)
+    )
+      return "The lowest rating can't be above the highest.";
     if (form.triggerType === "no_response_days") {
       const days = parseInt(form.triggerDays, 10);
       if (!Number.isFinite(days) || days < 1)
@@ -1018,6 +1101,58 @@ function WorkflowDialog({
                 </p>
               </div>
             )}
+            {form.triggerType === "booking_completed" && (
+              <p className="text-xs text-muted-foreground">
+                Fires about 30 minutes after a booking&apos;s end time, unless it was cancelled.
+              </p>
+            )}
+            {form.triggerType === "review_received" && (
+              <div className="space-y-1.5">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label>Lowest rating</Label>
+                    <Select
+                      value={form.triggerMinRating || "__none"}
+                      onValueChange={(v) => setForm((f) => ({ ...f, triggerMinRating: v === "__none" ? "" : v }))}
+                    >
+                      <SelectTrigger aria-label="Lowest rating">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none">No limit</SelectItem>
+                        {["1", "2", "3", "4", "5"].map((r) => (
+                          <SelectItem key={r} value={r}>
+                            {r}★
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Highest rating</Label>
+                    <Select
+                      value={form.triggerMaxRating || "__none"}
+                      onValueChange={(v) => setForm((f) => ({ ...f, triggerMaxRating: v === "__none" ? "" : v }))}
+                    >
+                      <SelectTrigger aria-label="Highest rating">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none">No limit</SelectItem>
+                        {["1", "2", "3", "4", "5"].map((r) => (
+                          <SelectItem key={r} value={r}>
+                            {r}★
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Fires when a new Google review arrives (checked every 2 hours). Set the highest rating to 2★ to act on unhappy reviews.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Flow preview row */}
@@ -1181,6 +1316,65 @@ function WorkflowDialog({
                   />
                   <p className="text-xs text-muted-foreground">
                     Emails the lead a link to your booking page, with their name and email filled in. Leads without an email address are skipped.
+                  </p>
+                </div>
+              </div>
+            )}
+            {form.actionType === "send_review_request" && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label>Send by</Label>
+                    <Select
+                      value={form.actionReviewChannel}
+                      onValueChange={(v) => setForm((f) => ({ ...f, actionReviewChannel: v }))}
+                    >
+                      <SelectTrigger aria-label="Send by">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="email">Email</SelectItem>
+                        <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Location</Label>
+                    <Select
+                      value={form.actionReviewLocationId || "__default"}
+                      onValueChange={(v) => setForm((f) => ({ ...f, actionReviewLocationId: v === "__default" ? "" : v }))}
+                    >
+                      <SelectTrigger aria-label="Location">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__default">First location</SelectItem>
+                        {(reviewLocations ?? []).map((l) => (
+                          <SelectItem key={l.id} value={l.id}>
+                            {l.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                {reviewLocations && reviewLocations.length === 0 && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    No Business Profile location is connected yet. Add one under SEO, then Setup.
+                  </p>
+                )}
+                <div className="space-y-1.5">
+                  <Label htmlFor="wf-review-msg">Message</Label>
+                  <Textarea
+                    id="wf-review-msg"
+                    rows={3}
+                    maxLength={1000}
+                    placeholder="Thanks for choosing us. If you have a minute, we'd love to hear how it went."
+                    value={form.actionReviewMessage}
+                    onChange={(e) => setForm((f) => ({ ...f, actionReviewMessage: e.target.value }))}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Sends a link to your Google review page. Each person is asked at most once every 90 days, and never if they&apos;ve opted out of that channel. Everyone gets the same link, whatever they thought of you.
                   </p>
                 </div>
               </div>
@@ -1539,9 +1733,10 @@ export function AutomationsView({ user }: { user: UserProp }) {
         <ShieldCheck className="text-primary" size={16} />
         <AlertDescription className="text-sm text-foreground">
           <span className="font-semibold">Safe by design.</span>{" "}
-          Automations create internal tasks, notifications, and drafts only. No
-          external messages (WhatsApp/Email) are sent automatically — all AI
-          outputs require manual review.
+          Automations create internal tasks, notifications and drafts. The only
+          messages they send are the ones you set up: a booking link, or a
+          Google review request (at most once every 90 days per person, never to
+          anyone who opted out). AI-written replies always wait for a person.
         </AlertDescription>
       </Alert>
 

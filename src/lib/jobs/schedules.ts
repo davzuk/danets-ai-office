@@ -7,6 +7,7 @@ import { logger, serializeError } from "@/lib/logger";
 import type { JobDefinition } from "./define";
 import { bookingSyncJob } from "./handlers/booking-sync";
 import { connectionRefreshJob } from "./handlers/connection-refresh";
+import { gbpMetricsSyncJob, gbpReviewsSyncJob } from "./handlers/gbp-sync";
 import { linkedinLeadgenPollJob } from "./handlers/linkedin-leadgen";
 import { metaLeadgenPollJob } from "./handlers/meta-leadgen";
 import { purgeJobsJob } from "./handlers/purge-jobs";
@@ -53,6 +54,9 @@ export const SCHEDULES: Schedule[] = [
   { job: seoSearchSyncJob, everyMs: DAY, offsetMs: 6 * HOUR + 30 * MINUTE, payload: {} },
   // SEO: monthly site re-audits, and audits that stopped making progress.
   { job: seoAuditScheduleJob, everyMs: DAY, offsetMs: 3 * HOUR + 40 * MINUTE, payload: {} },
+  // Business Profile: new reviews every 2 hours, performance once a day.
+  { job: gbpReviewsSyncJob, everyMs: 2 * HOUR, offsetMs: 35 * MINUTE, payload: {} },
+  { job: gbpMetricsSyncJob, everyMs: DAY, offsetMs: 7 * HOUR + 10 * MINUTE, payload: {} },
   // The weekly "what worked / what next" note, Mondays 06:00 UTC.
   { job: socialInsightsWeeklyJob, everyMs: WEEK, offsetMs: MONDAY + 6 * HOUR, payload: {} },
 ];

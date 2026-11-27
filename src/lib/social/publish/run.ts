@@ -13,6 +13,7 @@ import { OAuthGrantError } from "@/lib/connections/types";
 import { publishToFacebook } from "./facebook";
 import { publishToInstagram } from "./instagram";
 import { publishToLinkedIn, linkedinClient } from "./linkedin";
+import { publishToGoogleBusiness } from "./google-business";
 import { PublishError, graphClient, type FetchLike } from "./meta-http";
 import { mediaForPlatform, readMediaBytes, unreachableMediaUrl } from "./media";
 import { tagLink } from "@/lib/social/utm";
@@ -72,12 +73,13 @@ export async function variantMedia(businessId: string, mediaIds: Prisma.JsonValu
 
 /**
  * The token that publishes for an account: Meta Pages carry their own; LinkedIn
- * Pages use the connected member's token (refreshed when it's close to expiry).
+ * Pages and Business Profile locations use the connection's token (refreshed
+ * when it's close to expiry).
  */
 export async function publishToken(acct: NonNullable<ScheduledRow["socialAccount"]>): Promise<string> {
   const own = socialAccountToken(acct);
   if (own) return own;
-  if (acct.platform !== "linkedin_page") throw new PublishError("The saved access token can't be read.", "auth");
+  if (acct.platform !== "linkedin_page" && acct.platform !== "google_business") throw new PublishError("The saved access token can't be read.", "auth");
   try {
     return await getAccessToken(acct.connectionId, acct.businessId);
   } catch (e) {
@@ -153,10 +155,10 @@ export async function runScheduledPost(scheduledPostId: string, opts: RunOptions
 
     const assets = await variantMedia(row.businessId, row.variant.mediaIds);
     const media = await mediaForPlatform(platform, assets);
-    // Meta fetches media by URL; LinkedIn is sent the bytes.
+    // Meta and Google fetch media by URL; LinkedIn is sent the bytes.
     if (platform !== "linkedin" && media.some((m) => unreachableMediaUrl(m.url))) {
       throw new PublishError(
-        "Media is stored at a local address Meta can't fetch. Use S3 storage or a public NEXT_PUBLIC_APP_URL.",
+        `Media is stored at a local address ${platform === "google_business" ? "Google" : "Meta"} can't fetch. Use S3 storage or a public NEXT_PUBLIC_APP_URL.`,
         "content"
       );
     }
@@ -191,6 +193,8 @@ export async function runScheduledPost(scheduledPostId: string, opts: RunOptions
           return new Uint8Array(await readMediaBytes(asset));
         },
       });
+    } else if (platform === "google_business") {
+      result = await publishToGoogleBusiness({ businessId: acct.businessId, connectionId: acct.connectionId }, input);
     } else {
       throw new PublishError(`${label(platform)} can't be published automatically yet.`, "content");
     }

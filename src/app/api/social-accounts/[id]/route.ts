@@ -37,8 +37,8 @@ export function PATCH(req: NextRequest, { params }: RouteCtx) {
     if (row.platform !== "facebook_page" && row.platform !== "linkedin_page" && data.leadSyncEnabled) {
       throw new AppError("Lead sync is available for Facebook and LinkedIn Pages", { status: 400, code: "INVALID_REQUEST" });
     }
-    if (row.platform === "linkedin_page" && data.inboxEnabled) {
-      throw new AppError("LinkedIn Pages don't have an inbox in Danets", { status: 400, code: "INVALID_REQUEST" });
+    if ((row.platform === "linkedin_page" || row.platform === "google_business") && data.inboxEnabled) {
+      throw new AppError("This account has no inbox in Danets", { status: 400, code: "INVALID_REQUEST" });
     }
     const updated = await db.socialAccount.update({ where: { id: row.id }, data });
     // Switching lead sync on lists the Page's forms and backfills the last 90 days.

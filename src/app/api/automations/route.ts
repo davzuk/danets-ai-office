@@ -9,11 +9,12 @@ const TRIGGERS = [
   "new_lead", "new_ticket", "proposal_generated", "proposal_accepted",
   "lead_status_changed", "document_uploaded", "no_response_days",
   "booking_created", "booking_cancelled", "form_submitted", "lead_magnet_downloaded",
+  "booking_completed", "review_received",
 ];
 const ACTIONS = [
   "create_task", "send_notification", "generate_ai_followup",
   "add_lead_note", "change_lead_status", "create_ticket", "create_proposal_reminder",
-  "send_booking_link",
+  "send_booking_link", "send_review_request",
 ];
 
 // GET /api/automations — list workflows
