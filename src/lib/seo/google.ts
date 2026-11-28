@@ -2,7 +2,7 @@
 // workstream U). Uses the tenant's Google connection. The mapping helpers
 // are pure, so tests can feed them recorded responses.
 
-import { getAccessToken } from "@/lib/connections/tokens";
+import { ConnectionUnavailableError, getAccessToken } from "@/lib/connections/tokens";
 import { providerFetch } from "@/lib/connections/http";
 import { OAuthProviderError } from "@/lib/connections/types";
 
@@ -231,3 +231,16 @@ export function classifyGoogleError(e: unknown): "lost_access" | "not_approved" 
 
 export const NOT_APPROVED_MESSAGE =
   "Google hasn't enabled Business Profile API access for this platform yet. The platform team has applied; locations can be added once Google approves.";
+
+/**
+ * The note stored on a property or location when a background Google job
+ * fails. `job` names the job ("reviews sync") and `data` what the account
+ * could no longer read ("this location's reviews").
+ */
+export function googleJobError(e: unknown, job: string, data: string): string {
+  if (e instanceof ConnectionUnavailableError) return "The Google connection needs reconnecting.";
+  const kind = classifyGoogleError(e);
+  if (kind === "not_approved") return NOT_APPROVED_MESSAGE;
+  if (kind === "lost_access") return `The connected Google account can no longer read ${data}.`;
+  return `Google didn't answer the last ${job}. It will try again.`;
+}

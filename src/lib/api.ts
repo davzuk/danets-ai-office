@@ -54,6 +54,8 @@ export async function apiHandler<T>(
       const result = await fn();
       const latencyMs = Date.now() - start;
       logger.info("api.request", { latencyMs });
+      // File downloads (PDFs, Markdown) build their own response.
+      if (result instanceof Response) return result as unknown as NextResponse;
       return NextResponse.json(result);
     } catch (e: any) {
       const latencyMs = Date.now() - start;

@@ -46,6 +46,7 @@ export interface EffectiveLimits {
   seoPropertyLimit: number;
   gbpLocationLimit: number;
   auditPageLimit: number;
+  trackedKeywordLimit: number;
   mediaStorageMbLimit: number;
 }
 
@@ -172,6 +173,7 @@ export async function getEffectiveLimits(
       seoPropertyLimit: planRow?.seoPropertyLimit ?? 1,
       gbpLocationLimit: planRow?.gbpLocationLimit ?? 1,
       auditPageLimit: planRow?.auditPageLimit ?? 200,
+      trackedKeywordLimit: planRow?.trackedKeywordLimit ?? 50,
       mediaStorageMbLimit: planRow?.mediaStorageMbLimit ?? 1024,
     };
 
@@ -200,6 +202,7 @@ export async function getEffectiveLimits(
       seoPropertyLimit: override?.seoPropertyLimit ?? base.seoPropertyLimit,
       gbpLocationLimit: override?.gbpLocationLimit ?? base.gbpLocationLimit,
       auditPageLimit: override?.auditPageLimit ?? base.auditPageLimit,
+      trackedKeywordLimit: override?.trackedKeywordLimit ?? base.trackedKeywordLimit,
       mediaStorageMbLimit: override?.mediaStorageMbLimit ?? base.mediaStorageMbLimit,
     };
   });

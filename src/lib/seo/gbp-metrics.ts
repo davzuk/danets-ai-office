@@ -5,6 +5,7 @@ import "server-only";
 
 import { db } from "@/lib/db";
 import { addDaysIso, fromIso, toIso } from "./search";
+import { googleJobError } from "./google";
 import { fetchDailyMetrics, GBP_METRICS, type DailyValue, type GbpMetric } from "./gbp";
 
 /** First sync reaches this far back (Google keeps about 18 months). */
@@ -36,8 +37,7 @@ export async function syncLocationMetrics(locationId: string, opts: SyncMetricsO
   try {
     values = opts.fetch ? await opts.fetch(window.from, window.to) : await fetchDailyMetrics(ref, loc.locationName, window.from, window.to);
   } catch (e) {
-    const { syncErrorMessage } = await import("./reviews");
-    await db.businessLocation.update({ where: { id: loc.id }, data: { metricsError: syncErrorMessage(e).replace("reviews sync", "performance sync") } });
+    await db.businessLocation.update({ where: { id: loc.id }, data: { metricsError: googleJobError(e, "performance sync", "this location's performance") } });
     throw e;
   }
   const rows = values.filter((v) => v.date >= window.from && v.date <= window.to);

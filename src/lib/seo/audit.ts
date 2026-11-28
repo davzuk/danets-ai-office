@@ -21,7 +21,7 @@ import { getBrandContext } from "@/lib/brand";
 import { siteOrigin } from "@/lib/sites/host";
 import { AUDIT_BOT_TOKEN, checkUrl, FetchBlockedError, isHtml, safeFetch, type AllowPrivate, type LookupFn, type SafeFetchOptions } from "./fetch";
 import { parseRobots, parseSitemap, robotsPolicy, type RobotsPolicy } from "./robots";
-import { parsePage } from "./html";
+import { parsePage, type PageFacts } from "./html";
 import {
   duplicateIssues,
   ISSUE_DEFS,
@@ -846,7 +846,7 @@ const suggestionSchema = z.object({
     .max(5),
 });
 
-function suggestionTask(code: IssueCode, detail: Record<string, unknown>, facts: ReturnType<typeof parsePage>): string | null {
+function suggestionTask(code: IssueCode, detail: Record<string, unknown>, facts: PageFacts): string | null {
   switch (code) {
     case "missing_title":
     case "title_too_long":
@@ -870,30 +870,47 @@ function suggestionTask(code: IssueCode, detail: Record<string, unknown>, facts:
   }
 }
 
-export async function suggestFix(actor: Actor, issueId: string, opts: { allowPrivate?: AllowPrivate; lookup?: LookupFn } = {}) {
-  const issue = await db.auditIssue.findFirst({ where: { id: issueId, audit: { businessId: actor.businessId } } });
-  if (!issue) throw new AppError("Issue not found", { status: 404, code: "NOT_FOUND" });
-  if (!isIssueCode(issue.code) || !("aiFix" in ISSUE_DEFS[issue.code])) throw new AppError("There's no AI suggestion for this kind of issue.", { status: 400, code: "AUDIT_INVALID" });
-  const { owned } = await ownedSites(actor.businessId);
-  if (!isOwnedHost(new URL(issue.pageUrl).hostname, owned)) throw new AppError("This site is no longer linked to your account.", { status: 400, code: "AUDIT_INVALID" });
+export interface PageSuggestionOptions {
+  allowPrivate?: AllowPrivate;
+  lookup?: LookupFn;
+  /** Usage feature to bill; defaults to the audit's. */
+  feature?: string;
+}
+
+/**
+ * Read one of the tenant's own pages and ask the AI for copy in the brand
+ * voice. `task` gets the page's facts and returns the instruction, or null
+ * when there's nothing to write. Used by audit fixes and by Y's low-CTR
+ * opportunities. Returns the suggestions as text to copy.
+ */
+export async function pageSuggestions(businessId: string, pageUrl: string, task: (facts: PageFacts) => string | null, opts: PageSuggestionOptions = {}): Promise<string> {
+  const { owned } = await ownedSites(businessId);
+  let host: string;
+  try {
+    host = new URL(pageUrl).hostname;
+  } catch {
+    throw new AppError("That isn't a page address.", { status: 400, code: "AUDIT_INVALID" });
+  }
+  if (!isOwnedHost(host, owned)) throw new AppError("This site is no longer linked to your account.", { status: 400, code: "AUDIT_INVALID" });
 
   let res;
   try {
-    res = await safeFetch(issue.pageUrl, { allowPrivate: opts.allowPrivate, lookup: opts.lookup, allowRedirect: (n) => isOwnedHost(n.hostname, owned) });
+    res = await safeFetch(pageUrl, { allowPrivate: opts.allowPrivate, lookup: opts.lookup, allowRedirect: (n) => isOwnedHost(n.hostname, owned) });
   } catch (e) {
     throw new AppError(`Couldn't read the page: ${friendlyFetchError(e)}`, { status: 502, code: "AUDIT_FETCH" });
   }
   if (res.status >= 400 || !isHtml(res.contentType)) throw new AppError(`Couldn't read the page (it answered ${res.status}).`, { status: 502, code: "AUDIT_FETCH" });
   const facts = parsePage(res.body, res.url);
-  const task = suggestionTask(issue.code, (issue.detail ?? {}) as Record<string, unknown>, facts);
-  if (!task) throw new AppError("There's nothing to suggest for this issue.", { status: 400, code: "AUDIT_INVALID" });
-  const brand = await getBrandContext(actor.businessId);
+  const instruction = task(facts);
+  if (!instruction) throw new AppError("There's nothing to suggest for this page.", { status: 400, code: "AUDIT_INVALID" });
+  const brand = await getBrandContext(businessId);
+  const feature = opts.feature ?? SUGGEST_FEATURE;
 
   const system = `You are an SEO copywriter improving a small business's own website. Write in the business's voice. Never invent facts, prices, awards or locations the page doesn't support. Reply with JSON only.
 
 Brand voice:
 ${brand || "No brand voice profile has been set up: write in a clear, friendly, professional voice."}`;
-  const user = `Page: ${issue.pageUrl}
+  const user = `Page: ${pageUrl}
 Title: ${facts.title ?? "(none)"}
 Meta description: ${facts.metaDescription ?? "(none)"}
 Headings (H1): ${facts.h1.join(" | ") || "(none)"}
@@ -902,7 +919,7 @@ Page text (start):
 ${facts.textSample.slice(0, 1800)}
 """
 
-Task: ${task}
+Task: ${instruction}
 Return {"suggestions":[{"for"?: string, "text": string}]}.`;
 
   let result;
@@ -913,15 +930,23 @@ Return {"suggestions":[{"for"?: string, "text": string}]}.`;
         { role: "user", content: user },
       ],
       suggestionSchema,
-      { businessId: actor.businessId, task: "content", maxTokens: 1200 }
+      { businessId, task: "content", maxTokens: 1200 }
     );
-    await logUsage(actor.businessId, SUGGEST_FEATURE, result);
+    await logUsage(businessId, feature, result);
   } catch (e) {
-    await logUsage(actor.businessId, SUGGEST_FEATURE, { promptTokens: 0, completionTokens: 0, totalTokens: 0 }, "error", (e as Error).message);
+    await logUsage(businessId, feature, { promptTokens: 0, completionTokens: 0, totalTokens: 0 }, "error", (e as Error).message);
     if (e instanceof AiRefusalError) throw new AppError("The AI declined to write a suggestion for this page.", { status: 422, code: "AI_REFUSED" });
     throw new AppError("The AI couldn't write a suggestion just now. Please try again.", { status: 502, code: "AI_FAILED" });
   }
-  const text = result.data.suggestions.map((s) => (s.for ? `${s.for}\n→ ${s.text}` : s.text)).join("\n\n");
+  return result.data.suggestions.map((s) => (s.for ? `${s.for}\n→ ${s.text}` : s.text)).join("\n\n");
+}
+
+export async function suggestFix(actor: Actor, issueId: string, opts: { allowPrivate?: AllowPrivate; lookup?: LookupFn } = {}) {
+  const issue = await db.auditIssue.findFirst({ where: { id: issueId, audit: { businessId: actor.businessId } } });
+  if (!issue) throw new AppError("Issue not found", { status: 404, code: "NOT_FOUND" });
+  if (!isIssueCode(issue.code) || !("aiFix" in ISSUE_DEFS[issue.code])) throw new AppError("There's no AI suggestion for this kind of issue.", { status: 400, code: "AUDIT_INVALID" });
+  const code = issue.code;
+  const text = await pageSuggestions(actor.businessId, issue.pageUrl, (facts) => suggestionTask(code, (issue.detail ?? {}) as Record<string, unknown>, facts), opts);
   const updated = await db.auditIssue.update({ where: { id: issue.id }, data: { suggestion: text, suggestedAt: new Date() } });
   return publicIssue(updated);
 }

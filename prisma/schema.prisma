@@ -86,6 +86,9 @@ model Business {
   gbpReviews           GbpReview[]
   gbpDailyMetrics      GbpDailyMetric[]
   reviewRequests       ReviewRequest[]
+  trackedKeywords      TrackedKeyword[]
+  seoOpportunities     SeoOpportunity[]
+  contentBriefs        ContentBrief[]
 
   @@index([purgeScheduledAt])
 }
@@ -623,6 +626,7 @@ model SubscriptionPlan {
   seoPropertyLimit      Int      @default(1) // Search Console properties (0 = unlimited)
   gbpLocationLimit      Int      @default(1) // Google Business Profile locations (0 = unlimited)
   auditPageLimit        Int      @default(200) // pages one site audit may crawl (0 = unlimited)
+  trackedKeywordLimit   Int      @default(50) // SEO keywords tracked (0 = unlimited)
   quoteLimit            Int      @default(50)
   mediaStorageMbLimit   Int      @default(1024) // media library, in MB (0 = unlimited)
   auditRetentionDays    Int      @default(30)
@@ -655,6 +659,7 @@ model BusinessLimitOverride {
   seoPropertyLimit      Int?
   gbpLocationLimit      Int?
   auditPageLimit        Int?
+  trackedKeywordLimit   Int?
   quoteLimit            Int?
   mediaStorageMbLimit   Int?
   notes                 String?
@@ -2006,11 +2011,16 @@ model SearchProperty {
   lastSyncedAt  DateTime?
   syncedThrough DateTime? @db.Date // last day with complete data (workstream V)
   error         String?   @db.Text
+  // Workstream Y: last weekly opportunities scan (query and page pairs)
+  opportunitiesAt    DateTime?
+  opportunitiesError String?   @db.Text
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  metrics  SearchMetricDaily[]
+  business      Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  metrics       SearchMetricDaily[]
+  keywords      TrackedKeyword[]
+  opportunities SeoOpportunity[]
 
   @@unique([businessId, siteUrl])
   @@index([connectionId])
@@ -2207,4 +2217,72 @@ model ReviewRequest {
   @@index([businessId, recipient, sentAt])
   @@index([businessId, contactId, sentAt])
   @@index([businessId, sentAt])
+}
+
+// ─── SEO keywords and content opportunities (Phase 3, workstream Y) ──
+// Positions come from Search Console only: the average position Google
+// reports for the impressions the site actually got.
+
+model TrackedKeyword {
+  id          String    @id @default(cuid())
+  businessId  String
+  propertyId  String
+  keyword     String    @db.VarChar(200) // lower case, single spaces (Search Console's form)
+  targetUrl   String?   @db.VarChar(1000) // the page meant to rank for it
+  // From the weekly scan: the page Google showed most for it in the last 28 days
+  rankingPage String?   @db.VarChar(1000)
+  rankingAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  business Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  property SearchProperty @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([propertyId, keyword])
+  @@index([businessId])
+}
+
+model SeoOpportunity {
+  id             String    @id @default(cuid())
+  businessId     String
+  propertyId     String
+  kind           String    @db.VarChar(30) // almost_page_one | low_ctr | cannibalisation
+  query          String    @db.VarChar(500)
+  page           String?   @db.VarChar(1000) // the page that gets most of the query's impressions
+  pages          Json? // cannibalisation: [{url, clicks, impressions, position}]
+  clicks         Int
+  impressions    Int
+  ctr            Float
+  position       Float
+  expectedCtr    Float? // benchmark CTR for the position
+  potentialClicks Int    @default(0) // rough extra clicks a month, for ordering
+  suggestion     String?   @db.Text // low_ctr: AI title and description ideas
+  suggestedAt    DateTime?
+  dismissedAt    DateTime?
+  computedAt     DateTime
+  createdAt      DateTime  @default(now())
+
+  business Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  property SearchProperty @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([propertyId, kind, query])
+  @@index([businessId, kind])
+}
+
+model ContentBrief {
+  id            String   @id @default(cuid())
+  businessId    String
+  propertyId    String?
+  opportunityId String?
+  query         String   @db.VarChar(500)
+  title         String   @db.VarChar(300)
+  brief         Json // the structured brief (intent, title, H1, outline, questions, facts, gaps)
+  markdown      String   @db.Text
+  gaps          Int      @default(0) // "[Add …]" placeholders left to fill
+  createdById   String?
+  createdByName String?  @db.VarChar(120)
+  createdAt     DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, createdAt])
 }

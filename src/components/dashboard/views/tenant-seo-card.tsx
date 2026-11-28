@@ -4,10 +4,12 @@
 // Shows each Search Console property and Business Profile location with its
 // last access check; the platform can re-check or clear one. Locations also
 // show their Google reviews state (workstream X) with a "Sync reviews" action.
+// Keywords and content briefs (workstream Y): each brief can be copied as a
+// page-builder prompt for a site the platform builds.
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Gauge, Loader2, Play, RefreshCw, SearchCheck, Star, Trash2 } from "lucide-react";
+import { Copy, FileText, Gauge, Loader2, Play, RefreshCw, SearchCheck, Star, Trash2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -44,7 +46,14 @@ interface Data {
     awaitingApproval: number;
   })[];
   audit: Audit | null;
+  content?: {
+    keywords: number;
+    opportunities: Record<string, number>;
+    briefs: { id: string; query: string; title: string; gaps: number; createdAt: string; pagePrompt: string }[];
+  };
 }
+
+const OPP_LABEL: Record<string, string> = { almost_page_one: "almost page one", low_ctr: "low click-through", cannibalisation: "split across pages" };
 
 export function TenantSeoCard({ businessId }: { businessId: string }) {
   const [data, setData] = React.useState<Data | null>(null);
@@ -127,7 +136,7 @@ export function TenantSeoCard({ businessId }: { businessId: string }) {
           <CardTitle className="flex items-center gap-2 text-base">
             <SearchCheck className="h-4 w-4 text-primary" /> SEO setup
           </CardTitle>
-          <CardDescription>Search Console properties, Business Profile locations and the latest site audit.</CardDescription>
+          <CardDescription>Search Console properties, Business Profile locations, the latest site audit and content briefs.</CardDescription>
         </div>
         {data && !empty && (
           <Button size="sm" variant="outline" disabled={!!busy} onClick={() => post({ action: "check" }, "check", "Checked with Google.")}>
@@ -184,6 +193,37 @@ export function TenantSeoCard({ businessId }: { businessId: string }) {
                 {busy === "audit" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}Run audit
               </Button>
             </div>
+          </div>
+        )}
+        {data?.content && (
+          <div className="rounded-md border px-3 py-2 text-sm">
+            <div className="flex flex-wrap items-center gap-2 font-medium">
+              <FileText className="h-4 w-4 text-muted-foreground" /> Keywords and content
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {data.content.keywords} tracked keywords
+              {Object.entries(data.content.opportunities).map(([k, n]) => ` · ${n} ${OPP_LABEL[k] ?? k}`)}
+            </div>
+            {data.content.briefs.length === 0 ? (
+              <div className="text-xs text-muted-foreground">No content briefs yet.</div>
+            ) : (
+              <ul className="mt-1 space-y-1 text-xs">
+                {data.content.briefs.map((b) => (
+                  <li key={b.id} className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 truncate">
+                      {b.title} <span className="text-muted-foreground">(&quot;{b.query}&quot;{b.gaps ? `, ${b.gaps} to add` : ""})</span>
+                    </span>
+                    <button
+                      type="button"
+                      className="inline-flex shrink-0 items-center gap-1 underline underline-offset-2 hover:text-foreground"
+                      onClick={() => navigator.clipboard.writeText(b.pagePrompt).then(() => toast.success("Page-builder prompt copied."), () => toast.error("Couldn't copy."))}
+                    >
+                      <Copy className="h-3 w-3" /> Copy page-builder prompt
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
       </CardContent>

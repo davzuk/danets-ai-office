@@ -14,6 +14,7 @@ import { purgeJobsJob } from "./handlers/purge-jobs";
 import { seoHealthJob } from "./handlers/seo-health";
 import { seoSearchSyncJob } from "./handlers/seo-search-sync";
 import { seoAuditScheduleJob } from "./handlers/seo-audit";
+import { seoOpportunitiesJob } from "./handlers/seo-opportunities";
 import { socialInsightsWeeklyJob } from "./handlers/social-insights";
 import { socialMetricsAccountJob } from "./handlers/social-metrics";
 import { whiteLabelVerifyDomainsJob } from "./handlers/white-label-domains";
@@ -57,6 +58,8 @@ export const SCHEDULES: Schedule[] = [
   // Business Profile: new reviews every 2 hours, performance once a day.
   { job: gbpReviewsSyncJob, everyMs: 2 * HOUR, offsetMs: 35 * MINUTE, payload: {} },
   { job: gbpMetricsSyncJob, everyMs: DAY, offsetMs: 7 * HOUR + 10 * MINUTE, payload: {} },
+  // SEO content opportunities, Mondays 07:40 UTC (after the daily search sync).
+  { job: seoOpportunitiesJob, everyMs: WEEK, offsetMs: MONDAY + 7 * HOUR + 40 * MINUTE, payload: {} },
   // The weekly "what worked / what next" note, Mondays 06:00 UTC.
   { job: socialInsightsWeeklyJob, everyMs: WEEK, offsetMs: MONDAY + 6 * HOUR, payload: {} },
 ];

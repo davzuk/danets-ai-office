@@ -14,8 +14,7 @@ import { getBrandContext, getBrandProfileRow } from "@/lib/brand";
 import { approvalRequired, canSelfApprove, normalizePolicy } from "@/lib/content/approval";
 import { findBannedPhrases } from "@/lib/content/platforms";
 import { fireTrigger } from "@/lib/automation";
-import { ConnectionUnavailableError } from "@/lib/connections/tokens";
-import { classifyGoogleError, NOT_APPROVED_MESSAGE } from "./google";
+import { googleJobError } from "./google";
 import { listReviewsPage, putReviewReply, replyTooLong, v4LocationPath, type GbpReviewData } from "./gbp";
 import { googleProblem } from "./setup";
 
@@ -168,11 +167,7 @@ export async function syncLocationReviews(locationId: string, opts: SyncOptions 
 }
 
 export function syncErrorMessage(e: unknown): string {
-  if (e instanceof ConnectionUnavailableError) return "The Google connection needs reconnecting.";
-  const kind = classifyGoogleError(e);
-  if (kind === "not_approved") return NOT_APPROVED_MESSAGE;
-  if (kind === "lost_access") return "The connected Google account can no longer read this location's reviews.";
-  return "Google didn't answer the last reviews sync. It will try again.";
+  return googleJobError(e, "reviews sync", "this location's reviews");
 }
 
 const stars = (n: number) => (n > 0 ? `${n}★` : "unrated");

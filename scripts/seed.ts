@@ -9,7 +9,7 @@ async function seed() {
     { name: "free", priceUsd: 0, chatLimit: 100, leadLimit: 50, kbLimit: 25, agentLimit: 1, auditRetentionDays: 7, chatRetentionDays: 30, leadRetentionDays: 90, features: JSON.stringify(["1 AI agent", "Basic analytics", "Chat widget"]) },
     { name: "starter", priceUsd: 29, chatLimit: 1000, leadLimit: 300, kbLimit: 100, agentLimit: 3, auditRetentionDays: 30, chatRetentionDays: 90, leadRetentionDays: 180, features: JSON.stringify(["3 AI agents", "Lead scoring", "Email support"]) },
     { name: "pro", priceUsd: 79, chatLimit: 5000, leadLimit: 1500, kbLimit: 500, agentLimit: 999, auditRetentionDays: 90, chatRetentionDays: 180, leadRetentionDays: 365, features: JSON.stringify(["Unlimited agents", "Quote generator", "Priority support", "Custom branding"]) },
-    { name: "enterprise", priceUsd: 199, auditPageLimit: 1000, chatLimit: 50000, leadLimit: 20000, kbLimit: 5000, agentLimit: 9999, auditRetentionDays: 365, chatRetentionDays: 730, leadRetentionDays: 1095, features: JSON.stringify(["Everything in Pro", "Dedicated manager", "SLA", "API access", "Custom domain"]) },
+    { name: "enterprise", priceUsd: 199, auditPageLimit: 1000, trackedKeywordLimit: 500, chatLimit: 50000, leadLimit: 20000, kbLimit: 5000, agentLimit: 9999, auditRetentionDays: 365, chatRetentionDays: 730, leadRetentionDays: 1095, features: JSON.stringify(["Everything in Pro", "Dedicated manager", "SLA", "API access", "Custom domain"]) },
   ];
   for (const p of plans) {
     await db.subscriptionPlan.upsert({

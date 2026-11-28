@@ -1,7 +1,7 @@
 # Phase 3: Search & Local Visibility
 
 **Date:** 2026-11-27
-**Status:** U, V, W and X built and committed. Y and Z not started.
+**Status:** U, V, W, X and Y built and committed. Z not started.
 **Goal:** Show tenants how people find them on Google and help them get found more. That covers how their website performs in search, what is broken on it, and their Google Business Profile (reviews, posts, calls and directions). Each part links back to the leads it brings in.
 **Builds on:**
 - **Phase 0:** OAuth connections (C, the Google provider already asks for `webmasters.readonly` and `business.manage`), the job queue (B), contacts and attribution (D, `organic_search` touchpoints), Brand Voice (E) and the AI provider layer (A).
@@ -402,6 +402,31 @@ model TrackedKeyword {
 ### Done when
 - Opportunities on a fixture dataset match a hand-computed list.
 - A brief for a test query uses only knowledge-base facts and marks the gaps.
+
+### As built
+- **Schema** (migration `20261231100000_seo_keywords`):
+  - `TrackedKeyword` as planned, plus the page it ranks with (`rankingPage`, `rankingAt`).
+  - `SeoOpportunity`: one row per property, kind and query, with its metrics, `pages` (for cannibalisation), the expected CTR, potential clicks, an AI suggestion and `dismissedAt`.
+  - `ContentBrief`: the query, the brief as JSON, the rendered Markdown, the gap count and who wrote it.
+  - `SearchProperty.opportunitiesAt` and `opportunitiesError`. `trackedKeywordLimit` on plans (Pro 50, Enterprise 500) and on limit overrides.
+- **Opportunities** (`opportunities.ts`, `seo.opportunities` weekly on Monday at 07:40 UTC, then one job per property):
+  - V stores queries and pages separately, so each scan asks Search Console once for 28 days of query and page pairs (final data, up to 50,000 rows). Anchors of one page are merged.
+  - Almost page one: average position 8–20 with at least 30 impressions. Low CTR: position 5 or better, at least 100 impressions, CTR under half the benchmark for that position. Cannibalisation: at least 50 impressions, with 2 or more pages each holding at least 10% and 10 impressions.
+  - Each is ranked by potential clicks a month, and the top 25 of each kind are kept. The CTR benchmark is only used for ranking and flagging, never shown as a promise.
+  - Rows found again keep their dismissal. An AI suggestion is cleared if the page changed. The first scan is queued when the Keywords tab is opened for a property with data. Admins can re-scan once an hour.
+- **Tracked keywords** (`keywords.ts`): position, change against the previous 28 days, and a 12-week weekly series, all from V's stored query rows (no Google calls). The 15 top queries not yet tracked are offered in one click. An optional target page is shown against the page that actually ranks.
+- **Briefs** (`briefs.ts`, `brief-pdf.tsx`):
+  - Related searches are the site's own queries from the last 90 days sharing at least half of the meaningful words. Question-style ones feed "Questions to answer".
+  - The AI uses the tenant's provider, quota and brand voice (feature `seo_brief`). Facts whose source isn't a knowledge-base title are dropped and reported. Every `[Add …]` is gathered into the gaps, and bare gaps are turned into placeholders.
+  - Briefs download as Markdown or PDF, with gaps highlighted. 50 are kept per tenant.
+  - Low-CTR opportunities get title and description suggestions through W's suggestion tool (feature `seo_fix`) instead of a brief.
+- **Tenant UI:** SEO → Keywords tab with tracked keywords, opportunities (dismiss, restore, check now, suggest, write a brief) and the briefs list with a viewer.
+- **Console and data:** the tenant SEO card shows keyword and opportunity counts and the 5 latest briefs, each with "Copy page-builder prompt" for R. The GDPR export includes keywords, opportunities and briefs. API helpers can now return a file response from `withSession`.
+- **Tests:** `tests/unit/seo-keywords.test.ts` covers the fixture opportunities against a hand-computed list, the CTR benchmark and anchor merge, keyword parsing and stats, related searches, the brief fact and gap check, and a scan keeping a dismissal.
+- **Limits to know:**
+  - Very small searches may be missing, because V keeps only the top 1,000 queries a day and Google hides rare queries.
+  - Positions are Search Console averages for impressions the site got, not a live rank.
+  - Not yet run against Google or a real AI provider.
 
 ---
 

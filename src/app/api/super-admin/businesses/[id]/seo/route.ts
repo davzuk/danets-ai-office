@@ -9,16 +9,20 @@ import { startAudit } from "@/lib/seo/audit";
 import { enqueueAuditRun } from "@/lib/jobs/handlers/seo-audit";
 import { removeLocationAccount } from "@/lib/seo/gbp-account";
 import { enqueueReviewsSync } from "@/lib/jobs/handlers/gbp-sync";
+import { briefToPagePrompt, type BriefData } from "@/lib/seo/briefs";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 async function view(businessId: string) {
-  const [properties, locations, audit, unreplied, awaiting] = await Promise.all([
+  const [properties, locations, audit, unreplied, awaiting, keywordCount, opportunityCounts, briefs] = await Promise.all([
     db.searchProperty.findMany({ where: { businessId }, orderBy: { createdAt: "asc" } }),
     db.businessLocation.findMany({ where: { businessId }, orderBy: { createdAt: "asc" } }),
     db.siteAudit.findFirst({ where: { businessId }, orderBy: { createdAt: "desc" } }),
     db.gbpReview.groupBy({ by: ["locationId"], where: { businessId, replyStatus: { notIn: ["posted", "pending_approval"] } }, _count: { _all: true } }),
     db.gbpReview.groupBy({ by: ["locationId"], where: { businessId, replyStatus: "pending_approval" }, _count: { _all: true } }),
+    db.trackedKeyword.count({ where: { businessId } }),
+    db.seoOpportunity.groupBy({ by: ["kind"], where: { businessId, dismissedAt: null }, _count: { _all: true } }),
+    db.contentBrief.findMany({ where: { businessId }, orderBy: { createdAt: "desc" }, take: 5 }),
   ]);
   const countOf = (rows: { locationId: string; _count: { _all: number } }[], id: string) => rows.find((r) => r.locationId === id)?._count._all ?? 0;
   // The latest site audit and its biggest issue kinds, so the platform can
@@ -60,6 +64,20 @@ async function view(businessId: string) {
       awaitingApproval: countOf(awaiting, l.id),
     })),
     audit: latestAudit,
+    // Keywords and content (workstream Y): the platform can turn a tenant's
+    // brief into a page-builder prompt for a site it builds.
+    content: {
+      keywords: keywordCount,
+      opportunities: Object.fromEntries(opportunityCounts.map((o) => [o.kind, o._count._all])),
+      briefs: briefs.map((b) => ({
+        id: b.id,
+        query: b.query,
+        title: b.title,
+        gaps: b.gaps,
+        createdAt: b.createdAt,
+        pagePrompt: briefToPagePrompt(b.brief as unknown as BriefData, b.query),
+      })),
+    },
   };
 }
 

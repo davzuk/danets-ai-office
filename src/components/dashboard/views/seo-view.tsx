@@ -15,6 +15,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { SeoPerformanceView } from "./seo-performance-view";
 import { SeoAuditView } from "./seo-audit-view";
 import { SeoReviewsView } from "./seo-reviews-view";
+import { SeoKeywordsView } from "./seo-keywords-view";
 
 interface Connection {
   id: string;
@@ -104,12 +105,12 @@ function useConnectResult() {
 }
 
 export function SeoView() {
-  const [tab, setTab] = useState<"setup" | "performance" | "audit" | "reviews">(() => {
+  const [tab, setTab] = useState<"setup" | "performance" | "keywords" | "audit" | "reviews">(() => {
     // A notification can ask to land on a tab (read once).
     try {
       const t = sessionStorage.getItem("seo-tab");
       sessionStorage.removeItem("seo-tab");
-      if (t === "audit" || t === "performance" || t === "reviews") return t;
+      if (t === "audit" || t === "performance" || t === "keywords" || t === "reviews") return t;
     } catch {}
     return "setup";
   });
@@ -153,6 +154,9 @@ export function SeoView() {
         <TabButton active={tab === "performance"} onClick={() => setTab("performance")}>
           Performance
         </TabButton>
+        <TabButton active={tab === "keywords"} onClick={() => setTab("keywords")}>
+          Keywords
+        </TabButton>
         <TabButton active={tab === "audit"} onClick={() => setTab("audit")}>
           Audit
         </TabButton>
@@ -163,6 +167,8 @@ export function SeoView() {
 
       {tab === "performance" ? (
         <SeoPerformanceView />
+      ) : tab === "keywords" ? (
+        <SeoKeywordsView />
       ) : tab === "audit" ? (
         <SeoAuditView />
       ) : tab === "reviews" ? (
