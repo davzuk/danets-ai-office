@@ -3,11 +3,7 @@ import { z } from "zod";
 import { computeCostUsd } from "@/lib/llm/catalog";
 import { normalizeMessages } from "@/lib/llm/messages";
 import { extractJson, toStructuredJsonSchema } from "@/lib/llm/schema";
-import {
-  parseTenantAiConfig,
-  resolvePlatformDefault,
-  resolveTenant,
-} from "@/lib/llm/resolve";
+import { resolvePlatformDefault } from "@/lib/llm/resolve";
 import { buildAnthropicParams, toProviderResponse } from "@/lib/llm/providers/anthropic";
 import { buildOpenAiBody } from "@/lib/llm/providers/openai";
 import type { ProviderRequest } from "@/lib/llm/types";
@@ -128,36 +124,6 @@ describe("resolvePlatformDefault", () => {
     expect(
       resolvePlatformDefault("chat", { AI_DEFAULT_PROVIDER: "openai", OPENAI_API_KEY: "k", OPENAI_DEFAULT_MODEL: "m" })
     ).toMatchObject({ provider: "openai", model: "m" });
-  });
-});
-
-describe("tenant resolution", () => {
-  const decrypt = (p: unknown) => ((p as any)?.__enc === 1 ? "decrypted-key" : null);
-
-  it("ignores inactive or unknown-provider integrations", () => {
-    expect(parseTenantAiConfig({ provider: "anthropic", status: "inactive", config: null }, decrypt)).toBeNull();
-    expect(parseTenantAiConfig({ provider: "other", status: "active", config: null }, decrypt)).toBeNull();
-  });
-
-  it("decrypts the key and reads model overrides", () => {
-    const cfg = parseTenantAiConfig(
-      {
-        provider: "anthropic",
-        status: "active",
-        config: JSON.stringify({ apiKey: { __enc: 1 }, model: "claude-sonnet-5-5", models: { plan: "claude-opus-5-5" } }),
-      },
-      decrypt
-    );
-    expect(cfg).toMatchObject({ provider: "anthropic", apiKey: "decrypted-key", model: "claude-sonnet-5-5" });
-    expect(resolveTenant("chat", cfg)?.model).toBe("claude-sonnet-5-5");
-    expect(resolveTenant("plan", cfg)?.model).toBe("claude-opus-5-5");
-    expect(resolveTenant("chat", cfg)?.source).toBe("tenant");
-  });
-
-  it("requires a key, and a model for OpenAI", () => {
-    expect(resolveTenant("chat", { provider: "anthropic" })).toBeNull();
-    expect(resolveTenant("chat", { provider: "openai", apiKey: "k" })).toBeNull();
-    expect(resolveTenant("chat", { provider: "openai", apiKey: "k", model: "m" })?.provider).toBe("openai");
   });
 });
 

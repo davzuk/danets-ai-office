@@ -1,26 +1,25 @@
 // Decide which provider, model and credentials serve a call.
 //
-// Order: the tenant's active `ai_provider` integration (with a usable key)
-// -> the platform AI set in Platform settings -> platform default from env
-// -> legacy z-ai.
+// The platform owns every AI key (see platform-models.ts). Order:
+//  1. the tenant's chosen model, if its plan allows it (never for "classify");
+//  2. the platform default model for the task (Platform settings → AI);
+//  3. the env default (AI_DEFAULT_PROVIDER, ANTHROPIC_API_KEY, ...);
+//  4. any provider with a key saved in Platform settings;
+//  5. the built-in z-ai model.
+// Tenants' own `ai_provider` integrations are no longer used.
 
 import { ANTHROPIC_TASK_MODELS } from "./catalog";
-import { ALIBABA_TASK_MODELS, alibabaBaseUrl, isAlibabaRegion } from "./providers/alibaba";
+import {
+  KEYED_PROVIDERS,
+  normalizePlatformAi,
+  providerCredentials,
+  resolveFromPlatform,
+  type KeyedProvider,
+  type PlatformAiState,
+  type TenantAiChoice,
+} from "./platform-models";
+import { ALIBABA_TASK_MODELS } from "./providers/alibaba";
 import type { AiTask, ProviderId, ResolvedProvider } from "./types";
-
-export interface AiIntegrationRow {
-  provider: string;
-  status: string;
-  config: string | null;
-}
-
-export interface TenantAiConfig {
-  provider: ProviderId;
-  apiKey?: string;
-  model?: string;
-  models?: Partial<Record<AiTask, string>>;
-  baseUrl?: string;
-}
 
 type Env = Record<string, string | undefined>;
 
@@ -81,121 +80,23 @@ export function resolvePlatformDefault(task: AiTask, env: Env): ResolvedProvider
   return { provider: "zai", model: ZAI_MODEL, credentials: {}, source: "platform" };
 }
 
-/**
- * Tenant override, or null when the tenant has nothing usable configured.
- * Pure; exported for tests.
- */
-export function resolveTenant(
-  task: AiTask,
-  cfg: TenantAiConfig | null,
-  source: ResolvedProvider["source"] = "tenant"
-): ResolvedProvider | null {
-  if (!cfg) return null;
-  if (cfg.provider === "zai") {
-    return { provider: "zai", model: ZAI_MODEL, credentials: {}, source };
-  }
-  if (!cfg.apiKey) return null;
-
-  if (cfg.provider === "anthropic" || cfg.provider === "alibaba") {
-    const defaults = cfg.provider === "anthropic" ? ANTHROPIC_TASK_MODELS : ALIBABA_TASK_MODELS;
-    return {
-      provider: cfg.provider,
-      model: pickModel(task, cfg, defaults[task])!,
-      credentials: { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl },
-      source,
-    };
-  }
-  // OpenAI has no safe built-in default model; require the tenant to pick one.
-  const model = pickModel(task, cfg, undefined);
-  if (!model) return null;
-  return {
-    provider: "openai",
-    model,
-    credentials: { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl },
-    source,
-  };
-}
-
-/**
- * The platform AI stored in PlatformConfig.aiConfig (set in Platform
- * settings → AI). Only Alibaba Cloud is offered there today. The key is an
- * encrypted payload. Pure; exported for tests.
- */
-export interface StoredPlatformAi {
-  enabled?: boolean;
-  provider?: string;
-  region?: string;
-  workspaceId?: string | null;
-  baseUrl?: string | null;
-  models?: Partial<Record<AiTask, string>>;
-  apiKey?: unknown;
-}
-
-export function parsePlatformAiConfig(
-  raw: unknown,
-  decrypt: (payload: unknown) => string | null
-): TenantAiConfig | null {
-  if (!raw || typeof raw !== "object") return null;
-  const c = raw as StoredPlatformAi;
-  if (!c.enabled || c.provider !== "alibaba") return null;
-  const apiKey = decrypt(c.apiKey);
-  if (!apiKey) return null;
-  const baseUrl = c.baseUrl?.trim() || (isAlibabaRegion(c.region) ? alibabaBaseUrl(c.region, c.workspaceId) : null);
-  if (!baseUrl) return null;
-  const models: Partial<Record<AiTask, string>> = {};
-  for (const [k, v] of Object.entries(c.models ?? {})) {
-    if (typeof v === "string" && v.trim()) models[k as AiTask] = v.trim();
-  }
-  return { provider: "alibaba", apiKey, models, baseUrl };
-}
-
-/**
- * Turn a stored Integration row into a TenantAiConfig. `decrypt` is injected
- * so this stays testable without the crypto key.
- */
-export function parseTenantAiConfig(
-  row: AiIntegrationRow | null,
-  decrypt: (payload: unknown) => string | null
-): TenantAiConfig | null {
-  if (!row || row.status !== "active" || !isProviderId(row.provider)) return null;
-
-  let config: Record<string, unknown> = {};
-  try {
-    config = row.config ? JSON.parse(row.config) : {};
-  } catch {
-    return null;
-  }
-
-  const rawKey = config.apiKey;
-  const apiKey =
-    typeof rawKey === "string" && rawKey.length > 0 ? rawKey : decrypt(rawKey) ?? undefined;
-
-  const models: Partial<Record<AiTask, string>> = {};
-  if (config.models && typeof config.models === "object") {
-    for (const [k, v] of Object.entries(config.models as Record<string, unknown>)) {
-      if (typeof v === "string" && v.trim()) models[k as AiTask] = v.trim();
-    }
-  }
-
-  return {
-    provider: row.provider,
-    apiKey,
-    model: typeof config.model === "string" && config.model.trim() ? config.model.trim() : undefined,
-    models,
-    baseUrl: typeof config.baseUrl === "string" && config.baseUrl ? config.baseUrl : undefined,
-  };
-}
-
 // ─── DB-backed resolver with a short cache ─────────────────────────────
 
 const CACHE_TTL_MS = 60_000;
-const tenantCache = new Map<string, { at: number; cfg: TenantAiConfig | null }>();
 
-let platformCache: { at: number; cfg: TenantAiConfig | null } | null = null;
+interface PlatformSnapshot {
+  state: PlatformAiState;
+  /** Providers with a key saved in Platform settings, in auto-pick order. */
+  storedKeys: KeyedProvider[];
+  decrypt: (p: unknown) => string | null;
+}
+
+let platformCache: { at: number; snap: PlatformSnapshot } | null = null;
+const tenantCache = new Map<string, { at: number; choice: TenantAiChoice | null }>();
 
 /**
- * Call after an ai_provider integration is created, updated or deleted, or
- * (with no argument) after the platform AI setting changes.
+ * Call after a tenant's model choice or plan changes (with its id), or with
+ * no argument after the platform AI settings change.
  */
 export function clearAiProviderCache(businessId?: string) {
   if (businessId) tenantCache.delete(businessId);
@@ -205,44 +106,48 @@ export function clearAiProviderCache(businessId?: string) {
   }
 }
 
-async function loadPlatformConfig(): Promise<TenantAiConfig | null> {
-  if (platformCache && Date.now() - platformCache.at < CACHE_TTL_MS) return platformCache.cfg;
-  let cfg: TenantAiConfig | null = null;
+const AUTO_ORDER: KeyedProvider[] = ["anthropic", "alibaba", "openai"];
+
+async function loadPlatform(): Promise<PlatformSnapshot> {
+  if (platformCache && Date.now() - platformCache.at < CACHE_TTL_MS) return platformCache.snap;
+  const { decryptApiKey } = await import("@/lib/crypto");
+  let raw: unknown = null;
   try {
-    const [{ db }, { decryptApiKey }] = await Promise.all([import("@/lib/db"), import("@/lib/crypto")]);
-    const row = await db.platformConfig.findUnique({ where: { id: "default" }, select: { aiConfig: true } });
-    cfg = parsePlatformAiConfig(row?.aiConfig, decryptApiKey);
+    const { db } = await import("@/lib/db");
+    raw = (await db.platformConfig.findUnique({ where: { id: "default" }, select: { aiConfig: true } }))?.aiConfig;
   } catch {
-    cfg = null; // e.g. the column isn't migrated yet: fall back to env
+    raw = null; // e.g. the column isn't migrated yet: env only
   }
-  platformCache = { at: Date.now(), cfg };
-  return cfg;
+  const state = normalizePlatformAi(raw);
+  const storedKeys = AUTO_ORDER.filter((p) => KEYED_PROVIDERS.includes(p) && !!decryptApiKey(state.providers[p]?.apiKey));
+  const snap = { state, storedKeys, decrypt: decryptApiKey };
+  platformCache = { at: Date.now(), snap };
+  return snap;
 }
 
-async function loadTenantConfig(businessId: string): Promise<TenantAiConfig | null> {
+async function loadTenant(businessId: string): Promise<TenantAiChoice | null> {
   const hit = tenantCache.get(businessId);
-  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.cfg;
-
-  const [{ db }, { decryptApiKey }] = await Promise.all([import("@/lib/db"), import("@/lib/crypto")]);
-  const row = await db.integration.findFirst({
-    where: { businessId, category: "ai_provider", status: "active" },
-    orderBy: { updatedAt: "desc" },
-    select: { provider: true, status: true, config: true },
-  });
-  const cfg = parseTenantAiConfig(row, decryptApiKey);
-  tenantCache.set(businessId, { at: Date.now(), cfg });
-  return cfg;
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.choice;
+  let choice: TenantAiChoice | null = null;
+  try {
+    const { db } = await import("@/lib/db");
+    const b = await db.business.findUnique({ where: { id: businessId }, select: { plan: true, aiModel: true } });
+    choice = b ? { plan: b.plan || "free", aiModel: b.aiModel } : null;
+  } catch {
+    choice = null;
+  }
+  tenantCache.set(businessId, { at: Date.now(), choice });
+  return choice;
 }
 
-export async function resolveProvider(
-  businessId: string | undefined,
-  task: AiTask
-): Promise<ResolvedProvider> {
-  if (businessId) {
-    const tenant = resolveTenant(task, await loadTenantConfig(businessId));
-    if (tenant) return tenant;
-  }
-  const stored = resolveTenant(task, await loadPlatformConfig(), "platform");
-  if (stored) return stored;
-  return resolvePlatformDefault(task, process.env);
+export async function resolveProvider(businessId: string | undefined, task: AiTask): Promise<ResolvedProvider> {
+  const snap = await loadPlatform();
+  const tenant = businessId ? await loadTenant(businessId) : null;
+  const creds = (p: KeyedProvider) => providerCredentials(snap.state, p, process.env, snap.decrypt);
+
+  const chosen = resolveFromPlatform(task, snap.state, tenant, creds, { allowAuto: false });
+  if (chosen) return chosen;
+  const env = resolvePlatformDefault(task, process.env);
+  if (env.provider !== "zai") return env;
+  return resolveFromPlatform(task, snap.state, null, creds, { allowAuto: true, storedKeys: snap.storedKeys }) ?? env;
 }

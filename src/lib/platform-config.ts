@@ -271,8 +271,8 @@ export async function getPlatformSetupStatus(): Promise<PlatformSetupStatus> {
     required: false,
   });
 
-  // Mirrors resolveProvider in src/lib/llm/resolve.ts: the AI set in
-  // Platform settings first, then the env default.
+  // Mirrors resolveProvider in src/lib/llm/resolve.ts: keys saved in the
+  // AI tab, then the env default.
   const env = process.env;
   const stored = await platformAiStatus();
   const aiDefault = env.AI_DEFAULT_PROVIDER?.trim().toLowerCase();
@@ -294,16 +294,16 @@ export async function getPlatformSetupStatus(): Promise<PlatformSetupStatus> {
   checks.push({
     id: "ai_provider",
     label: "AI provider",
-    status: stored?.active || aiReady ? "ok" : "warning",
-    message: stored?.active
-      ? `Platform AI: ${stored.label} (set in the AI tab)`
-      : stored
-        ? "The AI tab's Alibaba Cloud key can't be read: enter it again"
+    status: stored?.unreadable.length ? "warning" : stored?.stored.length || aiReady ? "ok" : "warning",
+    message: stored?.unreadable.length
+      ? `Saved key can't be read for ${stored.unreadable.join(", ")}: enter it again in the AI tab`
+      : stored?.stored.length
+        ? `Keys saved in the AI tab: ${stored.stored.join(", ")}${aiReady ? `; env default: ${envLabel}` : ""}`
         : aiReady
           ? `Platform default: ${envLabel}`
           : aiProvider === "openai"
             ? "AI_DEFAULT_PROVIDER=openai needs OPENAI_API_KEY and OPENAI_DEFAULT_MODEL; falling back to the built-in z-ai model"
-            : "No platform AI key: AI features use the built-in z-ai model. Set one in the AI tab (tenants can also add their own key)",
+            : "No platform AI key: AI features use the built-in z-ai model. Add a key in the AI tab",
     required: false,
   });
 

@@ -12,14 +12,16 @@ import {
 } from "@/lib/crypto";
 import { clearAiProviderCache } from "@/lib/llm/resolve";
 
-const CATEGORIES = ["ai_provider", "whatsapp", "email", "sms", "payment", "crm", "website_widget"];
+// "ai_provider" is gone: the platform holds every AI key and tenants pick a
+// model in Settings. Old ai_provider rows are kept but hidden and unused.
+const CATEGORIES = ["whatsapp", "email", "sms", "payment", "crm", "website_widget"];
 
 // GET /api/integrations — list all integrations for the business
 export function GET(_req: NextRequest) {
   return withSession(async (user) => {
     const integrations = await db.integration.findMany({
       // Booking connections (Calendly) are managed in Leads -> Bookings.
-      where: { businessId: user.businessId, category: { not: "booking" } },
+      where: { businessId: user.businessId, category: { notIn: ["booking", "ai_provider"] } },
       orderBy: { category: "asc" },
     });
 

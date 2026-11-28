@@ -37,6 +37,7 @@ import {
 import { toast } from "sonner";
 import { TeamMembers } from "@/components/dashboard/views/team-members";
 import { BrandVoiceCard } from "@/components/dashboard/views/brand-voice-card";
+import { AiModelCard } from "@/components/dashboard/views/ai-model-card";
 import { TotpSecurityCard } from "@/components/dashboard/shared/totp-security-card";
 import { planRank, formatPlanLabel } from "@/lib/module-registry";
 import { Lock, Sparkles } from "lucide-react";
@@ -390,6 +391,9 @@ export function SettingsView({
 
           {/* Brand Voice (used by every AI content generator) */}
           <BrandVoiceCard />
+
+          {/* AI model: picked from the platform's list (the platform holds the keys) */}
+          <AiModelCard isAdmin={user?.role === "admin"} />
 
           {/* API & widget key */}
           <Card>

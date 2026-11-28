@@ -21,6 +21,8 @@ model Business {
   phone                String?
   whatsapp             String?
   plan                 String    @default("free") // free | starter | pro | enterprise
+  /// The AI model the tenant picked from the platform's list ("provider:model"); null = platform default.
+  aiModel              String?   @db.VarChar(120)
   status               String    @default("active") // active | suspended | deleted
   enforce2fa           Boolean   @default(false) // require 2FA for all members of this business
   timezone             String    @default("UTC") // IANA zone; the content calendar shows times in it
@@ -1152,7 +1154,7 @@ model PlatformConfig {
   emailFromAddress   String?
   allowPublicSignup  Boolean  @default(true)
   enforcePlatform2fa Boolean  @default(false)
-  /// Platform AI provider set in Platform settings → AI (Alibaba Cloud today): { enabled, provider, region, workspaceId, baseUrl, models, apiKey (encrypted), updatedBy }. Null = use env.
+  /// Platform AI set in Platform settings → AI: { version: 2, providers: { anthropic|openai|alibaba: { apiKey (encrypted), baseUrl, region, workspaceId } }, models: [{ provider, model, label, enabled, minPlan }], defaults: { task: "provider:model" }, updatedBy, updatedAt }. Null = built-in model list and env keys.
   aiConfig           Json?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt

@@ -109,6 +109,7 @@ import { TenantWhiteLabelEditor } from "@/components/dashboard/views/tenant-whit
 import { TenantTwoFactorPolicy } from "@/components/dashboard/views/tenant-two-factor-policy";
 import { TenantWidgetOrigins } from "@/components/dashboard/views/tenant-widget-origins";
 import { TenantSeoCard } from "@/components/dashboard/views/tenant-seo-card";
+import { AiModelPicker } from "@/components/dashboard/views/ai-model-card";
 import type { PlatformTabId } from "@/lib/platform-nav";
 import { SuperAdminUsersPanel } from "@/components/dashboard/views/super-admin-users-panel";
 import { SuperAdminAuditPanel } from "@/components/dashboard/views/super-admin-audit-panel";
@@ -1177,6 +1178,11 @@ function SuperAdminInner({
                     .catch(() => {});
                 }}
               />
+
+              <div className="space-y-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">AI model</div>
+                <AiModelPicker key={`ai:${detail.id}:${detail.plan}`} endpoint={`/api/super-admin/businesses/${detail.id}/ai-model`} canEdit compact />
+              </div>
 
               <TenantSeoCard key={`seo:${detail.id}`} businessId={detail.id} />
 

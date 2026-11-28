@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { alibabaBaseUrl, alibabaProvider, ALIBABA_TASK_MODELS } from "@/lib/llm/providers/alibaba";
+import { alibabaBaseUrl, alibabaProvider } from "@/lib/llm/providers/alibaba";
 import { buildOpenAiBody } from "@/lib/llm/providers/openai";
-import { parsePlatformAiConfig, resolvePlatformDefault, resolveTenant } from "@/lib/llm/resolve";
+import { resolvePlatformDefault } from "@/lib/llm/resolve";
 import type { ProviderRequest } from "@/lib/llm/types";
 
 const req: ProviderRequest = {
@@ -79,27 +79,6 @@ describe("Alibaba adapter", () => {
 });
 
 describe("Alibaba resolution", () => {
-  const decrypt = (p: unknown) => (p && typeof p === "object" && "k" in p ? String((p as { k: string }).k) : null);
-
-  it("reads the stored platform setting", () => {
-    const cfg = parsePlatformAiConfig({ enabled: true, provider: "alibaba", region: "singapore", workspaceId: "ws1", models: { plan: " qwen-custom ", chat: "" }, apiKey: { k: "sk-a" } }, decrypt);
-    expect(cfg).toEqual({ provider: "alibaba", apiKey: "sk-a", models: { plan: "qwen-custom" }, baseUrl: "https://ws1.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1" });
-    const plan = resolveTenant("plan", cfg, "platform");
-    expect(plan).toMatchObject({ provider: "alibaba", model: "qwen-custom", source: "platform" });
-    expect(resolveTenant("chat", cfg, "platform")?.model).toBe(ALIBABA_TASK_MODELS.chat);
-  });
-
-  it("ignores it when off, keyless, or without a usable endpoint", () => {
-    const base = { enabled: true, provider: "alibaba", region: "singapore", apiKey: { k: "sk-a" } };
-    expect(parsePlatformAiConfig({ ...base, enabled: false }, decrypt)).toBeNull();
-    expect(parsePlatformAiConfig({ ...base, apiKey: "garbage" }, decrypt)).toBeNull();
-    expect(parsePlatformAiConfig({ ...base, region: "tokyo" }, decrypt)).toBeNull();
-    expect(parsePlatformAiConfig({ ...base, provider: "openai" }, decrypt)).toBeNull();
-    expect(parsePlatformAiConfig(null, decrypt)).toBeNull();
-    // A custom base URL stands in for the workspace.
-    expect(parsePlatformAiConfig({ ...base, region: "tokyo", baseUrl: "https://x.ap-northeast-1.maas.aliyuncs.com/compatible-mode/v1" }, decrypt)?.baseUrl).toContain("ap-northeast-1");
-  });
-
   it("supports AI_DEFAULT_PROVIDER=alibaba from env", () => {
     const r = resolvePlatformDefault("classify", { AI_DEFAULT_PROVIDER: "alibaba", ALIBABA_API_KEY: "sk-env" });
     expect(r).toMatchObject({ provider: "alibaba", model: "qwen3.8-flash", credentials: { apiKey: "sk-env" } });

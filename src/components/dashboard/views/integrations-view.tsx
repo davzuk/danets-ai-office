@@ -182,8 +182,8 @@ const CATEGORY_CONFIG: Record<Category, CategoryConfig> = {
   },
 };
 
+// No "ai_provider": the platform holds the AI keys; tenants pick a model in Settings.
 const CATEGORIES: Category[] = [
-  "ai_provider",
   "whatsapp",
   "email",
   "sms",
