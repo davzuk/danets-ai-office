@@ -16,6 +16,7 @@ import { SeoPerformanceView } from "./seo-performance-view";
 import { SeoAuditView } from "./seo-audit-view";
 import { SeoReviewsView } from "./seo-reviews-view";
 import { SeoKeywordsView } from "./seo-keywords-view";
+import { SeoReportsView } from "./seo-reports-view";
 
 interface Connection {
   id: string;
@@ -105,12 +106,12 @@ function useConnectResult() {
 }
 
 export function SeoView() {
-  const [tab, setTab] = useState<"setup" | "performance" | "keywords" | "audit" | "reviews">(() => {
+  const [tab, setTab] = useState<"setup" | "performance" | "keywords" | "audit" | "reviews" | "reports">(() => {
     // A notification can ask to land on a tab (read once).
     try {
       const t = sessionStorage.getItem("seo-tab");
       sessionStorage.removeItem("seo-tab");
-      if (t === "audit" || t === "performance" || t === "keywords" || t === "reviews") return t;
+      if (t === "audit" || t === "performance" || t === "keywords" || t === "reviews" || t === "reports") return t;
     } catch {}
     return "setup";
   });
@@ -163,6 +164,9 @@ export function SeoView() {
         <TabButton active={tab === "reviews"} onClick={() => setTab("reviews")}>
           Reviews
         </TabButton>
+        <TabButton active={tab === "reports"} onClick={() => setTab("reports")}>
+          Reports
+        </TabButton>
       </div>
 
       {tab === "performance" ? (
@@ -173,6 +177,8 @@ export function SeoView() {
         <SeoAuditView />
       ) : tab === "reviews" ? (
         <SeoReviewsView />
+      ) : tab === "reports" ? (
+        <SeoReportsView />
       ) : error ? (
         <p className="text-sm text-destructive">{error}</p>
       ) : !data ? (

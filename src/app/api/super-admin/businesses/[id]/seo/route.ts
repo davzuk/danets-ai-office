@@ -10,11 +10,12 @@ import { enqueueAuditRun } from "@/lib/jobs/handlers/seo-audit";
 import { removeLocationAccount } from "@/lib/seo/gbp-account";
 import { enqueueReviewsSync } from "@/lib/jobs/handlers/gbp-sync";
 import { briefToPagePrompt, type BriefData } from "@/lib/seo/briefs";
+import { generateReport, getReport, previousMonth, publicReportSummary, renderReportPdfFor, reportFileName, type ReportData } from "@/lib/seo/report";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 async function view(businessId: string) {
-  const [properties, locations, audit, unreplied, awaiting, keywordCount, opportunityCounts, briefs] = await Promise.all([
+  const [properties, locations, audit, unreplied, awaiting, keywordCount, opportunityCounts, briefs, reports] = await Promise.all([
     db.searchProperty.findMany({ where: { businessId }, orderBy: { createdAt: "asc" } }),
     db.businessLocation.findMany({ where: { businessId }, orderBy: { createdAt: "asc" } }),
     db.siteAudit.findFirst({ where: { businessId }, orderBy: { createdAt: "desc" } }),
@@ -23,6 +24,7 @@ async function view(businessId: string) {
     db.trackedKeyword.count({ where: { businessId } }),
     db.seoOpportunity.groupBy({ by: ["kind"], where: { businessId, dismissedAt: null }, _count: { _all: true } }),
     db.contentBrief.findMany({ where: { businessId }, orderBy: { createdAt: "desc" }, take: 5 }),
+    db.seoReport.findMany({ where: { businessId }, orderBy: { month: "desc" }, take: 3 }),
   ]);
   const countOf = (rows: { locationId: string; _count: { _all: number } }[], id: string) => rows.find((r) => r.locationId === id)?._count._all ?? 0;
   // The latest site audit and its biggest issue kinds, so the platform can
@@ -78,22 +80,40 @@ async function view(businessId: string) {
         pagePrompt: briefToPagePrompt(b.brief as unknown as BriefData, b.query),
       })),
     },
+    // Monthly reports (workstream Z): the platform can create one and download its PDF.
+    reports: { lastMonth: previousMonth(), items: reports.map((r) => ({ ...publicReportSummary(r), aiError: r.aiError })) },
   };
 }
 
 // GET /api/super-admin/businesses/<id>/seo: the tenant's Search Console
 // properties and Business Profile locations, with their last check.
-export async function GET(_req: NextRequest, { params }: Ctx) {
+// ?reportPdf=<reportId> downloads a monthly report's PDF.
+export async function GET(req: NextRequest, { params }: Ctx) {
   const auth = await requireSuperAdmin();
   if (!auth.success) return auth.error;
   const { id } = await params;
   if (!(await db.business.findUnique({ where: { id }, select: { id: true } }))) return NextResponse.json({ error: "Business not found" }, { status: 404 });
+  const reportId = new URL(req.url).searchParams.get("reportPdf");
+  if (reportId) {
+    let row;
+    try {
+      row = await getReport(id, reportId);
+    } catch {
+      return NextResponse.json({ error: "Report not found" }, { status: 404 });
+    }
+    const body = await renderReportPdfFor(row);
+    const name = reportFileName((row.data as unknown as ReportData).businessName, row.month);
+    return new NextResponse(new Uint8Array(body), {
+      headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${name}"`, "Content-Length": String(body.byteLength), "Cache-Control": "private, no-store" },
+    });
+  }
   return NextResponse.json(await view(id));
 }
 
 // POST {action: "check"} re-checks access now; {action: "audit"} starts a
 // site audit (no hourly limit); {action: "sync_reviews", itemId} queues a
-// Business Profile reviews sync; {action: "remove", kind, itemId} clears a
+// Business Profile reviews sync; {action: "report"} creates last month's SEO
+// report; {action: "remove", kind, itemId} clears a
 // property or location (e.g. one that belongs to someone else).
 export async function POST(req: NextRequest, { params }: Ctx) {
   const auth = await requireSuperAdmin();
@@ -111,6 +131,18 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       if (e instanceof AppError) return NextResponse.json(e.toResponseBody(), { status: e.status });
       throw e;
     }
+    return NextResponse.json(await view(id));
+  }
+  if (body?.action === "report") {
+    // Last month's report, created now for the tenant (not emailed).
+    const month = previousMonth();
+    try {
+      await generateReport(id, month, { trigger: "platform", by: `${auth.user.name} (Super Admin)`, email: false });
+    } catch (e) {
+      if (e instanceof AppError) return NextResponse.json(e.toResponseBody(), { status: e.status });
+      throw e;
+    }
+    await logActivity({ businessId: id, userName: `${auth.user.name} (Super Admin)`, action: "create", module: "seo", description: `Platform created the SEO report for ${month}` });
     return NextResponse.json(await view(id));
   }
   if (body?.action === "sync_reviews" && typeof body.itemId === "string") {

@@ -1,7 +1,7 @@
 # Phase 3: Search & Local Visibility
 
 **Date:** 2026-11-27
-**Status:** U, V, W, X and Y built and committed. Z not started.
+**Status:** U, V, W, X, Y and Z built and committed.
 **Goal:** Show tenants how people find them on Google and help them get found more. That covers how their website performs in search, what is broken on it, and their Google Business Profile (reviews, posts, calls and directions). Each part links back to the leads it brings in.
 **Builds on:**
 - **Phase 0:** OAuth connections (C, the Google provider already asks for `webmasters.readonly` and `business.manage`), the job queue (B), contacts and attribution (D, `organic_search` touchpoints), Brand Voice (E) and the AI provider layer (A).
@@ -445,6 +445,26 @@ model TrackedKeyword {
 
 ### Done when
 - The report for a seeded month matches the dashboard numbers and renders with the tenant's white-label branding.
+
+### As built
+- **Schema** (migration `20270101100000_seo_reports`):
+  - `SeoReport`: one row per tenant and month, holding the numbers as JSON, the AI next steps (or `aiError`), the trigger, who created it, and the email result.
+  - `SeoSettings.reportEmail` (default on). 24 reports are kept per tenant.
+- **Collecting** (`report.ts`), all from stored data with no Google calls:
+  - Search totals, top movers (5 gainers, 5 losers) and top pages by clicks with leads per page, all from V's rows, against the month before.
+  - Organic leads: distinct contacts with an `organic_search` touchpoint in the month.
+  - The audit: the latest finished audit up to month end, with fixed and new issues from W's diff. A first audit says so rather than "0 fixed".
+  - Reviews: count, average rating and reply rate for the month, plus the overall rating. Business Profile totals come from X's metrics.
+- **Next steps:** three AI points through the tenant's provider, quota and brand voice (feature `seo_report`), with Y's top opportunities as input. If the AI fails, the report is still saved and shows why.
+- **Schedule:** `seo.report` runs daily at 08:20 UTC. From the 3rd it queues last month's report for each SEO tenant that doesn't have one yet; the business job saves it, notifies, and emails the PDF to admins when the setting allows.
+- **Formats:**
+  - Tenant UI: SEO → Reports tab with a month list, the report page, PDF download, "Email to admins", the email switch, and create/re-create (admins, once an hour).
+  - The PDF (`report-pdf.tsx`) and the email use the white-label name, colour and logo (PNG or JPEG fetched with `safeFetch`). "Made with Danets AI Automation" is dropped when branding is hidden.
+- **Weekly insights:** M's summary now includes review and Business Profile lines next to the search lines.
+- **Console and data:** the tenant SEO card lists the reports with PDF links and can create last month's report (not emailed). The GDPR export includes reports. The brief PDF footer from Y now draws.
+- **Tests:** `tests/unit/seo-report.test.ts` covers the months, the search section on a seeded month against hand-computed numbers, movers, the review section, the headline and AI facts, email branding and escaping, and a white-label PDF with no Danets branding.
+- **Checked in the browser** on seeded September and October data: the report's clicks (310 + 240) match the 90-day Performance total of 550, and the PDF and page carry the agency's name and colour.
+- **Limits to know:** not yet run against a real AI provider or email provider. Ratings in the PDF read "4.6 / 5" because the built-in PDF font has no star.
 
 ---
 

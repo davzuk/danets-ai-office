@@ -27,7 +27,8 @@ export interface EmailParams {
   html: string;
   text?: string;
   /** e.g. a calendar invite: { filename: "invite.ics", content, contentType: "text/calendar; method=REQUEST" } */
-  attachments?: { filename: string; content: string; contentType: string }[];
+  /** Text content, or a Buffer for binary files such as a PDF. */
+  attachments?: { filename: string; content: string | Buffer; contentType: string }[];
 }
 
 export interface EmailLogEntry {
@@ -402,7 +403,7 @@ export async function sendEmail(params: EmailParams): Promise<{ success: boolean
                   filename: a.filename,
                   type: a.contentType.split(";")[0],
                   disposition: "attachment",
-                  content: Buffer.from(a.content, "utf8").toString("base64"),
+                  content: (Buffer.isBuffer(a.content) ? a.content : Buffer.from(a.content, "utf8")).toString("base64"),
                 })),
               }
             : {}),

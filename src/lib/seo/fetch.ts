@@ -221,6 +221,8 @@ export interface SafeResponse {
   headers: Record<string, string>;
   contentType: string;
   body: string;
+  /** The raw body bytes (an image for a report logo, say). */
+  bytes: Buffer;
   truncated: boolean;
   /** Each URL redirected from, in order. */
   redirects: string[];
@@ -330,7 +332,7 @@ export async function safeFetch(raw: string | URL, opts: SafeFetchOptions = {}):
         if (redirects.length >= maxRedirects) throw new FetchBlockedError("Too many redirects.", "too_many_redirects");
         const checked = checkUrl(next, opts);
         if (opts.allowRedirect && !opts.allowRedirect(checked, url)) {
-          return { url: url.href, status: res.status, headers: res.headers, contentType: res.headers["content-type"] ?? "", body: "", truncated: false, redirects, blockedRedirect: checked.href, elapsedMs: Date.now() - started };
+          return { url: url.href, status: res.status, headers: res.headers, contentType: res.headers["content-type"] ?? "", body: "", bytes: Buffer.alloc(0), truncated: false, redirects, blockedRedirect: checked.href, elapsedMs: Date.now() - started };
         }
         redirects.push(url.href);
         url = checked;
@@ -344,6 +346,7 @@ export async function safeFetch(raw: string | URL, opts: SafeFetchOptions = {}):
       headers: res.headers,
       contentType,
       body: res.body.length ? decode(res.body, contentType) : "",
+      bytes: res.body,
       truncated: res.truncated,
       redirects,
       blockedRedirect: null,

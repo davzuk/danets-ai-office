@@ -8,6 +8,7 @@ import { brandGenerateJob } from "./handlers/brand-generate";
 import { connectionExpiringJob, connectionRefreshJob } from "./handlers/connection-refresh";
 import { gbpMetricsLocationJob, gbpMetricsSyncJob, gbpReviewsLocationJob, gbpReviewsSyncJob } from "./handlers/gbp-sync";
 import { seoOpportunitiesJob, seoOpportunitiesPropertyJob } from "./handlers/seo-opportunities";
+import { seoReportBusinessJob, seoReportJob } from "./handlers/seo-report";
 import { linkedinLeadgenJob, linkedinLeadgenPollJob } from "./handlers/linkedin-leadgen";
 import { metaCommentJob, metaMessageJob } from "./handlers/meta-events";
 import { metaLeadgenJob, metaLeadgenPollJob } from "./handlers/meta-leadgen";
@@ -55,6 +56,8 @@ const definitions: JobDefinition[] = [
   gbpMetricsLocationJob,
   seoOpportunitiesJob,
   seoOpportunitiesPropertyJob,
+  seoReportJob,
+  seoReportBusinessJob,
 ];
 
 const byType = new Map<string, JobDefinition>();

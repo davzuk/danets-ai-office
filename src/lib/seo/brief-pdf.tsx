@@ -19,7 +19,8 @@ const s = StyleSheet.create({
   gap: { backgroundColor: "#fef3c7", color: "#92400e" },
   q: { fontFamily: "Helvetica-Bold", marginTop: 4 },
   source: { color: "#6b7280" },
-  footer: { position: "absolute", bottom: 26, left: 50, right: 50, fontSize: 8.5, color: "#9ca3af", flexDirection: "row", justifyContent: "space-between" },
+  // A fixed absolute Text repeats on every page (a fixed View, or a render prop, didn't draw).
+  footer: { position: "absolute", bottom: 26, left: 50, right: 50, fontSize: 8.5, color: "#9ca3af" },
 });
 
 /** Text with "[Add …]" placeholders highlighted. */
@@ -53,6 +54,9 @@ export function BriefPDF({ query, businessName, brief: b }: BriefPdfProps) {
   return (
     <Document title={`Content brief: ${query}`} author={businessName} creator={businessName} producer={businessName}>
       <Page size="A4" style={s.page}>
+        <Text style={s.footer} fixed>
+          {`Content brief: ${query} · ${businessName}`}
+        </Text>
         <Text style={s.brand}>{businessName}</Text>
         <Text style={s.title}>Content brief: {query}</Text>
         <Text style={s.note}>Highlighted [Add …] items need real details before the page is published.</Text>
@@ -121,10 +125,6 @@ export function BriefPDF({ query, businessName, brief: b }: BriefPdfProps) {
           <Bullet key={i} text={c} />
         ))}
 
-        <View style={s.footer} fixed>
-          <Text>{businessName}</Text>
-          <Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
-        </View>
       </Page>
     </Document>
   );

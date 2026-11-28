@@ -15,6 +15,7 @@ import { seoHealthJob } from "./handlers/seo-health";
 import { seoSearchSyncJob } from "./handlers/seo-search-sync";
 import { seoAuditScheduleJob } from "./handlers/seo-audit";
 import { seoOpportunitiesJob } from "./handlers/seo-opportunities";
+import { seoReportJob } from "./handlers/seo-report";
 import { socialInsightsWeeklyJob } from "./handlers/social-insights";
 import { socialMetricsAccountJob } from "./handlers/social-metrics";
 import { whiteLabelVerifyDomainsJob } from "./handlers/white-label-domains";
@@ -60,6 +61,8 @@ export const SCHEDULES: Schedule[] = [
   { job: gbpMetricsSyncJob, everyMs: DAY, offsetMs: 7 * HOUR + 10 * MINUTE, payload: {} },
   // SEO content opportunities, Mondays 07:40 UTC (after the daily search sync).
   { job: seoOpportunitiesJob, everyMs: WEEK, offsetMs: MONDAY + 7 * HOUR + 40 * MINUTE, payload: {} },
+  // Z: daily check, last month's SEO report from the 3rd (after the search sync)
+  { job: seoReportJob, everyMs: DAY, offsetMs: 8 * HOUR + 20 * MINUTE, payload: {} },
   // The weekly "what worked / what next" note, Mondays 06:00 UTC.
   { job: socialInsightsWeeklyJob, everyMs: WEEK, offsetMs: MONDAY + 6 * HOUR, payload: {} },
 ];

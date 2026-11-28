@@ -5,11 +5,12 @@
 // last access check; the platform can re-check or clear one. Locations also
 // show their Google reviews state (workstream X) with a "Sync reviews" action.
 // Keywords and content briefs (workstream Y): each brief can be copied as a
-// page-builder prompt for a site the platform builds.
+// page-builder prompt for a site the platform builds. Monthly SEO reports
+// (workstream Z): create last month's and download the PDF.
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Copy, FileText, Gauge, Loader2, Play, RefreshCw, SearchCheck, Star, Trash2 } from "lucide-react";
+import { BarChart3, Copy, Download, FileText, Gauge, Loader2, Play, RefreshCw, SearchCheck, Star, Trash2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +51,10 @@ interface Data {
     keywords: number;
     opportunities: Record<string, number>;
     briefs: { id: string; query: string; title: string; gaps: number; createdAt: string; pagePrompt: string }[];
+  };
+  reports?: {
+    lastMonth: string;
+    items: { id: string; month: string; label: string; clicks: number | null; organicLeads: number; trigger: string; createdAt: string; emailedAt: string | null; emailError: string | null; aiError: string | null }[];
   };
 }
 
@@ -136,7 +141,7 @@ export function TenantSeoCard({ businessId }: { businessId: string }) {
           <CardTitle className="flex items-center gap-2 text-base">
             <SearchCheck className="h-4 w-4 text-primary" /> SEO setup
           </CardTitle>
-          <CardDescription>Search Console properties, Business Profile locations, the latest site audit and content briefs.</CardDescription>
+          <CardDescription>Search Console properties, Business Profile locations, the latest site audit, content briefs and monthly reports.</CardDescription>
         </div>
         {data && !empty && (
           <Button size="sm" variant="outline" disabled={!!busy} onClick={() => post({ action: "check" }, "check", "Checked with Google.")}>
@@ -191,6 +196,41 @@ export function TenantSeoCard({ businessId }: { businessId: string }) {
               </div>
               <Button variant="outline" size="sm" disabled={!!busy || auditRunning} onClick={() => post({ action: "audit" }, "audit", "Audit started.")}>
                 {busy === "audit" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}Run audit
+              </Button>
+            </div>
+          </div>
+        )}
+        {data?.reports && (
+          <div className="rounded-md border px-3 py-2 text-sm">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2 font-medium">
+                  <BarChart3 className="h-4 w-4 text-muted-foreground" /> Monthly reports
+                </div>
+                {data.reports.items.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">No reports yet.</div>
+                ) : (
+                  <ul className="mt-1 space-y-1 text-xs">
+                    {data.reports.items.map((r) => (
+                      <li key={r.id} className="flex flex-wrap items-center gap-x-2">
+                        <span className="font-medium">{r.label}</span>
+                        <span className="text-muted-foreground">
+                          {r.clicks != null ? `${r.clicks} clicks · ` : ""}
+                          {r.organicLeads} organic leads · {r.trigger === "platform" ? "by platform" : r.trigger === "manual" ? "by tenant" : "scheduled"}
+                          {r.emailedAt ? " · emailed" : ""}
+                        </span>
+                        {r.emailError && <span className="text-amber-700 dark:text-amber-400">{r.emailError}</span>}
+                        {r.aiError && <span className="text-amber-700 dark:text-amber-400">{r.aiError}</span>}
+                        <a className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-foreground" href={`${url}?reportPdf=${r.id}`} download>
+                          <Download className="h-3 w-3" /> PDF
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <Button variant="outline" size="sm" disabled={!!busy} onClick={() => post({ action: "report" }, "report", "Report created.")}>
+                {busy === "report" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BarChart3 className="mr-2 h-4 w-4" />}Create {data.reports.lastMonth}
               </Button>
             </div>
           </div>

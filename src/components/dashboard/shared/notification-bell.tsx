@@ -62,6 +62,7 @@ const TYPE_ICONS: Record<string, React.ComponentType<{ size?: number; className?
   booking_cancelled: CalendarX,
   form_submitted: ClipboardList,
   site_audit_done: SearchCheck,
+  seo_report: SearchCheck,
   review_new: Star,
   review_urgent: Star,
 };
@@ -86,6 +87,7 @@ const TYPE_COLORS: Record<string, string> = {
   booking_cancelled: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
   form_submitted: "bg-sky-500/15 text-sky-600 dark:text-sky-400",
   site_audit_done: "bg-primary/15 text-primary",
+  seo_report: "bg-primary/15 text-primary",
   review_new: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
   review_urgent: "bg-rose-500/15 text-rose-600 dark:text-rose-400",
 };
@@ -230,6 +232,7 @@ export function NotificationBell({
       site_audit_done: "seo",
       review_new: "seo",
       review_urgent: "seo",
+      seo_report: "seo",
     };
     // A reply waiting for approval is a review, not a social post.
     const isReview = n.type === "review_new" || n.type === "review_urgent" || (n.type === "content_review" && !!n.data?.includes('"reviewId"'));
@@ -244,6 +247,12 @@ export function NotificationBell({
       // Land on Leads -> Forms (read once by LeadsView).
       try {
         sessionStorage.setItem("leads-mode", "webforms");
+      } catch {}
+    }
+    if (n.type === "seo_report") {
+      // Land on SEO -> Reports (read once by SeoView).
+      try {
+        sessionStorage.setItem("seo-tab", "reports");
       } catch {}
     }
     if (n.type === "site_audit_done") {

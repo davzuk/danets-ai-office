@@ -89,6 +89,7 @@ model Business {
   trackedKeywords      TrackedKeyword[]
   seoOpportunities     SeoOpportunity[]
   contentBriefs        ContentBrief[]
+  seoReports           SeoReport[]
 
   @@index([purgeScheduledAt])
 }
@@ -2094,6 +2095,8 @@ model SeoSettings {
   auditMonthly Boolean  @default(true) // re-audit every month
   // Workstream X: thank 4-5 star reviews that have no text automatically
   autoReplyNoText Boolean @default(false)
+  // Workstream Z: email the monthly SEO report (PDF) to admins
+  reportEmail     Boolean @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -2284,5 +2287,30 @@ model ContentBrief {
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
+  @@index([businessId, createdAt])
+}
+
+// Phase 3, workstream Z: the monthly SEO report. One per tenant and month;
+// re-creating a month replaces it. `data` holds the numbers shown (search,
+// organic leads, audit, reviews, Business Profile), `nextSteps` the AI's three points.
+model SeoReport {
+  id          String    @id @default(cuid())
+  businessId  String
+  month       String    @db.VarChar(7) // "2026-10"
+  periodStart DateTime  @db.Date
+  periodEnd   DateTime  @db.Date
+  data        Json
+  nextSteps   Json?
+  aiError     String?   @db.Text
+  trigger     String    @default("schedule") @db.VarChar(20) // schedule | manual | platform
+  createdBy   String?   @db.VarChar(120)
+  emailedAt   DateTime?
+  emailError  String?   @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, month])
   @@index([businessId, createdAt])
 }

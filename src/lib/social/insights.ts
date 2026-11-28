@@ -13,6 +13,7 @@ import { aiStructured, logUsage, AiRefusalError, type AiMessage } from "@/lib/ll
 import { logger, serializeError } from "@/lib/logger";
 import { checkMonthlyAiQuota } from "@/lib/plan-limits";
 import { searchSummary } from "@/lib/seo/search";
+import { localSummary } from "@/lib/seo/report";
 import { buildAnalyticsReport, type AnalyticsReport, type PostStat } from "./analytics";
 
 export const INSIGHT_USAGE_FEATURE = "content_insight";
@@ -89,7 +90,7 @@ export function insightMessages(brandContext: string, stats: InsightStats, searc
     "- Write in plain language for a busy owner. No jargon, no hype.",
   ];
   if (search) {
-    rules.push("- Search Console numbers are provided too: fold the click trend and any query movers into what worked / what didn't where they matter, but never invent search figures beyond what's given.");
+    rules.push("- Search Console, Google review and Business Profile numbers may be provided too: fold the click trend, query movers, new reviews and profile actions into what worked / what didn't where they matter, but never invent figures beyond what's given.");
   }
   const system = [
     "You are the social media strategist for this business. Each Monday you review the last four weeks of the business's own posts and write a short, practical note for the owner.",
@@ -146,9 +147,10 @@ export async function generateInsight(
   if (opts.requirePosts && report.posts.length === 0) throw new InsightSkipped("no_posts");
 
   const stats = insightStats(report);
-  // Search Console context is best-effort: a tenant without a property (or a
-  // broken one) must not stop the social insight from being written.
-  const search = await searchSummary(businessId).catch(() => null);
+  // Search Console and Business Profile context is best-effort: a tenant
+  // without them (or with a broken one) must still get the social insight.
+  const seoLines = [await searchSummary(businessId).catch(() => null), await localSummary(businessId, INSIGHT_PERIOD_DAYS, now).catch(() => null)];
+  const search = seoLines.filter(Boolean).join("\n\n") || null;
   const messages = insightMessages(await getBrandContext(businessId), stats, search);
   let content: InsightContent;
   try {
