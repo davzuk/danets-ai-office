@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { withSession } from "@/lib/api";
 import { logActivity, createNotification } from "@/lib/activity";
 import { assertTransition, findOwnPost, loadPublicPost, parseBody, titleFromBrief, updatePostSchema } from "@/lib/content/posts";
+import { ownCampaignId } from "@/lib/campaigns/service";
 import { assertPostDeletable, cancelPostSchedules, listSchedules, promoteApprovedPost } from "@/lib/content/schedule";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -16,7 +17,7 @@ export function GET(_req: NextRequest, { params }: Ctx) {
   });
 }
 
-// PATCH /api/content-posts/:id { title?, brief?, goal?, toneTweak?, campaignTag?, status? }
+// PATCH /api/content-posts/:id { title?, brief?, goal?, toneTweak?, campaignId?, status? }
 export function PATCH(req: NextRequest, { params }: Ctx) {
   return withSession(async (user) => {
     const { id } = await params;
@@ -32,7 +33,7 @@ export function PATCH(req: NextRequest, { params }: Ctx) {
         ...(input.brief !== undefined ? { brief: input.brief } : {}),
         ...(input.goal !== undefined ? { goal: input.goal ?? null } : {}),
         ...(input.toneTweak !== undefined ? { toneTweak: input.toneTweak || null } : {}),
-        ...(input.campaignTag !== undefined ? { campaignTag: input.campaignTag || null } : {}),
+        ...(input.campaignId !== undefined ? { campaignId: await ownCampaignId(user.businessId, input.campaignId) } : {}),
         ...(to && to !== before.status
           ? to === "approved"
             ? { status: to, approvedById: user.userId, approvedAt: new Date() }

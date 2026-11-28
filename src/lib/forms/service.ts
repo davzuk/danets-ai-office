@@ -138,11 +138,16 @@ export async function submitForm(
   }
   const profile = mapProfile(fields, answers);
 
+  // A lead magnet's campaign wins over its gate form's (Phase 4 AA).
+  const magnetCampaignId = input.leadMagnetId
+    ? (await db.leadMagnet.findFirst({ where: { id: input.leadMagnetId, businessId: form.businessId }, select: { campaignId: true } }))?.campaignId
+    : null;
   const inbound = await captureInbound({
     businessId: form.businessId,
     kind: "form_submit",
     visitorId: input.visitorId ?? null,
     attribution: input.attribution,
+    campaignId: magnetCampaignId ?? form.campaignId,
     profile,
   });
   const contactId = inbound?.contactId ?? null;

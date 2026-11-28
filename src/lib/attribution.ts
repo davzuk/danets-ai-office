@@ -237,6 +237,12 @@ export interface RecordTouchArgs {
   /** Idempotency key; a second insert with the same key returns the existing row. */
   dedupeKey?: string | null;
   occurredAt?: Date;
+  /**
+   * The campaign this touch belongs to (Phase 4 AA). Pass an id when the
+   * touch came through a campaign's form, booking type or link; null for
+   * none. Left undefined, recordTouch matches utm_campaign to a campaign.
+   */
+  campaignId?: string | null;
 }
 
 export function touchData(args: RecordTouchArgs): Prisma.TouchpointUncheckedCreateInput {
@@ -266,6 +272,7 @@ export function touchData(args: RecordTouchArgs): Prisma.TouchpointUncheckedCrea
     landingUrl: stripUrl(t.landingUrl),
     referrer: stripUrl(t.referrer),
     dedupeKey: args.dedupeKey ?? null,
+    campaignId: args.campaignId ?? null,
     occurredAt: at,
   };
 }
@@ -273,6 +280,10 @@ export function touchData(args: RecordTouchArgs): Prisma.TouchpointUncheckedCrea
 /** Insert a touchpoint, returning the existing one when `dedupeKey` was already used. */
 export async function recordTouch(args: RecordTouchArgs, client: Tx = db) {
   const data = touchData(args);
+  if (args.campaignId === undefined && data.campaign) {
+    const { resolveCampaignId } = await import("@/lib/campaigns/service");
+    data.campaignId = await resolveCampaignId(args.businessId, { utmCampaign: data.campaign, at: data.occurredAt as Date });
+  }
   try {
     return await client.touchpoint.create({ data });
   } catch (e: unknown) {

@@ -6,6 +6,7 @@ import type { z } from "zod";
 import { logger, serializeError } from "@/lib/logger";
 import type { JobDefinition } from "./define";
 import { bookingSyncJob } from "./handlers/booking-sync";
+import { campaignsRematchJob } from "./handlers/campaigns-rematch";
 import { connectionRefreshJob } from "./handlers/connection-refresh";
 import { gbpMetricsSyncJob, gbpReviewsSyncJob } from "./handlers/gbp-sync";
 import { linkedinLeadgenPollJob } from "./handlers/linkedin-leadgen";
@@ -65,6 +66,8 @@ export const SCHEDULES: Schedule[] = [
   { job: seoReportJob, everyMs: DAY, offsetMs: 8 * HOUR + 20 * MINUTE, payload: {} },
   // The weekly "what worked / what next" note, Mondays 06:00 UTC.
   { job: socialInsightsWeeklyJob, everyMs: WEEK, offsetMs: MONDAY + 6 * HOUR, payload: {} },
+  // Campaigns: old tags into campaigns, unmatched touches to campaigns, nightly 02:50 UTC.
+  { job: campaignsRematchJob, everyMs: DAY, offsetMs: 2 * HOUR + 50 * MINUTE, payload: {} },
 ];
 
 /** Start of the window containing `now`, shifted by the schedule's offset. */

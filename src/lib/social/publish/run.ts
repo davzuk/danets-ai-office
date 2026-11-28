@@ -34,7 +34,7 @@ export type RunOutcome =
   | "retry";
 
 export const SCHEDULE_INCLUDE = {
-  variant: { include: { post: { select: { id: true, title: true, brief: true, status: true, businessId: true, campaignTag: true } } } },
+  variant: { include: { post: { select: { id: true, title: true, brief: true, status: true, businessId: true, campaignTag: true, campaign: { select: { slug: true } } } } } },
   socialAccount: true,
 } satisfies Prisma.ScheduledPostInclude;
 
@@ -168,7 +168,8 @@ export async function runScheduledPost(scheduledPostId: string, opts: RunOptions
       platform,
       scheduledPostId: row.id,
       postId: row.variant.post.id,
-      campaignTag: row.variant.post.campaignTag,
+      // The campaign's tracking name; Phase 1's free-text tag for older posts.
+      campaignTag: row.variant.post.campaign?.slug ?? row.variant.post.campaignTag,
     });
     const text = composeText(platform, { body: row.variant.body, hashtags, linkUrl });
     const input = { externalId: acct.externalId, text, linkUrl, media, containerId: row.containerId };

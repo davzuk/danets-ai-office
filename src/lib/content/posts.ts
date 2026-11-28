@@ -30,7 +30,7 @@ export const createPostSchema = z.object({
   goal: z.enum(CONTENT_GOALS).nullish(),
   toneTweak: z.string().trim().max(CONTENT_LIMITS.toneTweak).nullish(),
   linkUrl: httpUrl.nullish().or(z.literal("")),
-  campaignTag: z.string().trim().max(80).nullish(),
+  campaignId: z.string().max(64).nullish(),
   sourceType: z.enum(["kb_article", "lead_question"]).nullish(),
   sourceId: z.string().max(64).nullish(),
 });
@@ -40,7 +40,7 @@ export const updatePostSchema = z.object({
   brief: z.string().trim().min(10).max(CONTENT_LIMITS.brief).optional(),
   goal: z.enum(CONTENT_GOALS).nullish(),
   toneTweak: z.string().trim().max(CONTENT_LIMITS.toneTweak).nullish(),
-  campaignTag: z.string().trim().max(80).nullish(),
+  campaignId: z.string().max(64).nullish(),
   status: z.enum(POST_STATUSES).optional(),
 });
 
@@ -90,7 +90,7 @@ export interface PublicPost {
   brief: string;
   goal: string | null;
   toneTweak: string | null;
-  campaignTag: string | null;
+  campaignId: string | null;
   sourceType: string | null;
   status: string;
   createdById: string | null;
@@ -108,7 +108,7 @@ export function toPublicPost(post: PostWithVariants, dontPhrases: string[]): Pub
     brief: post.brief,
     goal: post.goal,
     toneTweak: post.toneTweak,
-    campaignTag: post.campaignTag,
+    campaignId: post.campaignId,
     sourceType: post.sourceType,
     status: post.status,
     createdById: post.createdById,

@@ -24,6 +24,8 @@ export interface InboundArgs {
    * just link to an existing contact for this visitor (anonymous chats).
    */
   createContact?: "always" | "identified";
+  /** Campaign of the form, lead magnet or booking type the event came through. */
+  campaignId?: string | null;
 }
 
 export interface InboundResult {
@@ -75,6 +77,8 @@ export async function captureInbound(args: InboundArgs): Promise<InboundResult |
       touch: attribution?.last ?? attribution?.first ?? null,
       visitorId,
       contactId,
+      // An explicit campaign wins; otherwise recordTouch matches utm_campaign.
+      ...(args.campaignId ? { campaignId: args.campaignId } : {}),
     });
 
     let firstTouch = touch;

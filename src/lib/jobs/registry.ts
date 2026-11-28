@@ -5,6 +5,7 @@ import { bookingCompleteJob } from "./handlers/booking-complete";
 import { bookingRemindJob } from "./handlers/booking-remind";
 import { bookingSyncJob } from "./handlers/booking-sync";
 import { brandGenerateJob } from "./handlers/brand-generate";
+import { campaignsRematchJob } from "./handlers/campaigns-rematch";
 import { connectionExpiringJob, connectionRefreshJob } from "./handlers/connection-refresh";
 import { gbpMetricsLocationJob, gbpMetricsSyncJob, gbpReviewsLocationJob, gbpReviewsSyncJob } from "./handlers/gbp-sync";
 import { seoOpportunitiesJob, seoOpportunitiesPropertyJob } from "./handlers/seo-opportunities";
@@ -58,6 +59,7 @@ const definitions: JobDefinition[] = [
   seoOpportunitiesPropertyJob,
   seoReportJob,
   seoReportBusinessJob,
+  campaignsRematchJob,
 ];
 
 const byType = new Map<string, JobDefinition>();

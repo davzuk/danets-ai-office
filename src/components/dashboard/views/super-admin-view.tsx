@@ -109,6 +109,7 @@ import { TenantWhiteLabelEditor } from "@/components/dashboard/views/tenant-whit
 import { TenantTwoFactorPolicy } from "@/components/dashboard/views/tenant-two-factor-policy";
 import { TenantWidgetOrigins } from "@/components/dashboard/views/tenant-widget-origins";
 import { TenantSeoCard } from "@/components/dashboard/views/tenant-seo-card";
+import { TenantCampaignsCard } from "@/components/dashboard/views/tenant-campaigns-card";
 import { AiModelPicker } from "@/components/dashboard/views/ai-model-card";
 import type { PlatformTabId } from "@/lib/platform-nav";
 import { SuperAdminUsersPanel } from "@/components/dashboard/views/super-admin-users-panel";
@@ -1185,6 +1186,8 @@ function SuperAdminInner({
               </div>
 
               <TenantSeoCard key={`seo:${detail.id}`} businessId={detail.id} />
+
+              <TenantCampaignsCard key={`campaigns:${detail.id}`} businessId={detail.id} />
 
               <TenantWhiteLabelEditor businessId={detail.id} plan={detail.plan} />
 

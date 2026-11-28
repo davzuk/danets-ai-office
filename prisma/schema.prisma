@@ -92,6 +92,7 @@ model Business {
   seoOpportunities     SeoOpportunity[]
   contentBriefs        ContentBrief[]
   seoReports           SeoReport[]
+  campaigns            Campaign[]
 
   @@index([purgeScheduledAt])
 }
@@ -630,6 +631,7 @@ model SubscriptionPlan {
   gbpLocationLimit      Int      @default(1) // Google Business Profile locations (0 = unlimited)
   auditPageLimit        Int      @default(200) // pages one site audit may crawl (0 = unlimited)
   trackedKeywordLimit   Int      @default(50) // SEO keywords tracked (0 = unlimited)
+  campaignLimit         Int      @default(10) // campaigns not ended or archived (0 = unlimited)
   quoteLimit            Int      @default(50)
   mediaStorageMbLimit   Int      @default(1024) // media library, in MB (0 = unlimited)
   auditRetentionDays    Int      @default(30)
@@ -663,6 +665,7 @@ model BusinessLimitOverride {
   gbpLocationLimit      Int?
   auditPageLimit        Int?
   trackedKeywordLimit   Int?
+  campaignLimit         Int?
   quoteLimit            Int?
   mediaStorageMbLimit   Int?
   notes                 String?
@@ -687,14 +690,17 @@ model LeadFormDef {
   settings    Json
   status      String   @default("active") // active | archived
   submissions Int      @default(0)
+  campaignId  String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  campaign  Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   responses FormSubmission[]
   magnets   LeadMagnet[]
 
   @@index([businessId, status])
+  @@index([campaignId])
 }
 
 model FormSubmission {
@@ -740,14 +746,17 @@ model LeadMagnet {
   deliveryEmail Json?    // { subject?, intro? }
   downloads     Int      @default(0)
   status        String   @default("draft") // draft | published
+  campaignId    String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   business Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
   form     LeadFormDef? @relation(fields: [formId], references: [id], onDelete: SetNull)
+  campaign Campaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
 
   @@index([businessId, status])
   @@index([formId])
+  @@index([campaignId])
 }
 
 // ─── Notifications ─────────────────────────────────────────────────
@@ -1545,14 +1554,17 @@ model Touchpoint {
   landingUrl  String?  @db.Text // origin + path only (query stripped)
   referrer    String?  @db.Text // origin + path only
   dedupeKey   String?  @unique @db.VarChar(191) // e.g. one visit per browser session
+  campaignId  String? // matched Campaign (Phase 4 AA): explicit id, else utm_campaign against slugs and aliases
   occurredAt  DateTime @default(now())
 
-  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  contact  Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  contact  Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  matchedCampaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
 
   @@index([businessId, occurredAt])
   @@index([contactId, occurredAt])
   @@index([businessId, visitorId])
+  @@index([campaignId, occurredAt])
 }
 
 // ─── Brand Voice (Phase 0, workstream E) ─────────────────────────────
@@ -1691,7 +1703,8 @@ model ContentPost {
   brief        String    @db.Text
   goal         String? // awareness | engagement | leads | promotion
   toneTweak    String? // free-text nudge, e.g. "more playful"
-  campaignTag  String? // free text now; becomes a Campaign relation in Phase 4
+  campaignTag  String? // legacy free text (Phase 1); read-only since Phase 4 AA, which turned each tag into a Campaign
+  campaignId   String?
   sourceType   String? // kb_article | lead_question (repurposed from)
   sourceId     String?
   status       String    @default("draft") // draft | in_review | approved | archived
@@ -1702,9 +1715,11 @@ model ContentPost {
   updatedAt    DateTime  @updatedAt
 
   business Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  campaign Campaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   variants PostVariant[]
 
   @@index([businessId, updatedAt])
+  @@index([campaignId])
 }
 
 model PostVariant {
@@ -1881,15 +1896,18 @@ model BookingType {
   calendlyEventTypeUri String? @db.VarChar(255) // matched from the Calendly connection
   assignedUserId String? // BusinessUser who takes the meeting (gets the emails)
   active         Boolean  @default(true)
+  campaignId     String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   bookings Booking[]
 
   @@unique([businessId, slug])
   @@index([businessId, active])
   @@index([provider, active])
+  @@index([campaignId])
 }
 
 model Booking {
@@ -1974,15 +1992,18 @@ model LandingPage {
   publishedAt     DateTime?
   views           Int       @default(0)
   generatedFrom   String?   @db.Text // the AI prompt, if workstream R built it
+  campaignId      String? // set by the platform console (Phase 4 AA)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   business Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
   site     TenantSite           @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  campaign Campaign?            @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   versions LandingPageVersion[]
 
   @@unique([siteId, slug])
   @@index([businessId, status])
+  @@index([campaignId])
 }
 
 // A snapshot on every publish (and restore), for rollback.
@@ -2317,4 +2338,39 @@ model SeoReport {
 
   @@unique([businessId, month])
   @@index([businessId, createdAt])
+}
+
+// ─── Campaigns (Phase 4, workstream AA) ──────────────────────────────
+// One marketing push. Posts, forms, lead magnets, booking types and
+// platform-built pages link to it, and touchpoints are matched to it by an
+// explicit id or by utm_campaign against the slug and aliases.
+model Campaign {
+  id          String    @id @default(cuid())
+  businessId  String
+  name        String    @db.VarChar(160)
+  slug        String    @db.VarChar(80) // the utm_campaign value; frozen once a linked post is published
+  goal        String    @default("leads") // leads | bookings | sales | awareness
+  status      String    @default("draft") // draft | active | paused | ended | archived
+  startsAt    DateTime?
+  endsAt      DateTime?
+  endedAt     DateTime? // when it was set to ended; UTM visits still match for 30 days after
+  budget      Decimal?  @db.Decimal(12, 2)
+  targetLeads Int?
+  ownerId     String? // BusinessUser id
+  notes       String?   @db.Text
+  aliases     Json? // extra utm_campaign / ad campaign names that also count (slugified)
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  business     Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  contentPosts ContentPost[]
+  forms        LeadFormDef[]
+  magnets      LeadMagnet[]
+  landingPages LandingPage[]
+  bookingTypes BookingType[]
+  touchpoints  Touchpoint[]
+
+  @@unique([businessId, slug])
+  @@index([businessId, status])
 }

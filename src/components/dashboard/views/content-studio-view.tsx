@@ -66,6 +66,7 @@ import {
   type VariantIssue,
 } from "@/lib/content/platforms";
 import { cn } from "@/lib/utils";
+import { CampaignSelect, useCampaignOptions } from "@/components/dashboard/views/campaign-select";
 import { PlatformDot, api, errMsg } from "@/components/dashboard/views/content-shared";
 import {
   ContentCalendar,
@@ -100,7 +101,7 @@ interface Post {
   brief: string;
   goal: string | null;
   toneTweak: string | null;
-  campaignTag: string | null;
+  campaignId: string | null;
   status: string;
   createdById: string | null;
   approvedAt: string | null;
@@ -391,7 +392,8 @@ function BriefForm({ initial, onCreated }: { initial?: StudioIdea; onCreated: (p
   const [goal, setGoal] = useState<string>(initial?.goal ?? "none");
   const [toneTweak, setToneTweak] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
-  const [campaignTag, setCampaignTag] = useState("");
+  const [campaignId, setCampaignId] = useState<string | null>(null);
+  const campaignOptions = useCampaignOptions();
   const [source, setSource] = useState<{ type: Source["type"]; id: string } | null>(null);
   const [pickSource, setPickSource] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -407,7 +409,7 @@ function BriefForm({ initial, onCreated }: { initial?: StudioIdea; onCreated: (p
           goal: goal === "none" ? null : goal,
           toneTweak: toneTweak || null,
           linkUrl: linkUrl || null,
-          campaignTag: campaignTag || null,
+          campaignId,
           sourceType: source?.type ?? null,
           sourceId: source?.id ?? null,
         }),
@@ -497,10 +499,12 @@ function BriefForm({ initial, onCreated }: { initial?: StudioIdea; onCreated: (p
           <Label htmlFor="link-url">Link (optional)</Label>
           <Input id="link-url" value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="https://…" inputMode="url" />
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="campaign">Campaign tag (optional)</Label>
-          <Input id="campaign" value={campaignTag} onChange={(e) => setCampaignTag(e.target.value)} maxLength={80} placeholder="e.g. Saturday opening" />
-        </div>
+        {campaignOptions ? (
+          <div className="space-y-1.5">
+            <Label htmlFor="campaign">Campaign (optional)</Label>
+            <CampaignSelect id="campaign" value={campaignId} onChange={setCampaignId} />
+          </div>
+        ) : null}
       </div>
 
       <div className="flex items-center justify-end gap-3">
@@ -661,9 +665,18 @@ function PostEditor({
             </div>
             <p className="text-xs text-muted-foreground">
               {post.goal ? `${GOAL_LABEL[post.goal] ?? post.goal} · ` : ""}
-              {post.campaignTag ? `${post.campaignTag} · ` : ""}
               updated {timeAgo(post.updatedAt)}
             </p>
+            <div className="mt-2 max-w-64">
+              <CampaignSelect
+                size="sm"
+                value={post.campaignId}
+                disabled={!!busy || post.status === "archived"}
+                onChange={(campaignId) =>
+                  run("campaign", () => api(`/api/content-posts/${post.id}`, { method: "PATCH", body: JSON.stringify({ campaignId }) }), campaignId ? "Added to the campaign" : "Removed from the campaign")
+                }
+              />
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {post.status === "draft" && (

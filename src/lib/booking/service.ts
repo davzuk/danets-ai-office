@@ -148,6 +148,7 @@ export async function createBooking(args: CreateBookingArgs, now = new Date()): 
       kind: "booking",
       visitorId: args.visitorId,
       attribution: args.attribution,
+      campaignId: type.campaignId,
       profile: { name: booking.name, email, phone: booking.phone },
     });
     contactId = inbound?.contactId ?? null;
@@ -528,6 +529,7 @@ export async function recordCalendlyBooking(businessId: string, invitee: Calendl
       kind: "booking",
       attribution: touch ? { first: touch, last: touch } : undefined,
       profile: { name: booking.name, email: booking.email, phone: booking.phone },
+      campaignId: type?.campaignId ?? null,
     });
     contactId = inbound?.contactId ?? null;
     leadId = await upsertLeadForBooking(

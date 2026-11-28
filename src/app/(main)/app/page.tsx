@@ -51,6 +51,7 @@ const WhatsAppView = dynamic(
   { ssr: false }
 );
 const SeoView = dynamic(() => import("@/components/dashboard/views/seo-view").then((m) => m.SeoView), { ssr: false });
+const CampaignsView = dynamic(() => import("@/components/dashboard/views/campaigns-view").then((m) => m.CampaignsView), { ssr: false });
 const ContentStudioView = dynamic(
   () => import("@/components/dashboard/views/content-studio-view").then((m) => m.ContentStudioView),
   { ssr: false }
@@ -204,6 +205,7 @@ export default function AppHome() {
       case "documents": return <DocumentsView user={user} />;
       case "social": return <ContentStudioView user={user} />;
       case "seo": return <SeoView />;
+      case "campaigns": return <CampaignsView />;
       case "media": return <MediaView user={user} />;
       case "whatsapp": return <WhatsAppView user={user} />;
       case "automations": return <AutomationsView user={user} />;

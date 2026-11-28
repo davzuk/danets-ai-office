@@ -21,6 +21,7 @@ export type QuotaResource =
   | "leadMagnets"
   | "seoProperties"
   | "gbpLocations"
+  | "campaigns"
   | "mediaStorageMb";
 
 export interface EffectiveLimits {
@@ -47,6 +48,7 @@ export interface EffectiveLimits {
   gbpLocationLimit: number;
   auditPageLimit: number;
   trackedKeywordLimit: number;
+  campaignLimit: number;
   mediaStorageMbLimit: number;
 }
 
@@ -70,6 +72,8 @@ export interface QuotaUsage {
   leadMagnets: number;
   seoProperties: number;
   gbpLocations: number;
+  /** Campaigns not ended or archived. */
+  campaigns: number;
   /** Media library size in MB (rounded up). */
   mediaStorageMb: number;
 }
@@ -111,6 +115,7 @@ export const RESOURCE_LABELS: Record<QuotaResource, string> = {
   leadMagnets: "lead magnets",
   seoProperties: "Search Console properties",
   gbpLocations: "Business Profile locations",
+  campaigns: "campaigns",
   mediaStorageMb: "MB of media storage",
 };
 
@@ -174,6 +179,7 @@ export async function getEffectiveLimits(
       gbpLocationLimit: planRow?.gbpLocationLimit ?? 1,
       auditPageLimit: planRow?.auditPageLimit ?? 200,
       trackedKeywordLimit: planRow?.trackedKeywordLimit ?? 50,
+      campaignLimit: planRow?.campaignLimit ?? 10,
       mediaStorageMbLimit: planRow?.mediaStorageMbLimit ?? 1024,
     };
 
@@ -203,6 +209,7 @@ export async function getEffectiveLimits(
       gbpLocationLimit: override?.gbpLocationLimit ?? base.gbpLocationLimit,
       auditPageLimit: override?.auditPageLimit ?? base.auditPageLimit,
       trackedKeywordLimit: override?.trackedKeywordLimit ?? base.trackedKeywordLimit,
+      campaignLimit: override?.campaignLimit ?? base.campaignLimit,
       mediaStorageMbLimit: override?.mediaStorageMbLimit ?? base.mediaStorageMbLimit,
     };
   });
@@ -233,6 +240,7 @@ export async function getQuotaUsage(businessId: string): Promise<QuotaUsage> {
     leadMagnets,
     seoProperties,
     gbpLocations,
+    campaigns,
     media,
   ] = await Promise.all([
     db.chatSession.count({
@@ -264,6 +272,7 @@ export async function getQuotaUsage(businessId: string): Promise<QuotaUsage> {
     db.leadMagnet.count({ where: { businessId } }),
     db.searchProperty.count({ where: { businessId } }),
     db.businessLocation.count({ where: { businessId } }),
+    db.campaign.count({ where: { businessId, status: { in: ["draft", "active", "paused"] } } }),
     db.mediaAsset.aggregate({ where: { businessId }, _sum: { sizeBytes: true } }),
   ]);
 
@@ -287,6 +296,7 @@ export async function getQuotaUsage(businessId: string): Promise<QuotaUsage> {
     leadMagnets,
     seoProperties,
     gbpLocations,
+    campaigns,
     mediaStorageMb: Math.ceil((media._sum.sizeBytes ?? 0) / (1024 * 1024)),
   };
   });
@@ -335,6 +345,8 @@ function limitForResource(
       return limits.seoPropertyLimit;
     case "gbpLocations":
       return limits.gbpLocationLimit;
+    case "campaigns":
+      return limits.campaignLimit;
     case "mediaStorageMb":
       return limits.mediaStorageMbLimit;
   }
@@ -383,6 +395,8 @@ function usedForResource(
       return usage.seoProperties;
     case "gbpLocations":
       return usage.gbpLocations;
+    case "campaigns":
+      return usage.campaigns;
     case "mediaStorageMb":
       return usage.mediaStorageMb;
   }

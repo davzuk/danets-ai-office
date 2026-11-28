@@ -6,6 +6,7 @@ import type { ScheduledPost, SocialAccount } from "@prisma/client";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { AppError } from "@/lib/app-error";
+import { assertCampaignPublishable } from "@/lib/campaigns/service";
 import { createNotification, logActivity } from "@/lib/activity";
 import { enqueue } from "@/lib/jobs/queue";
 import { socialPublishJob } from "@/lib/jobs/handlers/social-publish";
@@ -221,6 +222,7 @@ async function checkInstagram(businessId: string, acct: SocialAccount, mediaIds:
 export async function schedulePost(actor: Actor, postId: string, input: z.infer<typeof scheduleSchema>) {
   const post = await findOwnPost(actor.businessId, postId);
   if (post.status === "archived") throw new AppError("Restore the post before scheduling it.", { status: 400, code: "ARCHIVED" });
+  await assertCampaignPublishable(post.campaignId);
   const pub = toPublicPost(post, await getDontPhrases(actor.businessId));
   const when = parseWhen(input);
 

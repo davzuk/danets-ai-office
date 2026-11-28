@@ -27,6 +27,7 @@ export interface PostStat {
   accountName: string | null;
   publishedAt: string;
   permalink: string | null;
+  /** Campaign name (Phase 4), or Phase 1's free-text tag for older posts. */
   campaignTag: string | null;
   metrics: PostMetricsView | null;
   /** engagements ÷ reach (or views when reach isn't reported); null without metrics. */
@@ -197,7 +198,7 @@ export async function loadPostStats(businessId: string, from: Date, to: Date): P
     orderBy: { publishedAt: "desc" },
     take: 500,
     include: {
-      variant: { select: { platform: true, body: true, post: { select: { id: true, title: true, brief: true, campaignTag: true } } } },
+      variant: { select: { platform: true, body: true, post: { select: { id: true, title: true, brief: true, campaignTag: true, campaign: { select: { name: true } } } } } },
       socialAccount: { select: { name: true } },
       metrics: { orderBy: { capturedAt: "desc" }, take: 1 },
     },
@@ -228,7 +229,7 @@ export async function loadPostStats(businessId: string, from: Date, to: Date): P
       accountName: r.socialAccount?.name ?? null,
       publishedAt: (r.publishedAt ?? r.scheduledFor).toISOString(),
       permalink: r.permalink,
-      campaignTag: post.campaignTag,
+      campaignTag: post.campaign?.name ?? post.campaignTag,
       metrics,
       engagementRate: engagementRate(metrics),
       visits: a.visits,

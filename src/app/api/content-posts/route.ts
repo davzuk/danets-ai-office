@@ -4,6 +4,7 @@ import { withSession } from "@/lib/api";
 import { checkMonthlyAiQuota, requireAiQuota } from "@/lib/plan-limits";
 import { loadContentContext } from "@/lib/content/context";
 import { generateVariants } from "@/lib/content/generate";
+import { ownCampaignId } from "@/lib/campaigns/service";
 import { POST_STATUSES, createPostSchema, loadPublicPost, parseBody, saveGeneratedVariants, titleFromBrief } from "@/lib/content/posts";
 
 // Opus-class generation plus one possible re-ask.
@@ -27,7 +28,7 @@ export function GET(req: NextRequest) {
           brief: true,
           status: true,
           goal: true,
-          campaignTag: true,
+          campaign: { select: { id: true, name: true } },
           updatedAt: true,
           variants: { select: { platform: true } },
         },
@@ -40,7 +41,8 @@ export function GET(req: NextRequest) {
         title: p.title || titleFromBrief(p.brief),
         status: p.status,
         goal: p.goal,
-        campaignTag: p.campaignTag,
+        campaignId: p.campaign?.id ?? null,
+        campaignName: p.campaign?.name ?? null,
         platforms: p.variants.map((v) => v.platform),
         updatedAt: p.updatedAt.toISOString(),
       })),
@@ -54,6 +56,7 @@ export function GET(req: NextRequest) {
 export function POST(req: NextRequest) {
   return withSession(async (user) => {
     const input = await parseBody(req, createPostSchema);
+    const campaignId = await ownCampaignId(user.businessId, input.campaignId);
     await requireAiQuota(user.businessId);
     const ctx = await loadContentContext(user.businessId, input.brief);
     const linkUrl = input.linkUrl || null;
@@ -71,7 +74,7 @@ export function POST(req: NextRequest) {
         brief: input.brief,
         goal: input.goal ?? null,
         toneTweak: input.toneTweak || null,
-        campaignTag: input.campaignTag || null,
+        campaignId,
         sourceType: input.sourceType ?? null,
         sourceId: input.sourceId ?? null,
         createdById: user.userId,
