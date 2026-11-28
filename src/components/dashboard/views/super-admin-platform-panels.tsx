@@ -19,6 +19,7 @@ import {
   Settings2,
   Mail,
   Archive,
+  Sparkles,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -70,6 +71,7 @@ import {
   PlatformEmailPanel,
   PlatformRetentionPanel,
 } from "@/components/dashboard/views/platform-settings-panels";
+import { PlatformAiPanel } from "@/components/dashboard/views/platform-ai-panel";
 
 const PLAN_BADGE: Record<string, string> = {
   free: "bg-muted text-muted-foreground",
@@ -149,6 +151,9 @@ export function SuperAdminPlatformPanel({
         <TabsTrigger value="email" className="gap-1.5">
           <Mail className="h-3.5 w-3.5" /> Email
         </TabsTrigger>
+        <TabsTrigger value="ai" className="gap-1.5">
+          <Sparkles className="h-3.5 w-3.5" /> AI
+        </TabsTrigger>
         <TabsTrigger value="retention" className="gap-1.5">
           <Archive className="h-3.5 w-3.5" /> Retention
         </TabsTrigger>
@@ -173,6 +178,9 @@ export function SuperAdminPlatformPanel({
       </TabsContent>
       <TabsContent value="email" className="mt-0">
         <PlatformEmailPanel />
+      </TabsContent>
+      <TabsContent value="ai" className="mt-0">
+        <PlatformAiPanel />
       </TabsContent>
       <TabsContent value="retention" className="mt-0">
         <PlatformRetentionPanel />

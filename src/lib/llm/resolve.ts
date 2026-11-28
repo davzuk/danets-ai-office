@@ -1,9 +1,11 @@
 // Decide which provider, model and credentials serve a call.
 //
 // Order: the tenant's active `ai_provider` integration (with a usable key)
-// -> platform default from env -> legacy z-ai.
+// -> the platform AI set in Platform settings -> platform default from env
+// -> legacy z-ai.
 
 import { ANTHROPIC_TASK_MODELS } from "./catalog";
+import { ALIBABA_TASK_MODELS, alibabaBaseUrl, isAlibabaRegion } from "./providers/alibaba";
 import type { AiTask, ProviderId, ResolvedProvider } from "./types";
 
 export interface AiIntegrationRow {
@@ -25,7 +27,7 @@ type Env = Record<string, string | undefined>;
 const ZAI_MODEL = "zai-default";
 
 function isProviderId(v: unknown): v is ProviderId {
-  return v === "anthropic" || v === "openai" || v === "zai";
+  return v === "anthropic" || v === "openai" || v === "alibaba" || v === "zai";
 }
 
 function pickModel(
@@ -68,6 +70,14 @@ export function resolvePlatformDefault(task: AiTask, env: Env): ResolvedProvider
     }
     // Misconfigured OpenAI default: fall through to z-ai rather than fail every call.
   }
+  if (provider === "alibaba" && env.ALIBABA_API_KEY) {
+    return {
+      provider,
+      model: pickModel(task, overrides, ALIBABA_TASK_MODELS[task])!,
+      credentials: { apiKey: env.ALIBABA_API_KEY, baseUrl: env.ALIBABA_BASE_URL || undefined },
+      source: "platform",
+    };
+  }
   return { provider: "zai", model: ZAI_MODEL, credentials: {}, source: "platform" };
 }
 
@@ -75,19 +85,24 @@ export function resolvePlatformDefault(task: AiTask, env: Env): ResolvedProvider
  * Tenant override, or null when the tenant has nothing usable configured.
  * Pure; exported for tests.
  */
-export function resolveTenant(task: AiTask, cfg: TenantAiConfig | null): ResolvedProvider | null {
+export function resolveTenant(
+  task: AiTask,
+  cfg: TenantAiConfig | null,
+  source: ResolvedProvider["source"] = "tenant"
+): ResolvedProvider | null {
   if (!cfg) return null;
   if (cfg.provider === "zai") {
-    return { provider: "zai", model: ZAI_MODEL, credentials: {}, source: "tenant" };
+    return { provider: "zai", model: ZAI_MODEL, credentials: {}, source };
   }
   if (!cfg.apiKey) return null;
 
-  if (cfg.provider === "anthropic") {
+  if (cfg.provider === "anthropic" || cfg.provider === "alibaba") {
+    const defaults = cfg.provider === "anthropic" ? ANTHROPIC_TASK_MODELS : ALIBABA_TASK_MODELS;
     return {
-      provider: "anthropic",
-      model: pickModel(task, cfg, ANTHROPIC_TASK_MODELS[task])!,
+      provider: cfg.provider,
+      model: pickModel(task, cfg, defaults[task])!,
       credentials: { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl },
-      source: "tenant",
+      source,
     };
   }
   // OpenAI has no safe built-in default model; require the tenant to pick one.
@@ -97,8 +112,41 @@ export function resolveTenant(task: AiTask, cfg: TenantAiConfig | null): Resolve
     provider: "openai",
     model,
     credentials: { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl },
-    source: "tenant",
+    source,
   };
+}
+
+/**
+ * The platform AI stored in PlatformConfig.aiConfig (set in Platform
+ * settings → AI). Only Alibaba Cloud is offered there today. The key is an
+ * encrypted payload. Pure; exported for tests.
+ */
+export interface StoredPlatformAi {
+  enabled?: boolean;
+  provider?: string;
+  region?: string;
+  workspaceId?: string | null;
+  baseUrl?: string | null;
+  models?: Partial<Record<AiTask, string>>;
+  apiKey?: unknown;
+}
+
+export function parsePlatformAiConfig(
+  raw: unknown,
+  decrypt: (payload: unknown) => string | null
+): TenantAiConfig | null {
+  if (!raw || typeof raw !== "object") return null;
+  const c = raw as StoredPlatformAi;
+  if (!c.enabled || c.provider !== "alibaba") return null;
+  const apiKey = decrypt(c.apiKey);
+  if (!apiKey) return null;
+  const baseUrl = c.baseUrl?.trim() || (isAlibabaRegion(c.region) ? alibabaBaseUrl(c.region, c.workspaceId) : null);
+  if (!baseUrl) return null;
+  const models: Partial<Record<AiTask, string>> = {};
+  for (const [k, v] of Object.entries(c.models ?? {})) {
+    if (typeof v === "string" && v.trim()) models[k as AiTask] = v.trim();
+  }
+  return { provider: "alibaba", apiKey, models, baseUrl };
 }
 
 /**
@@ -143,10 +191,32 @@ export function parseTenantAiConfig(
 const CACHE_TTL_MS = 60_000;
 const tenantCache = new Map<string, { at: number; cfg: TenantAiConfig | null }>();
 
-/** Call after an ai_provider integration is created, updated or deleted. */
+let platformCache: { at: number; cfg: TenantAiConfig | null } | null = null;
+
+/**
+ * Call after an ai_provider integration is created, updated or deleted, or
+ * (with no argument) after the platform AI setting changes.
+ */
 export function clearAiProviderCache(businessId?: string) {
   if (businessId) tenantCache.delete(businessId);
-  else tenantCache.clear();
+  else {
+    tenantCache.clear();
+    platformCache = null;
+  }
+}
+
+async function loadPlatformConfig(): Promise<TenantAiConfig | null> {
+  if (platformCache && Date.now() - platformCache.at < CACHE_TTL_MS) return platformCache.cfg;
+  let cfg: TenantAiConfig | null = null;
+  try {
+    const [{ db }, { decryptApiKey }] = await Promise.all([import("@/lib/db"), import("@/lib/crypto")]);
+    const row = await db.platformConfig.findUnique({ where: { id: "default" }, select: { aiConfig: true } });
+    cfg = parsePlatformAiConfig(row?.aiConfig, decryptApiKey);
+  } catch {
+    cfg = null; // e.g. the column isn't migrated yet: fall back to env
+  }
+  platformCache = { at: Date.now(), cfg };
+  return cfg;
 }
 
 async function loadTenantConfig(businessId: string): Promise<TenantAiConfig | null> {
@@ -172,5 +242,7 @@ export async function resolveProvider(
     const tenant = resolveTenant(task, await loadTenantConfig(businessId));
     if (tenant) return tenant;
   }
+  const stored = resolveTenant(task, await loadPlatformConfig(), "platform");
+  if (stored) return stored;
   return resolvePlatformDefault(task, process.env);
 }

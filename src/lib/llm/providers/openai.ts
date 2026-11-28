@@ -1,10 +1,12 @@
-// OpenAI Chat Completions adapter for tenants who bring their own OpenAI key.
+// OpenAI Chat Completions adapter for tenants who bring their own OpenAI key,
+// and the base for other OpenAI-compatible APIs (Alibaba Cloud Model Studio).
 // Uses fetch rather than the openai package to avoid a second SDK dependency.
 
 import type {
   AiStopReason,
   ProviderAdapter,
   ProviderCredentials,
+  ProviderId,
   ProviderRequest,
   ProviderResponse,
 } from "../types";
@@ -12,23 +14,36 @@ import type {
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 const REQUEST_TIMEOUT_MS = 120_000;
 
+/**
+ * How a compatible API differs from OpenAI's:
+ * - "openai": `max_completion_tokens` and strict `json_schema` output.
+ * - "alibaba": `max_tokens`, and `json_object` output with the schema in the
+ *   system prompt (Model Studio enforces json_schema on only a few models, and
+ *   json_object needs the word "JSON" in the messages). Zod re-validates.
+ */
+export type OpenAiDialect = "openai" | "alibaba";
+
 /** Exported for unit tests. */
-export function buildOpenAiBody(req: ProviderRequest, stream: boolean): Record<string, unknown> {
+export function buildOpenAiBody(req: ProviderRequest, stream: boolean, dialect: OpenAiDialect = "openai"): Record<string, unknown> {
+  let system = req.system ?? "";
+  if (req.jsonSchema && dialect === "alibaba") {
+    system +=
+      `${system ? "\n\n" : ""}Respond with a single JSON value matching this JSON schema, ` +
+      `and nothing else (no markdown fences, no commentary):\n${JSON.stringify(req.jsonSchema)}`;
+  }
   const messages: { role: string; content: string }[] = [];
-  if (req.system) messages.push({ role: "system", content: req.system });
+  if (system) messages.push({ role: "system", content: system });
   for (const m of req.messages) messages.push({ role: m.role, content: m.content });
 
-  const body: Record<string, unknown> = {
-    model: req.model,
-    messages,
-    max_completion_tokens: req.maxTokens,
-  };
+  const body: Record<string, unknown> = { model: req.model, messages };
+  if (dialect === "alibaba") body.max_tokens = req.maxTokens;
+  else body.max_completion_tokens = req.maxTokens;
   if (req.temperature !== undefined) body.temperature = req.temperature;
   if (req.jsonSchema) {
-    body.response_format = {
-      type: "json_schema",
-      json_schema: { name: "output", schema: req.jsonSchema, strict: true },
-    };
+    body.response_format =
+      dialect === "alibaba"
+        ? { type: "json_object" }
+        : { type: "json_schema", json_schema: { name: "output", schema: req.jsonSchema, strict: true } };
   }
   if (stream) {
     body.stream = true;
@@ -63,9 +78,18 @@ function usageFields(u: OpenAiUsage | undefined) {
   };
 }
 
-async function post(creds: ProviderCredentials, body: Record<string, unknown>): Promise<Response> {
-  if (!creds.apiKey) throw new Error("OpenAI provider requires an API key");
-  const res = await fetch(`${creds.baseUrl || DEFAULT_BASE_URL}/chat/completions`, {
+interface CompatibleOptions {
+  id: ProviderId;
+  /** Shown in errors, e.g. "OpenAI" or "Alibaba Cloud". */
+  label: string;
+  defaultBaseUrl: string;
+  dialect: OpenAiDialect;
+}
+
+async function post(o: CompatibleOptions, creds: ProviderCredentials, body: Record<string, unknown>): Promise<Response> {
+  if (!creds.apiKey) throw new Error(`${o.label} provider requires an API key`);
+  const base = (creds.baseUrl || o.defaultBaseUrl).replace(/\/+$/, "");
+  const res = await fetch(`${base}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -75,17 +99,29 @@ async function post(creds: ProviderCredentials, body: Record<string, unknown>): 
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(`OpenAI request failed (${res.status}): ${detail.slice(0, 300)}`);
+    throw new Error(`${o.label} request failed (${res.status}): ${errorDetail(await res.text().catch(() => ""))}`);
   }
   return res;
 }
 
-export const openAiProvider: ProviderAdapter = {
-  id: "openai",
+/** The message from an `{ error: { message } }` body, else the raw text. Exported for tests. */
+export function errorDetail(text: string): string {
+  try {
+    const msg = (JSON.parse(text) as { error?: { message?: unknown } })?.error?.message;
+    if (typeof msg === "string" && msg) return msg.slice(0, 300);
+  } catch {
+    // not JSON
+  }
+  return text.slice(0, 300);
+}
+
+/** An adapter for any OpenAI-compatible Chat Completions API. */
+export function createOpenAiCompatible(o: CompatibleOptions): ProviderAdapter {
+  return {
+  id: o.id,
 
   async chat(req, creds) {
-    const res = await post(creds, buildOpenAiBody(req, false));
+    const res = await post(o, creds, buildOpenAiBody(req, false, o.dialect));
     const json = (await res.json()) as {
       model?: string;
       choices?: { message?: { content?: string | null; refusal?: string | null }; finish_reason?: string }[];
@@ -102,8 +138,8 @@ export const openAiProvider: ProviderAdapter = {
   },
 
   async stream(req, creds, onText) {
-    const res = await post(creds, buildOpenAiBody(req, true));
-    if (!res.body) throw new Error("OpenAI stream returned no body");
+    const res = await post(o, creds, buildOpenAiBody(req, true, o.dialect));
+    if (!res.body) throw new Error(`${o.label} stream returned no body`);
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -143,4 +179,7 @@ export const openAiProvider: ProviderAdapter = {
 
     return { content, model, stopReason: mapFinishReason(finish), ...usageFields(usage) };
   },
-};
+  };
+}
+
+export const openAiProvider = createOpenAiCompatible({ id: "openai", label: "OpenAI", defaultBaseUrl: DEFAULT_BASE_URL, dialect: "openai" });

@@ -1152,6 +1152,8 @@ model PlatformConfig {
   emailFromAddress   String?
   allowPublicSignup  Boolean  @default(true)
   enforcePlatform2fa Boolean  @default(false)
+  /// Platform AI provider set in Platform settings → AI (Alibaba Cloud today): { enabled, provider, region, workspaceId, baseUrl, models, apiKey (encrypted), updatedBy }. Null = use env.
+  aiConfig           Json?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 }

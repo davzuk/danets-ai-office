@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { logger } from "@/lib/logger";
+import { platformAiStatus } from "@/lib/platform-ai";
 
 export const PLATFORM_CONFIG_ID = "default";
 
@@ -270,26 +271,39 @@ export async function getPlatformSetupStatus(): Promise<PlatformSetupStatus> {
     required: false,
   });
 
-  // Mirrors resolvePlatformDefault in src/lib/llm/resolve.ts.
+  // Mirrors resolveProvider in src/lib/llm/resolve.ts: the AI set in
+  // Platform settings first, then the env default.
   const env = process.env;
+  const stored = await platformAiStatus();
   const aiDefault = env.AI_DEFAULT_PROVIDER?.trim().toLowerCase();
   const aiProvider =
-    aiDefault === "anthropic" || aiDefault === "openai" || aiDefault === "zai"
+    aiDefault === "anthropic" || aiDefault === "openai" || aiDefault === "alibaba" || aiDefault === "zai"
       ? aiDefault
       : env.ANTHROPIC_API_KEY
         ? "anthropic"
         : "zai";
   const aiReady =
-    aiProvider === "anthropic" ? !!env.ANTHROPIC_API_KEY : aiProvider === "openai" ? !!(env.OPENAI_API_KEY && (env.OPENAI_DEFAULT_MODEL || env.AI_DEFAULT_MODEL)) : false;
+    aiProvider === "anthropic"
+      ? !!env.ANTHROPIC_API_KEY
+      : aiProvider === "openai"
+        ? !!(env.OPENAI_API_KEY && (env.OPENAI_DEFAULT_MODEL || env.AI_DEFAULT_MODEL))
+        : aiProvider === "alibaba"
+          ? !!env.ALIBABA_API_KEY
+          : false;
+  const envLabel = aiProvider === "anthropic" ? "Anthropic (Claude)" : aiProvider === "openai" ? "OpenAI" : "Alibaba Cloud (Qwen)";
   checks.push({
     id: "ai_provider",
     label: "AI provider",
-    status: aiReady ? "ok" : "warning",
-    message: aiReady
-      ? `Platform default: ${aiProvider === "anthropic" ? "Anthropic (Claude)" : "OpenAI"}`
-      : aiProvider === "openai"
-        ? "AI_DEFAULT_PROVIDER=openai needs OPENAI_API_KEY and OPENAI_DEFAULT_MODEL; falling back to the built-in z-ai model"
-        : "No ANTHROPIC_API_KEY: AI features use the built-in z-ai model (tenants can add their own key)",
+    status: stored?.active || aiReady ? "ok" : "warning",
+    message: stored?.active
+      ? `Platform AI: ${stored.label} (set in the AI tab)`
+      : stored
+        ? "The AI tab's Alibaba Cloud key can't be read: enter it again"
+        : aiReady
+          ? `Platform default: ${envLabel}`
+          : aiProvider === "openai"
+            ? "AI_DEFAULT_PROVIDER=openai needs OPENAI_API_KEY and OPENAI_DEFAULT_MODEL; falling back to the built-in z-ai model"
+            : "No platform AI key: AI features use the built-in z-ai model. Set one in the AI tab (tenants can also add their own key)",
     required: false,
   });
 

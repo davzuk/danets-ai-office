@@ -5,6 +5,7 @@ import { logger, serializeError } from "@/lib/logger";
 import { computeCostUsd } from "./catalog";
 import { normalizeMessages } from "./messages";
 import { anthropicProvider } from "./providers/anthropic";
+import { alibabaProvider } from "./providers/alibaba";
 import { openAiProvider } from "./providers/openai";
 import { zaiProvider } from "./providers/zai";
 import { resolveProvider } from "./resolve";
@@ -28,6 +29,7 @@ const DEFAULT_MAX_TOKENS = 16_000;
 const ADAPTERS: Record<ProviderId, ProviderAdapter> = {
   anthropic: anthropicProvider,
   openai: openAiProvider,
+  alibaba: alibabaProvider,
   zai: zaiProvider,
 };
 

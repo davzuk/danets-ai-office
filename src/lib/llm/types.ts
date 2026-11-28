@@ -10,9 +10,9 @@ export type AiTask = "chat" | "classify" | "extract" | "content" | "plan";
 
 export const AI_TASKS: readonly AiTask[] = ["chat", "classify", "extract", "content", "plan"];
 
-export type ProviderId = "anthropic" | "openai" | "zai";
+export type ProviderId = "anthropic" | "openai" | "alibaba" | "zai";
 
-export const PROVIDER_IDS: readonly ProviderId[] = ["anthropic", "openai", "zai"];
+export const PROVIDER_IDS: readonly ProviderId[] = ["anthropic", "openai", "alibaba", "zai"];
 
 export interface AiMessage {
   /** "system" | "user" | "assistant"; any other value is treated as "user". */
@@ -45,7 +45,7 @@ export interface AiCallOptions {
   task?: AiTask;
   maxTokens?: number;
   /**
-   * Sampling temperature. Honoured by providers that accept it (OpenAI, z-ai);
+   * Sampling temperature. Honoured by providers that accept it (OpenAI, Alibaba, z-ai);
    * dropped for Anthropic, whose current models reject sampling parameters.
    */
   temperature?: number;
