@@ -38,6 +38,9 @@
   ],
   "exclude": [
     "node_modules",
-    "examples"
+    "examples",
+    "backup",
+    "danets-isp.smartoffice.com.ng",
+    "strong-olive-boar.213-199-52-31.cpanel.site"
   ]
 }

@@ -1333,7 +1333,7 @@ model CmsPost {
 
   author CmsAuthor? @relation(fields: [authorId], references: [id], onDelete: SetNull)
   site   CmsSite?   @relation(fields: [siteId], references: [id], onDelete: SetNull)
-  tags   CmsTag[]   @relation("PostTags")
+  tags   CmsTag[]   @relation("CmsPostTags")
 
   @@index([status, publishedAt])
 }
@@ -1363,7 +1363,7 @@ model CmsTag {
   siteId String?
   site   CmsSite? @relation(fields: [siteId], references: [id], onDelete: SetNull)
 
-  posts CmsPost[] @relation("PostTags")
+  posts CmsPost[] @relation("CmsPostTags")
 }
 
 model CmsNavItem {
